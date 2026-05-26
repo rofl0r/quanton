@@ -12,13 +12,13 @@ OBJ = $(SRC:.c=.o)
 all: libquanton.a
 
 libquanton.a: $(OBJ)
-ar rcs $@ $(OBJ)
+	ar rcs $@ $(OBJ)
 
 test: tests/test_quanton.c $(SRC) include/quanton.h
-$(CC) $(CFLAGS) -o $@ tests/test_quanton.c $(SRC) $(LDFLAGS)
-./test
+	$(CC) $(CFLAGS) -o $@ tests/test_quanton.c $(SRC) $(LDFLAGS)
+	./test
 
 clean:
-rm -f $(OBJ) libquanton.a test
+	rm -f $(OBJ) libquanton.a test
 
 .PHONY: all test clean

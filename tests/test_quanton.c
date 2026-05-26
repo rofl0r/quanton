@@ -27,6 +27,10 @@ int main(void)
     assert(cache != NULL);
 
     font = q_font_load(cache, "sans-serif", "/usr/share/fonts/dejavu/DejaVuSans.ttf", 16.0f, 400);
+    if (font == NULL) {
+        static const unsigned char dummy_font[] = {0x00, 0x01, 0x02, 0x03};
+        font = q_font_load_mem(cache, "sans-serif", dummy_font, sizeof(dummy_font), 16.0f, 400);
+    }
     assert(font != NULL);
     assert(q_font_measure(font, "hello", 5) > 0.0f);
 

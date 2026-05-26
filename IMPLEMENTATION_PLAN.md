@@ -28,7 +28,7 @@ quanton/
     backend/
       x11/        -- X11 window + event backend
       sdl2/       -- SDL2 window + event backend
-    app/          -- top-level celerity_view lifecycle
+    app/          -- top-level quanton_view lifecycle
   include/
     quanton.h    -- single public header for framework users
 ```
@@ -40,22 +40,22 @@ quanton/
 ### 3.1 Application context
 
 ```c
-/* celerity_ctx  — one per process */
-typedef struct celerity_ctx {
+/* quanton_ctx  — one per process */
+typedef struct quanton_ctx {
     /* lexbor objects — own one document per view */
     /* font system */
     q_font_cache_t       *font_cache;
     /* backend vtable (filled in at init time) */
     const q_backend_vt_t *backend;
     void                   *backend_ctx;   /* opaque, owned by backend */
-} celerity_ctx_t;
+} quanton_ctx_t;
 ```
 
 ### 3.2 View (≈ Electron BrowserWindow)
 
 ```c
-typedef struct celerity_view {
-    celerity_ctx_t     *ctx;
+typedef struct quanton_view {
+    quanton_ctx_t     *ctx;
 
     /* lexbor document */
     lxb_html_document_t *document;
@@ -75,7 +75,7 @@ typedef struct celerity_view {
 
     /* backend window handle */
     void                *window_handle;
-} celerity_view_t;
+} quanton_view_t;
 ```
 
 ### 3.3 Computed style (thin wrapper — most data stays in lexbor)
@@ -221,13 +221,13 @@ typedef struct q_font_cache {
 ```c
 typedef struct q_backend_vt {
     /* create a native window, store handle in view->window_handle */
-    int  (*create_window)(celerity_view_t *view, int w, int h, const char *title);
+    int  (*create_window)(quanton_view_t *view, int w, int h, const char *title);
     /* blit view->framebuffer to screen */
-    void (*blit)(celerity_view_t *view);
+    void (*blit)(quanton_view_t *view);
     /* poll events — calls view->on_event for each */
-    void (*poll_events)(celerity_view_t *view);
+    void (*poll_events)(quanton_view_t *view);
     /* destroy window */
-    void (*destroy_window)(celerity_view_t *view);
+    void (*destroy_window)(quanton_view_t *view);
 } q_backend_vt_t;
 
 extern const q_backend_vt_t q_backend_x11;
@@ -265,7 +265,7 @@ typedef struct {
     q_box_t        *target_box;
 } q_event_t;
 
-typedef void (*q_event_handler_fn)(celerity_view_t *view,
+typedef void (*q_event_handler_fn)(quanton_view_t *view,
                                      const q_event_t *event,
                                      void *userdata);
 ```
@@ -289,7 +289,7 @@ tree and computing all geometry.
  *   an anonymous Q_BOX_INLINE_CONTAINER.
  * - Text nodes produce Q_BOX_TEXT leaves inside the inline container.
  */
-q_box_t *q_layout_build_tree(celerity_view_t *view);
+q_box_t *q_layout_build_tree(quanton_view_t *view);
 ```
 
 ### 4.2 Pass 2 — Compute sizes  `q_layout_measure()`
@@ -384,7 +384,7 @@ void q_layout_line_wrap(q_box_t *inline_container);
  * Destroys old layout tree, rebuilds from scratch.
  * Called on: initial load, window resize, DOM mutation that affects layout.
  */
-void q_layout_relayout(celerity_view_t *view);
+void q_layout_relayout(quanton_view_t *view);
 ```
 
 ---
@@ -485,7 +485,7 @@ void q_paint_composite(uint8_t *dst, int dst_w, int dst_h,
  * blit all tiles into view->framebuffer.
  * Called after q_paint_box(view->layout_root).
  */
-void q_composite_frame(celerity_view_t *view);
+void q_composite_frame(quanton_view_t *view);
 ```
 
 ---
@@ -506,7 +506,7 @@ q_box_t *q_hit_test(q_box_t *root, int x, int y);
  *      (lxb_dom_event_*) so that lexbor-level listeners fire.
  *   3. Call view->on_event(view, event, userdata) for the app-level callback.
  */
-void q_event_dispatch(celerity_view_t *view, q_event_t *event);
+void q_event_dispatch(quanton_view_t *view, q_event_t *event);
 
 /*
  * Convenience: walk the DOM ancestor chain from `node` and return the
@@ -533,32 +533,32 @@ typedef enum {
 } q_dirty_flags_t;
 
 /* Mark a subtree dirty; will be processed on next q_view_update(). */
-void q_dom_mark_dirty(celerity_view_t *view,
+void q_dom_mark_dirty(quanton_view_t *view,
                         lxb_dom_node_t *node,
                         q_dirty_flags_t flags);
 
 /* Set an attribute on an element and schedule appropriate dirty. */
-lxb_status_t q_dom_set_attr(celerity_view_t *view,
+lxb_status_t q_dom_set_attr(quanton_view_t *view,
                               lxb_dom_element_t *el,
                               const char *name, const char *value);
 
 /* Remove an attribute. */
-lxb_status_t q_dom_remove_attr(celerity_view_t *view,
+lxb_status_t q_dom_remove_attr(quanton_view_t *view,
                                  lxb_dom_element_t *el,
                                  const char *name);
 
 /* Set element.textContent — replaces all children with a single text node. */
-lxb_status_t q_dom_set_text_content(celerity_view_t *view,
+lxb_status_t q_dom_set_text_content(quanton_view_t *view,
                                       lxb_dom_element_t *el,
                                       const char *text, size_t len);
 
 /* Append a new child element. */
-lxb_dom_element_t *q_dom_append_element(celerity_view_t *view,
+lxb_dom_element_t *q_dom_append_element(quanton_view_t *view,
                                           lxb_dom_element_t *parent,
                                           const char *tag_name);
 
 /* Remove a node from the tree. */
-lxb_status_t q_dom_remove_node(celerity_view_t *view,
+lxb_status_t q_dom_remove_node(quanton_view_t *view,
                                  lxb_dom_node_t *node);
 
 /*
@@ -566,18 +566,18 @@ lxb_status_t q_dom_remove_node(celerity_view_t *view,
  * These manipulate the `class` attribute string
  * and are built on top of q_dom_set_attr.
  */
-void q_dom_add_class(celerity_view_t *view,
+void q_dom_add_class(quanton_view_t *view,
                        lxb_dom_element_t *el, const char *cls);
-void q_dom_remove_class(celerity_view_t *view,
+void q_dom_remove_class(quanton_view_t *view,
                           lxb_dom_element_t *el, const char *cls);
 bool q_dom_has_class(lxb_dom_element_t *el, const char *cls);
 
 /* querySelector using lexbor's selectors module */
-lxb_dom_element_t *q_dom_query_selector(celerity_view_t *view,
+lxb_dom_element_t *q_dom_query_selector(quanton_view_t *view,
                                           const char *selector);
 
 /* querySelectorAll — fills `out` array, returns count */
-size_t q_dom_query_selector_all(celerity_view_t *view,
+size_t q_dom_query_selector_all(quanton_view_t *view,
                                   const char *selector,
                                   lxb_dom_element_t **out, size_t out_max);
 ```
@@ -624,15 +624,15 @@ This is what framework users see.
 #include "lexbor/html/html.h"   /* lxb_html_document_t, lxb_dom_node_t, etc. */
 
 /* ── opaque handles ── */
-typedef struct celerity_ctx    celerity_ctx_t;
-typedef struct celerity_view   celerity_view_t;
+typedef struct quanton_ctx    quanton_ctx_t;
+typedef struct quanton_view   quanton_view_t;
 typedef struct q_box         q_box_t;
 
 /* ── event types (see section 7) ── */
 /* ... (include the q_event_type_t and q_event_t definitions) ... */
 
 /* ── callbacks ── */
-typedef void (*q_event_handler_fn)(celerity_view_t *view,
+typedef void (*q_event_handler_fn)(quanton_view_t *view,
                                      const q_event_t *event,
                                      void *userdata);
 
@@ -642,35 +642,35 @@ typedef void (*q_event_handler_fn)(celerity_view_t *view,
  * Initialize a Quanton context.
  * backend_name: "x11" or "sdl2"
  */
-celerity_ctx_t *celerity_init(const char *backend_name);
-void            celerity_shutdown(celerity_ctx_t *ctx);
+quanton_ctx_t *quanton_init(const char *backend_name);
+void            quanton_shutdown(quanton_ctx_t *ctx);
 
 /*
  * Create a new view (window).
  * width/height: initial viewport in px.
  * title: window title string.
  */
-celerity_view_t *celerity_view_create(celerity_ctx_t *ctx,
+quanton_view_t *quanton_view_create(quanton_ctx_t *ctx,
                                       int width, int height,
                                       const char *title);
-void             celerity_view_destroy(celerity_view_t *view);
+void             quanton_view_destroy(quanton_view_t *view);
 
 /*
  * Load and render a local HTML file.
  * url must be "file://..." or "app://..."
  */
-int  celerity_view_load_url(celerity_view_t *view, const char *url);
+int  quanton_view_load_url(quanton_view_t *view, const char *url);
 
 /*
  * Load HTML from a string in memory.
  */
-int  celerity_view_load_html(celerity_view_t *view,
+int  quanton_view_load_html(quanton_view_t *view,
                              const char *html, size_t len);
 
 /*
  * Set the event handler. Called for all user input and window events.
  */
-void celerity_view_set_event_handler(celerity_view_t *view,
+void quanton_view_set_event_handler(quanton_view_t *view,
                                      q_event_handler_fn fn,
                                      void *userdata);
 
@@ -679,45 +679,45 @@ void celerity_view_set_event_handler(celerity_view_t *view,
  * blit to screen. Call in a loop.
  * Returns false when the view should close.
  */
-bool celerity_view_update(celerity_view_t *view);
+bool quanton_view_update(quanton_view_t *view);
 
 /*
  * Force a synchronous full relayout + repaint.
  * Usually not needed; use q_dom_mark_dirty instead.
  */
-void celerity_view_refresh(celerity_view_t *view);
+void quanton_view_refresh(quanton_view_t *view);
 
 /* ── DOM access ── */
 
 /* Get the root document node. */
-lxb_html_document_t *celerity_view_get_document(celerity_view_t *view);
+lxb_html_document_t *quanton_view_get_document(quanton_view_t *view);
 
 /* querySelector */
-lxb_dom_element_t *celerity_query_selector(celerity_view_t *view,
+lxb_dom_element_t *quanton_query_selector(quanton_view_t *view,
                                            const char *selector);
-size_t             celerity_query_selector_all(celerity_view_t *view,
+size_t             quanton_query_selector_all(quanton_view_t *view,
                                                const char *selector,
                                                lxb_dom_element_t **out,
                                                size_t out_max);
 
 /* ── DOM mutation ── */
-int  celerity_set_attr(celerity_view_t *view,
+int  quanton_set_attr(quanton_view_t *view,
                        lxb_dom_element_t *el,
                        const char *name, const char *value);
-int  celerity_remove_attr(celerity_view_t *view,
+int  quanton_remove_attr(quanton_view_t *view,
                           lxb_dom_element_t *el, const char *name);
-int  celerity_set_text_content(celerity_view_t *view,
+int  quanton_set_text_content(quanton_view_t *view,
                                lxb_dom_element_t *el,
                                const char *text, size_t len);
-lxb_dom_element_t *celerity_append_element(celerity_view_t *view,
+lxb_dom_element_t *quanton_append_element(quanton_view_t *view,
                                            lxb_dom_element_t *parent,
                                            const char *tag_name);
-int  celerity_remove_node(celerity_view_t *view, lxb_dom_node_t *node);
-void celerity_add_class(celerity_view_t *view,
+int  quanton_remove_node(quanton_view_t *view, lxb_dom_node_t *node);
+void quanton_add_class(quanton_view_t *view,
                         lxb_dom_element_t *el, const char *cls);
-void celerity_remove_class(celerity_view_t *view,
+void quanton_remove_class(quanton_view_t *view,
                            lxb_dom_element_t *el, const char *cls);
-bool celerity_has_class(lxb_dom_element_t *el, const char *cls);
+bool quanton_has_class(lxb_dom_element_t *el, const char *cls);
 
 /* ── Font registration ── */
 
@@ -725,18 +725,18 @@ bool celerity_has_class(lxb_dom_element_t *el, const char *cls);
  * Register a TTF font file for use by CSS font-family names.
  * family_name: the name used in CSS font-family (e.g. "MyFont").
  */
-int celerity_register_font(celerity_ctx_t *ctx,
+int quanton_register_font(quanton_ctx_t *ctx,
                            const char *family_name,
                            const char *ttf_path,
                            int weight);   /* 400=regular, 700=bold */
 
-int celerity_register_font_mem(celerity_ctx_t *ctx,
+int quanton_register_font_mem(quanton_ctx_t *ctx,
                                const char *family_name,
                                const void *data, size_t len,
                                int weight);
 
 /* ── Resource registry ── */
-void celerity_register_resource(const char *app_path,
+void quanton_register_resource(const char *app_path,
                                 const void *data, size_t len);
 
 #endif /* CELERITY_H */
@@ -749,7 +749,7 @@ void celerity_register_resource(const char *app_path,
 ```c
 #include "quanton.h"
 
-static void on_event(celerity_view_t *view, const q_event_t *ev, void *ud) {
+static void on_event(quanton_view_t *view, const q_event_t *ev, void *ud) {
     if (ev->type == Q_EVENT_MOUSE_CLICK && ev->target) {
         /* read any attribute directly from lexbor — no custom storage */
         lxb_dom_element_t *el = lxb_dom_interface_element(ev->target);
@@ -760,27 +760,27 @@ static void on_event(celerity_view_t *view, const q_event_t *ev, void *ud) {
             printf("clicked: %s\n", (const char *)action);
 
         /* toggle a CSS class */
-        celerity_add_class(view, el, "active");
+        quanton_add_class(view, el, "active");
     }
     if (ev->type == Q_EVENT_CLOSE)
         *(bool *)ud = false;
 }
 
 int main(void) {
-    celerity_ctx_t *ctx = celerity_init("x11");
-    celerity_register_font(ctx, "sans-serif", "/usr/share/fonts/ttf/DejaVuSans.ttf", 400);
+    quanton_ctx_t *ctx = quanton_init("x11");
+    quanton_register_font(ctx, "sans-serif", "/usr/share/fonts/dejavu/DejaVuSans.ttf", 400);
 
-    celerity_view_t *view = celerity_view_create(ctx, 1280, 720, "My App");
+    quanton_view_t *view = quanton_view_create(ctx, 1280, 720, "My App");
 
     bool running = true;
-    celerity_view_set_event_handler(view, on_event, &running);
-    celerity_view_load_url(view, "file:///home/user/myapp/index.html");
+    quanton_view_set_event_handler(view, on_event, &running);
+    quanton_view_load_url(view, "file:///home/user/myapp/index.html");
 
     while (running)
-        celerity_view_update(view);
+        quanton_view_update(view);
 
-    celerity_view_destroy(view);
-    celerity_shutdown(ctx);
+    quanton_view_destroy(view);
+    quanton_shutdown(ctx);
 }
 ```
 
