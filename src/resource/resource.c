@@ -22,6 +22,10 @@ static const char *q_resource_parse_file_url(const char *url)
         path += 9;
     }
 
+    if (path[0] == '.' && (path[1] == '/' || path[1] == '\0')) {
+        return path;
+    }
+
     if (path[0] != '/') {
         return NULL;
     }

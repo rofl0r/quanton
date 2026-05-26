@@ -1,7 +1,10 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include "quanton.h"
 
+#include "libschrift/schrift.h"
+
 #include <math.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -10,6 +13,8 @@
 struct q_font {
     char *family;
     char *path;
+    SFT_Font *sft_font;
+    SFT sft;
     uint8_t *font_data;
     size_t font_len;
     float size_px;
@@ -21,25 +26,6 @@ struct q_font_cache {
     size_t count;
     size_t capacity;
 };
-
-static char *q_strdup(const char *s)
-{
-    size_t len;
-    char *copy;
-
-    if (s == NULL) {
-        return NULL;
-    }
-
-    len = strlen(s);
-    copy = (char *) malloc(len + 1);
-    if (copy == NULL) {
-        return NULL;
-    }
-
-    memcpy(copy, s, len + 1);
-    return copy;
-}
 
 static int q_cache_reserve(q_font_cache_t *cache, size_t needed)
 {
@@ -65,46 +51,73 @@ static int q_cache_reserve(q_font_cache_t *cache, size_t needed)
     return 0;
 }
 
-static uint8_t *q_read_file(const char *path, size_t *out_len)
+static int q_utf8_next(const char *text, size_t len, size_t *idx, uint32_t *out)
 {
-    FILE *fp;
-    long file_len;
-    uint8_t *buf;
-    size_t read_len;
+    unsigned char c0;
 
-    fp = fopen(path, "rb");
-    if (fp == NULL) {
-        return NULL;
+    if (*idx >= len) {
+        return 0;
     }
 
-    if (fseek(fp, 0, SEEK_END) != 0) {
-        fclose(fp);
-        return NULL;
+    c0 = (unsigned char) text[*idx];
+    if ((c0 & 0x80U) == 0) {
+        *out = c0;
+        *idx += 1;
+        return 1;
     }
 
-    file_len = ftell(fp);
-    if (file_len < 0 || fseek(fp, 0, SEEK_SET) != 0) {
-        fclose(fp);
-        return NULL;
+    if ((c0 & 0xE0U) == 0xC0U && *idx + 1 < len) {
+        unsigned char c1 = (unsigned char) text[*idx + 1];
+        if ((c1 & 0xC0U) == 0x80U) {
+            *out = ((uint32_t) (c0 & 0x1FU) << 6) | (uint32_t) (c1 & 0x3FU);
+            *idx += 2;
+            return 1;
+        }
     }
 
-    buf = (uint8_t *) malloc((size_t) file_len);
-    if (buf == NULL) {
-        fclose(fp);
-        return NULL;
+    if ((c0 & 0xF0U) == 0xE0U && *idx + 2 < len) {
+        unsigned char c1 = (unsigned char) text[*idx + 1];
+        unsigned char c2 = (unsigned char) text[*idx + 2];
+        if ((c1 & 0xC0U) == 0x80U && (c2 & 0xC0U) == 0x80U) {
+            *out = ((uint32_t) (c0 & 0x0FU) << 12)
+                 | ((uint32_t) (c1 & 0x3FU) << 6)
+                 | (uint32_t) (c2 & 0x3FU);
+            *idx += 3;
+            return 1;
+        }
     }
 
-    read_len = fread(buf, 1, (size_t) file_len, fp);
-    fclose(fp);
-    if (read_len != (size_t) file_len) {
-        free(buf);
-        return NULL;
+    if ((c0 & 0xF8U) == 0xF0U && *idx + 3 < len) {
+        unsigned char c1 = (unsigned char) text[*idx + 1];
+        unsigned char c2 = (unsigned char) text[*idx + 2];
+        unsigned char c3 = (unsigned char) text[*idx + 3];
+        if ((c1 & 0xC0U) == 0x80U && (c2 & 0xC0U) == 0x80U && (c3 & 0xC0U) == 0x80U) {
+            *out = ((uint32_t) (c0 & 0x07U) << 18)
+                 | ((uint32_t) (c1 & 0x3FU) << 12)
+                 | ((uint32_t) (c2 & 0x3FU) << 6)
+                 | (uint32_t) (c3 & 0x3FU);
+            *idx += 4;
+            return 1;
+        }
     }
 
-    if (out_len != NULL) {
-        *out_len = read_len;
+    *out = c0;
+    *idx += 1;
+    return 1;
+}
+
+static size_t q_utf8_codepoint_count(const char *text, size_t len)
+{
+    size_t i = 0;
+    size_t count = 0;
+    uint32_t codepoint;
+
+    while (q_utf8_next(text, len, &i, &codepoint)) {
+        (void) codepoint;
+        ++count;
     }
-    return buf;
+
+    return count;
 }
 
 static q_font_t *q_find_font(q_font_cache_t *cache,
@@ -117,13 +130,31 @@ static q_font_t *q_find_font(q_font_cache_t *cache,
 
     for (i = 0; i < cache->count; ++i) {
         q_font_t *font = cache->entries[i];
-        if (font->weight == weight && fabsf(font->size_px - size_px) < 0.01f &&
-            strcmp(font->family, family) == 0 && strcmp(font->path, path) == 0) {
+        if (font->weight == weight && fabsf(font->size_px - size_px) < 0.01f
+            && strcmp(font->family, family) == 0 && strcmp(font->path, path) == 0)
+        {
             return font;
         }
     }
 
     return NULL;
+}
+
+static void q_font_destroy(q_font_t *font)
+{
+    if (font == NULL) {
+        return;
+    }
+
+    free(font->family);
+    free(font->path);
+
+    if (font->sft_font != NULL) {
+        sft_freefont(font->sft_font);
+    }
+
+    free(font->font_data);
+    free(font);
 }
 
 q_font_cache_t *q_font_cache_create(void)
@@ -140,11 +171,7 @@ void q_font_cache_destroy(q_font_cache_t *cache)
     }
 
     for (i = 0; i < cache->count; ++i) {
-        q_font_t *font = cache->entries[i];
-        free(font->family);
-        free(font->path);
-        free(font->font_data);
-        free(font);
+        q_font_destroy(cache->entries[i]);
     }
 
     free(cache->entries);
@@ -157,9 +184,9 @@ q_font_t *q_font_load(q_font_cache_t *cache,
                       float size_px,
                       int weight)
 {
+    q_font_t *font;
     const char *path;
     const char *family;
-    q_font_t *font;
 
     if (cache == NULL) {
         return NULL;
@@ -178,25 +205,26 @@ q_font_t *q_font_load(q_font_cache_t *cache,
         return NULL;
     }
 
-    font->family = q_strdup(family);
-    font->path = q_strdup(path);
-    font->font_data = q_read_file(path, &font->font_len);
+    font->family = strdup(family);
+    font->path = strdup(path);
+    font->sft_font = sft_loadfile(path);
     font->size_px = size_px;
     font->weight = weight;
 
-    if (font->family == NULL || font->path == NULL || font->font_data == NULL) {
-        free(font->family);
-        free(font->path);
-        free(font->font_data);
-        free(font);
+    if (font->family == NULL || font->path == NULL || font->sft_font == NULL) {
+        q_font_destroy(font);
         return NULL;
     }
 
+    font->sft.font = font->sft_font;
+    font->sft.xScale = size_px;
+    font->sft.yScale = size_px;
+    font->sft.xOffset = 0.0;
+    font->sft.yOffset = 0.0;
+    font->sft.flags = SFT_DOWNWARD_Y;
+
     if (q_cache_reserve(cache, cache->count + 1) != 0) {
-        free(font->family);
-        free(font->path);
-        free(font->font_data);
-        free(font);
+        q_font_destroy(font);
         return NULL;
     }
 
@@ -225,27 +253,34 @@ q_font_t *q_font_load_mem(q_font_cache_t *cache,
         return NULL;
     }
 
-    font->family = q_strdup(family);
-    font->path = q_strdup("memory://font");
+    font->family = strdup(family);
+    font->path = strdup("memory://font");
     font->font_data = (uint8_t *) malloc(len);
     if (font->family == NULL || font->path == NULL || font->font_data == NULL) {
-        free(font->family);
-        free(font->path);
-        free(font->font_data);
-        free(font);
+        q_font_destroy(font);
         return NULL;
     }
 
     memcpy(font->font_data, data, len);
     font->font_len = len;
+    font->sft_font = sft_loadmem(font->font_data, len);
     font->size_px = size_px;
     font->weight = weight;
 
+    if (font->sft_font == NULL) {
+        q_font_destroy(font);
+        return NULL;
+    }
+
+    font->sft.font = font->sft_font;
+    font->sft.xScale = size_px;
+    font->sft.yScale = size_px;
+    font->sft.xOffset = 0.0;
+    font->sft.yOffset = 0.0;
+    font->sft.flags = SFT_DOWNWARD_Y;
+
     if (q_cache_reserve(cache, cache->count + 1) != 0) {
-        free(font->family);
-        free(font->path);
-        free(font->font_data);
-        free(font);
+        q_font_destroy(font);
         return NULL;
     }
 
@@ -266,8 +301,10 @@ q_font_t *q_font_match(q_font_cache_t *cache,
 
     for (i = 0; i < cache->count; ++i) {
         q_font_t *font = cache->entries[i];
-        if ((family_name == NULL || strcmp(font->family, family_name) == 0) &&
-            font->weight == weight && fabsf(font->size_px - size_px) < 0.01f) {
+        if ((family_name == NULL || strcmp(font->family, family_name) == 0)
+            && font->weight == weight
+            && fabsf(font->size_px - size_px) < 0.01f)
+        {
             return font;
         }
     }
@@ -279,41 +316,44 @@ q_font_t *q_font_match(q_font_cache_t *cache,
                        weight);
 }
 
-static size_t q_utf8_codepoint_count(const char *text, size_t len)
-{
-    size_t i;
-    size_t count = 0;
-
-    for (i = 0; i < len; ++i) {
-        unsigned char c = (unsigned char) text[i];
-        if ((c & 0xC0U) != 0x80U) {
-            ++count;
-        }
-    }
-
-    return count;
-}
-
 float q_font_measure(q_font_t *font, const char *text, size_t len)
 {
-    size_t i;
+    size_t i = 0;
     float advance = 0.0f;
+    SFT_Glyph prev = 0;
+    int has_prev = 0;
 
     if (font == NULL || text == NULL) {
         return 0.0f;
     }
 
-    for (i = 0; i < len; ++i) {
-        unsigned char c = (unsigned char) text[i];
-        if ((c & 0xC0U) == 0x80U) {
+    while (i < len) {
+        SFT_Glyph glyph;
+        SFT_GMetrics metrics;
+        uint32_t cp;
+
+        if (!q_utf8_next(text, len, &i, &cp)) {
+            break;
+        }
+
+        if (sft_lookup(&font->sft, (SFT_UChar) cp, &glyph) < 0
+            || sft_gmetrics(&font->sft, glyph, &metrics) < 0)
+        {
+            advance += font->size_px * 0.6f;
+            has_prev = 0;
             continue;
         }
 
-        if (c == ' ') {
-            advance += font->size_px * 0.33f;
-        } else {
-            advance += font->size_px * 0.60f;
+        if (has_prev) {
+            SFT_Kerning kerning;
+            if (sft_kerning(&font->sft, prev, glyph, &kerning) == 0) {
+                advance += (float) kerning.xShift;
+            }
         }
+
+        advance += (float) metrics.advanceWidth;
+        prev = glyph;
+        has_prev = 1;
     }
 
     return advance;
@@ -323,8 +363,11 @@ q_shaped_run_t *q_font_shape_run(q_font_t *font, const char *text, size_t len)
 {
     q_shaped_run_t *run;
     size_t glyph_count;
-    size_t i;
+    size_t i = 0;
     size_t g = 0;
+    SFT_Glyph prev = 0;
+    int has_prev = 0;
+    SFT_LMetrics lmetrics;
 
     if (font == NULL || text == NULL) {
         return NULL;
@@ -345,22 +388,52 @@ q_shaped_run_t *q_font_shape_run(q_font_t *font, const char *text, size_t len)
 
     run->count = glyph_count;
     run->font = font;
-    run->ascender = font->size_px * 0.8f;
-    run->descender = -font->size_px * 0.2f;
-    run->line_gap = font->size_px * 0.2f;
 
-    for (i = 0; i < len; ++i) {
-        unsigned char c = (unsigned char) text[i];
-        if ((c & 0xC0U) == 0x80U) {
-            continue;
+    if (sft_lmetrics(&font->sft, &lmetrics) == 0) {
+        run->ascender = (float) lmetrics.ascender;
+        run->descender = (float) lmetrics.descender;
+        run->line_gap = (float) lmetrics.lineGap;
+    }
+
+    while (i < len && g < glyph_count) {
+        uint32_t cp;
+        SFT_Glyph glyph;
+        SFT_GMetrics metrics;
+        float x_advance;
+        float x_offset = 0.0f;
+
+        if (!q_utf8_next(text, len, &i, &cp)) {
+            break;
         }
 
-        run->glyphs[g].codepoint = c;
-        run->glyphs[g].x_advance = (c == ' ') ? font->size_px * 0.33f : font->size_px * 0.60f;
-        run->total_advance += run->glyphs[g].x_advance;
+        if (sft_lookup(&font->sft, (SFT_UChar) cp, &glyph) < 0
+            || sft_gmetrics(&font->sft, glyph, &metrics) < 0)
+        {
+            x_advance = font->size_px * 0.6f;
+            has_prev = 0;
+        }
+        else {
+            x_advance = (float) metrics.advanceWidth;
+            if (has_prev) {
+                SFT_Kerning kerning;
+                if (sft_kerning(&font->sft, prev, glyph, &kerning) == 0) {
+                    x_offset = (float) kerning.xShift;
+                }
+            }
+
+            prev = glyph;
+            has_prev = 1;
+        }
+
+        run->glyphs[g].codepoint = cp;
+        run->glyphs[g].x_offset = x_offset;
+        run->glyphs[g].y_offset = 0.0f;
+        run->glyphs[g].x_advance = x_advance;
+        run->total_advance += x_offset + x_advance;
         ++g;
     }
 
+    run->count = g;
     return run;
 }
 

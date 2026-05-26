@@ -1,4 +1,8 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include "quanton.h"
+
+#include "lexbor/html/interfaces/document.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -12,14 +16,17 @@ struct q_document {
 
 q_document_t *q_document_create(void)
 {
-    q_document_t *doc = (q_document_t *) calloc(1, sizeof(*doc));
-    return doc;
+    return (q_document_t *) calloc(1, sizeof(q_document_t));
 }
 
 void q_document_destroy(q_document_t *doc)
 {
     if (doc == NULL) {
         return;
+    }
+
+    if (doc->document != NULL) {
+        doc->document = lxb_html_document_destroy(doc->document);
     }
 
     free(doc->html);
@@ -29,6 +36,7 @@ void q_document_destroy(q_document_t *doc)
 
 int q_document_load_html(q_document_t *doc, const char *html, size_t len, const char *base_url)
 {
+    lxb_html_document_t *new_document;
     char *new_html;
     char *new_base = NULL;
 
@@ -36,8 +44,19 @@ int q_document_load_html(q_document_t *doc, const char *html, size_t len, const 
         return -1;
     }
 
+    new_document = lxb_html_document_create();
+    if (new_document == NULL) {
+        return -1;
+    }
+
+    if (lxb_html_document_parse(new_document, (const lxb_char_t *) html, len) != LXB_STATUS_OK) {
+        (void) lxb_html_document_destroy(new_document);
+        return -1;
+    }
+
     new_html = (char *) malloc(len + 1);
     if (new_html == NULL) {
+        (void) lxb_html_document_destroy(new_document);
         return -1;
     }
 
@@ -45,19 +64,22 @@ int q_document_load_html(q_document_t *doc, const char *html, size_t len, const 
     new_html[len] = '\0';
 
     if (base_url != NULL) {
-        size_t base_len = strlen(base_url);
-        new_base = (char *) malloc(base_len + 1);
+        new_base = strdup(base_url);
         if (new_base == NULL) {
             free(new_html);
+            (void) lxb_html_document_destroy(new_document);
             return -1;
         }
+    }
 
-        memcpy(new_base, base_url, base_len + 1);
+    if (doc->document != NULL) {
+        doc->document = lxb_html_document_destroy(doc->document);
     }
 
     free(doc->html);
     free(doc->base_url);
 
+    doc->document = new_document;
     doc->html = new_html;
     doc->html_len = len;
     doc->base_url = new_base;

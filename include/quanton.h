@@ -10,6 +10,7 @@ typedef struct lxb_dom_node lxb_dom_node_t;
 typedef struct lxb_css_rule_declaration lxb_css_rule_declaration_t;
 
 typedef struct q_document q_document_t;
+typedef struct q_box q_box_t;
 typedef struct q_font q_font_t;
 typedef struct q_font_cache q_font_cache_t;
 
@@ -42,6 +43,27 @@ int q_document_load_html(q_document_t *doc, const char *html, size_t len, const 
 lxb_html_document_t *q_document_handle(q_document_t *doc);
 const lxb_css_rule_declaration_t *q_document_get_computed_style(const q_document_t *doc,
                                                                 const lxb_dom_node_t *node);
+
+/* task 4: layout pass 1 box tree builder */
+typedef enum q_box_type {
+    Q_BOX_BLOCK,
+    Q_BOX_TEXT
+} q_box_type_t;
+
+struct q_box {
+    q_box_type_t type;
+    lxb_dom_node_t *dom_node;
+    struct q_box *parent;
+    struct q_box *first_child;
+    struct q_box *last_child;
+    struct q_box *next_sibling;
+    struct q_box *prev_sibling;
+    const char *text;
+    size_t text_len;
+};
+
+q_box_t *q_layout_build_tree(q_document_t *doc);
+void q_layout_free_tree(q_box_t *root);
 
 /* task 3: font cache + libschrift wrapper surface */
 q_font_cache_t *q_font_cache_create(void);
