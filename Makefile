@@ -1,36 +1,24 @@
 CC = gcc
-CFLAGS = -std=c99 -Wall -Wextra -O0 -I.
+CFLAGS = -std=c99 -Wall -Wextra -Werror -O2 -Iinclude -I.
+LDFLAGS = -lm
 
-LEXBOR_LIBS = \
-	-llexbor-css \
-	-llexbor-html \
-	-llexbor-dom \
-	-llexbor-encoding \
-	-llexbor-engine \
-	-llexbor-ns \
-	-llexbor-punycode \
-	-llexbor-selectors \
-	-llexbor-style \
-	-llexbor-tag \
-	-llexbor-unicode \
-	-llexbor-url \
-	-llexbor-utils \
-	-llexbor-core \
+SRC = \
+src/resource/resource.c \
+src/integration/lexbor_shim.c \
+src/font/font.c
 
-LDFLAGS = -lm -lpng
-LDFLAGS_LEXBOR = -L build/make/lib $(LEXBOR_LIBS)
+OBJ = $(SRC:.c=.o)
 
-# Build lexbor using its own makefile with correct paths
-lexbor_all:
-	$(MAKE) -f lexbor.mak TOPSRC=$(CURDIR)/lexbor all
+all: libquanton.a
 
+libquanton.a: $(OBJ)
+ar rcs $@ $(OBJ)
 
-# Targets
-test: test.c libschrift/schrift.c
-	$(CC) $(CFLAGS) -o $@ test.c libschrift/schrift.c $(LDFLAGS) $(LDFLAGS_LEXBOR)
+test: tests/test_quanton.c $(SRC) include/quanton.h
+$(CC) $(CFLAGS) -o $@ tests/test_quanton.c $(SRC) $(LDFLAGS)
+./test
 
 clean:
-	rm -f test output.png
-	rm -rf lexbor/build
+rm -f $(OBJ) libquanton.a test
 
-.PHONY: clean lexbor_all
+.PHONY: all test clean
