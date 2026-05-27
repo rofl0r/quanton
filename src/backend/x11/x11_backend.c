@@ -57,9 +57,7 @@ static void rgba_to_bgrx(const uint8_t *src, uint8_t *dst, int npixels)
 
 static void x11_dispatch(quanton_view_t *view, q_event_t *ev)
 {
-    if (view->on_event != NULL) {
-        view->on_event(view, ev, view->on_event_userdata);
-    }
+    q_event_dispatch(view, ev);
 }
 
 /* ── Backend vtable functions ───────────────────────────────────────────── */

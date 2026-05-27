@@ -7,8 +7,27 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #define Q_DEFAULT_FONT_PATH "/usr/share/fonts/dejavu/DejaVuSans.ttf"
+
+static const char *q_default_font_path(void)
+{
+    static const char *paths[] = {
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans.ttf",
+    };
+    size_t i;
+
+    for (i = 0; i < sizeof(paths) / sizeof(paths[0]); ++i) {
+        if (access(paths[i], R_OK) == 0) {
+            return paths[i];
+        }
+    }
+
+    return Q_DEFAULT_FONT_PATH;
+}
 
 struct q_font {
     char *family;
@@ -193,7 +212,7 @@ q_font_t *q_font_load(q_font_cache_t *cache,
     }
 
     family = (family_name != NULL) ? family_name : "sans-serif";
-    path = (ttf_path != NULL) ? ttf_path : Q_DEFAULT_FONT_PATH;
+    path = (ttf_path != NULL) ? ttf_path : q_default_font_path();
 
     font = q_find_font(cache, family, path, size_px, weight);
     if (font != NULL) {
@@ -311,7 +330,7 @@ q_font_t *q_font_match(q_font_cache_t *cache,
 
     return q_font_load(cache,
                        (family_name != NULL) ? family_name : "sans-serif",
-                       Q_DEFAULT_FONT_PATH,
+                       q_default_font_path(),
                        size_px,
                        weight);
 }

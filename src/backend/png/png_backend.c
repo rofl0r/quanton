@@ -110,9 +110,7 @@ static void png_poll_events(quanton_view_t *view)
     ev.type = Q_EVENT_CLOSE;
 
     view->should_close = 1;
-    if (view->on_event != NULL) {
-        view->on_event(view, &ev, view->on_event_userdata);
-    }
+    q_event_dispatch(view, &ev);
 }
 
 static void png_destroy_window(quanton_view_t *view)
