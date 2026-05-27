@@ -90,7 +90,8 @@ static int q_layout_walk_node(lxb_dom_node_t *node, q_box_t *parent)
             {
                 ic = parent->last_child;
             } else {
-                ic = q_box_create(Q_BOX_INLINE_CONTAINER, node->parent, NULL, 0);
+                /* Anonymous box — no direct DOM node correspondence */
+                ic = q_box_create(Q_BOX_INLINE_CONTAINER, NULL, NULL, 0);
                 if (ic == NULL) {
                     return -1;
                 }
