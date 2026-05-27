@@ -424,6 +424,173 @@ static void q_paint_image(q_box_t *box)
     }
 }
 
+static void q_paint_background_image(q_box_t *box)
+{
+    const uint8_t *src;
+    int src_w;
+    int src_h;
+    int tile_x;
+    int tile_y;
+
+    if (box == NULL || box->tile == NULL || box->background_image == NULL) {
+        return;
+    }
+
+    src = q_image_pixels(box->background_image);
+    src_w = q_image_width(box->background_image);
+    src_h = q_image_height(box->background_image);
+    if (src == NULL || src_w <= 0 || src_h <= 0) {
+        return;
+    }
+
+    if (box->background_repeat == Q_BACKGROUND_REPEAT_NO_REPEAT) {
+        q_paint_composite(box->tile, box->tile_w, box->tile_h, src, src_w, src_h, 0, 0);
+        return;
+    }
+    if (box->background_repeat == Q_BACKGROUND_REPEAT_REPEAT_X) {
+        for (tile_x = 0; tile_x < box->tile_w; tile_x += src_w) {
+            q_paint_composite(box->tile, box->tile_w, box->tile_h, src, src_w, src_h, tile_x, 0);
+        }
+        return;
+    }
+    if (box->background_repeat == Q_BACKGROUND_REPEAT_REPEAT_Y) {
+        for (tile_y = 0; tile_y < box->tile_h; tile_y += src_h) {
+            q_paint_composite(box->tile, box->tile_w, box->tile_h, src, src_w, src_h, 0, tile_y);
+        }
+        return;
+    }
+
+    for (tile_y = 0; tile_y < box->tile_h; tile_y += src_h) {
+        for (tile_x = 0; tile_x < box->tile_w; tile_x += src_w) {
+            q_paint_composite(box->tile, box->tile_w, box->tile_h, src, src_w, src_h, tile_x, tile_y);
+        }
+    }
+}
+
+static void q_paint_text_decoration(q_box_t *box)
+{
+    int baseline;
+    int underline_y;
+    int overline_y;
+    int strike_y;
+
+    if (box == NULL || box->tile == NULL || box->text_decoration == 0u) {
+        return;
+    }
+
+    baseline = (box->run != NULL) ? (int) lroundf(box->run->ascender) : (int) lroundf(box->height * 0.8f);
+    underline_y = baseline + 1;
+    overline_y = 0;
+    strike_y = (box->run != NULL) ? (int) lroundf(baseline - (box->run->ascender * 0.5f))
+                                  : (int) lroundf(box->height * 0.5f);
+
+    if (box->text_decoration & Q_TEXT_DECORATION_UNDERLINE) {
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, 0, underline_y, box->tile_w, 1, Q_TEXT_COLOR);
+    }
+    if (box->text_decoration & Q_TEXT_DECORATION_OVERLINE) {
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, 0, overline_y, box->tile_w, 1, Q_TEXT_COLOR);
+    }
+    if (box->text_decoration & Q_TEXT_DECORATION_LINE_THROUGH) {
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, 0, strike_y, box->tile_w, 1, Q_TEXT_COLOR);
+    }
+}
+
+static int q_paint_box_has_radius(const q_box_t *box)
+{
+    return box != NULL
+        && (box->border_radius[0] > 0.0f
+            || box->border_radius[1] > 0.0f
+            || box->border_radius[2] > 0.0f
+            || box->border_radius[3] > 0.0f);
+}
+
+static void q_paint_radius_corner_clip(q_box_t *box, int corner, float radius)
+{
+    int x_start;
+    int y_start;
+    int x_end;
+    int y_end;
+    float cx;
+    float cy;
+    int x;
+    int y;
+
+    if (box == NULL || box->tile == NULL || radius <= 0.0f) {
+        return;
+    }
+
+    if (corner == 0) {
+        x_start = 0;
+        y_start = 0;
+        x_end = (int) ceilf(radius);
+        y_end = (int) ceilf(radius);
+        cx = radius;
+        cy = radius;
+    } else if (corner == 1) {
+        x_start = box->tile_w - (int) ceilf(radius);
+        y_start = 0;
+        x_end = box->tile_w;
+        y_end = (int) ceilf(radius);
+        cx = (float) box->tile_w - radius;
+        cy = radius;
+    } else if (corner == 2) {
+        x_start = box->tile_w - (int) ceilf(radius);
+        y_start = box->tile_h - (int) ceilf(radius);
+        x_end = box->tile_w;
+        y_end = box->tile_h;
+        cx = (float) box->tile_w - radius;
+        cy = (float) box->tile_h - radius;
+    } else {
+        x_start = 0;
+        y_start = box->tile_h - (int) ceilf(radius);
+        x_end = (int) ceilf(radius);
+        y_end = box->tile_h;
+        cx = radius;
+        cy = (float) box->tile_h - radius;
+    }
+
+    if (x_start < 0) {
+        x_start = 0;
+    }
+    if (y_start < 0) {
+        y_start = 0;
+    }
+    if (x_end > box->tile_w) {
+        x_end = box->tile_w;
+    }
+    if (y_end > box->tile_h) {
+        y_end = box->tile_h;
+    }
+
+    for (y = y_start; y < y_end; ++y) {
+        for (x = x_start; x < x_end; ++x) {
+            float px = (float) x + 0.5f;
+            float py = (float) y + 0.5f;
+            float dx = px - cx;
+            float dy = py - cy;
+            if (dx * dx + dy * dy > radius * radius) {
+                size_t idx = (size_t) (y * box->tile_w + x) * 4u;
+                box->tile[idx + 0] = 0u;
+                box->tile[idx + 1] = 0u;
+                box->tile[idx + 2] = 0u;
+                box->tile[idx + 3] = 0u;
+            }
+        }
+    }
+}
+
+static void q_paint_apply_border_radius(q_box_t *box)
+{
+    if (!q_paint_box_has_radius(box)) {
+        return;
+    }
+
+    q_paint_radius_corner_clip(box, 0, box->border_radius[0]);
+    q_paint_radius_corner_clip(box, 1, box->border_radius[1]);
+    q_paint_radius_corner_clip(box, 2, box->border_radius[2]);
+    q_paint_radius_corner_clip(box, 3, box->border_radius[3]);
+}
+
 void q_paint_fill_rect(uint8_t *pixels, int buf_w, int buf_h,
                        int x, int y, int w, int h, uint32_t color)
 {
@@ -667,11 +834,15 @@ void q_paint_box(q_box_t *box)
             || box->type == Q_BOX_TABLE_CELL
             || box->type == Q_BOX_TABLE_CAPTION) {
         q_paint_fill_rect(box->tile, w, h, 0, 0, w, h, box->background_color);
+        q_paint_background_image(box);
         q_paint_borders(box);
     } else if (box->type == Q_BOX_IMAGE) {
         q_paint_image(box);
     } else if (box->type == Q_BOX_TEXT && box->run != NULL) {
         q_font_render_run(box->run, Q_TEXT_COLOR, box->tile, w, h, 0, 0);
+        q_paint_text_decoration(box);
+    } else if (box->type == Q_BOX_TEXT) {
+        q_paint_text_decoration(box);
     }
 
     for (child = box->first_child; child != NULL; child = child->next_sibling) {
@@ -706,6 +877,7 @@ void q_paint_box(q_box_t *box)
 
     q_paint_scrollbar(box, 1);
     q_paint_scrollbar(box, 0);
+    q_paint_apply_border_radius(box);
 
     free(entries);
 }
