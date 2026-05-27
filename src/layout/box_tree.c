@@ -359,6 +359,24 @@ static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
             }
             box->overflow_x = ov;
             box->overflow_y = ov;
+        } else if (css_name_eq(prop, prop_len, "float")) {
+            if (css_value_is(val, val_len, "left")) {
+                box->float_type = Q_FLOAT_LEFT;
+            } else if (css_value_is(val, val_len, "right")) {
+                box->float_type = Q_FLOAT_RIGHT;
+            } else {
+                box->float_type = Q_FLOAT_NONE;
+            }
+        } else if (css_name_eq(prop, prop_len, "clear")) {
+            if (css_value_is(val, val_len, "left")) {
+                box->clear_type = Q_CLEAR_LEFT;
+            } else if (css_value_is(val, val_len, "right")) {
+                box->clear_type = Q_CLEAR_RIGHT;
+            } else if (css_value_is(val, val_len, "both")) {
+                box->clear_type = Q_CLEAR_BOTH;
+            } else {
+                box->clear_type = Q_CLEAR_NONE;
+            }
         }
     }
 }
@@ -473,6 +491,31 @@ static int q_text_is_whitespace(const lxb_char_t *text, size_t len)
     return 1;
 }
 
+static q_box_t *q_ensure_inline_container(q_box_t *parent)
+{
+    q_box_t *ic;
+
+    if (parent == NULL) {
+        return NULL;
+    }
+
+    if (parent->last_child != NULL
+        && parent->last_child->type == Q_BOX_INLINE_CONTAINER)
+    {
+        return parent->last_child;
+    }
+
+    ic = q_box_create(Q_BOX_INLINE_CONTAINER, NULL, NULL, 0);
+    if (ic == NULL) {
+        return NULL;
+    }
+    if (q_box_append_child(parent, ic) != 0) {
+        free(ic);
+        return NULL;
+    }
+    return ic;
+}
+
 static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *parent)
 {
     q_box_t *current = NULL;
@@ -515,21 +558,9 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
             q_box_t *ic;
             q_box_t *text_box;
 
-            /* Reuse or create anonymous inline container */
-            if (parent != NULL && parent->last_child != NULL
-                && parent->last_child->type == Q_BOX_INLINE_CONTAINER)
-            {
-                ic = parent->last_child;
-            } else {
-                /* Anonymous box — no direct DOM node correspondence */
-                ic = q_box_create(Q_BOX_INLINE_CONTAINER, NULL, NULL, 0);
-                if (ic == NULL) {
-                    return -1;
-                }
-                if (parent != NULL && q_box_append_child(parent, ic) != 0) {
-                    free(ic);
-                    return -1;
-                }
+            ic = q_ensure_inline_container(parent);
+            if (ic == NULL) {
+                return -1;
             }
 
             text_box = q_box_create(Q_BOX_TEXT, node,
@@ -547,9 +578,17 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
         return 0;
     }
 
-    if (current != NULL && parent != NULL && q_box_append_child(parent, current) != 0) {
-        free(current);
-        return -1;
+    if (current != NULL && parent != NULL) {
+        if (current->type == Q_BOX_IMAGE) {
+            q_box_t *ic = q_ensure_inline_container(parent);
+            if (ic == NULL || q_box_append_child(ic, current) != 0) {
+                free(current);
+                return -1;
+            }
+        } else if (q_box_append_child(parent, current) != 0) {
+            free(current);
+            return -1;
+        }
     }
 
     child_parent = (current != NULL) ? current : parent;

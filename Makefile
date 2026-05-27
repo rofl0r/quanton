@@ -35,6 +35,7 @@ src/integration/lexbor_shim.c \
 src/layout/box_tree.c \
 src/layout/block_layout.c \
 src/layout/inline_layout.c \
+src/layout/float_layout.c \
 src/event/event.c \
 src/paint/paint.c \
 src/paint/composite.c \

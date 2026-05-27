@@ -1,6 +1,7 @@
 #include "quanton.h"
 
 #include <math.h>
+#include <string.h>
 
 #define Q_LAYOUT_DEFAULT_FONT_SIZE 16.0f
 #define Q_LAYOUT_DEFAULT_FONT_WEIGHT 400
@@ -172,6 +173,49 @@ static void q_layout_clamp_box_scroll(q_box_t *box, float content_w, float conte
     }
 }
 
+static float q_layout_maxf(float a, float b)
+{
+    return (a > b) ? a : b;
+}
+
+static float q_layout_block_place_float(q_float_ctx_t *ctx, q_box_t *child,
+                                        float containing_w, float start_y)
+{
+    float y = start_y;
+    size_t guard = 0;
+
+    while (guard < 4096u) {
+        float line_h = (child->height > 0.0f) ? child->height : 1.0f;
+        float left = q_float_ctx_left_edge(ctx, y, line_h);
+        float right = q_float_ctx_right_edge(ctx, y, line_h, containing_w);
+        float avail = right - left;
+
+        if (avail >= child->width) {
+            if (child->float_type == Q_FLOAT_RIGHT) {
+                child->x = right - child->width;
+            } else {
+                child->x = left;
+            }
+            child->y = y;
+            return y + child->height;
+        }
+
+        {
+            float next_y = q_float_ctx_next_y(ctx, y, line_h);
+            if (next_y <= y) {
+                y += line_h;
+            } else {
+                y = next_y;
+            }
+        }
+        ++guard;
+    }
+
+    child->x = 0.0f;
+    child->y = y;
+    return y + child->height;
+}
+
 void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
 {
     q_box_t *child;
@@ -261,14 +305,81 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
         q_layout_line_wrap(box);
     }
 
-    for (child = box->first_child; child != NULL; child = child->next_sibling) {
-        q_layout_measure(child, box->width, containing_h);
-        if (!q_is_out_of_flow(child)) {
-            used_h += child->height;
-            if (child->width > max_w) {
-                max_w = child->width;
+    {
+        q_float_ctx_t float_ctx;
+        float flow_y = 0.0f;
+
+        memset(&float_ctx, 0, sizeof(float_ctx));
+        for (child = box->first_child; child != NULL; child = child->next_sibling) {
+            if (q_is_out_of_flow(child)) {
+                continue;
+            }
+
+            if (child->float_type != Q_FLOAT_NONE) {
+                float float_start_y = flow_y;
+                float placed_bottom;
+
+                if (child->clear_type != Q_CLEAR_NONE) {
+                    float_start_y = q_layout_maxf(float_start_y,
+                                                  q_float_ctx_clear_y(&float_ctx, child->clear_type));
+                }
+
+                q_layout_measure(child, box->width, containing_h);
+                placed_bottom = q_layout_block_place_float(&float_ctx, child, box->width, float_start_y);
+                if (q_float_ctx_add(&float_ctx, child, child->float_type) != 0) {
+                    continue;
+                }
+                if (child->x + child->width > max_w) {
+                    max_w = child->x + child->width;
+                }
+                if (placed_bottom > used_h) {
+                    used_h = placed_bottom;
+                }
+                continue;
+            }
+
+            {
+                float child_y = flow_y;
+                float probe_h = 1.0f;
+                float left;
+                float right;
+                float avail_w;
+
+                if (child->clear_type != Q_CLEAR_NONE) {
+                    child_y = q_layout_maxf(child_y,
+                                            q_float_ctx_clear_y(&float_ctx, child->clear_type));
+                }
+
+                left = q_float_ctx_left_edge(&float_ctx, child_y, probe_h);
+                right = q_float_ctx_right_edge(&float_ctx, child_y, probe_h, box->width);
+                avail_w = right - left;
+                if (avail_w < 0.0f) {
+                    avail_w = 0.0f;
+                }
+
+                q_layout_measure(child, avail_w, containing_h);
+
+                left = q_float_ctx_left_edge(&float_ctx, child_y, q_layout_maxf(child->height, 1.0f));
+                right = q_float_ctx_right_edge(&float_ctx, child_y,
+                                               q_layout_maxf(child->height, 1.0f), box->width);
+                avail_w = right - left;
+                if (avail_w < 0.0f) {
+                    avail_w = 0.0f;
+                }
+                if (child->type == Q_BOX_INLINE_CONTAINER) {
+                    q_layout_measure(child, avail_w, containing_h);
+                }
+
+                child->x = left;
+                child->y = child_y;
+                flow_y = child_y + child->height;
+                used_h = q_layout_maxf(used_h, flow_y);
+                if (child->x + child->width > max_w) {
+                    max_w = child->x + child->width;
+                }
             }
         }
+        q_float_ctx_reset(&float_ctx);
     }
 
     if (isnan(box->style_width) && box->width <= 0.0f) {
@@ -284,7 +395,6 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
 void q_layout_position(q_box_t *box, float origin_x, float origin_y)
 {
     q_box_t *child;
-    float child_y;
     float cursor_x;
 
     if (box == NULL) {
@@ -316,11 +426,9 @@ void q_layout_position(q_box_t *box, float origin_x, float origin_y)
         return;
     }
 
-    child_y = origin_y;
     for (child = box->first_child; child != NULL; child = child->next_sibling) {
         if (!q_is_out_of_flow(child)) {
-            q_layout_position(child, origin_x, child_y);
-            child_y += child->height;
+            q_layout_position(child, origin_x + child->x, origin_y + child->y);
         }
     }
 }

@@ -196,6 +196,24 @@ static void capture_event_handler(quanton_view_t *view, const q_event_t *event, 
 }
 
 #if defined(QUANTON_BACKEND_PNG)
+static int layout_has_text_box(const q_box_t *box)
+{
+    const q_box_t *child;
+
+    if (box == NULL) {
+        return 0;
+    }
+    if (box->type == Q_BOX_TEXT) {
+        return 1;
+    }
+    for (child = box->first_child; child != NULL; child = child->next_sibling) {
+        if (layout_has_text_box(child)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void render_html_case_to_png(const char *html_url, const char *output_png, int width, int height)
 {
     q_document_t *doc;
@@ -225,7 +243,9 @@ static void render_html_case_to_png(const char *html_url, const char *output_png
     assert(ctx.backend->create_window(&view, width, height, output_png) == 0);
     q_composite_frame(&view);
     assert(framebuffer_has_ink(view.framebuffer, view.vp_width, view.vp_height));
-    assert(framebuffer_has_text_shades(view.framebuffer, view.vp_width, view.vp_height));
+    if (layout_has_text_box(root)) {
+        assert(framebuffer_has_text_shades(view.framebuffer, view.vp_width, view.vp_height));
+    }
     ctx.backend->blit(&view);
 
     fp = fopen(output_png, "rb");
@@ -499,6 +519,55 @@ int main(int argc, char **argv)
         q_image_release(img);
     }
 
+    /* ── Inline image flow (img defaults to inline-level) ────────────────── */
+    {
+        q_document_t *img_doc;
+        q_box_t *img_root;
+        q_box_t *img_parent;
+        q_box_t *img_ic;
+        q_box_t *img_line;
+        q_box_t *img_a;
+        q_box_t *img_b;
+        q_box_t *img_c;
+
+        img_doc = q_document_create();
+        assert(img_doc != NULL);
+        assert(q_document_load_url(img_doc, "file://./tests/html/img_element.html") == 0);
+
+        img_root = q_layout_build_tree(img_doc);
+        assert(img_root != NULL);
+        q_layout_measure(img_root, 240.0f, 0.0f);
+        q_layout_position(img_root, 0.0f, 0.0f);
+
+        img_parent = img_root->first_child;
+        assert(img_parent != NULL);
+        img_ic = img_parent->first_child;
+        assert(img_ic != NULL);
+        assert(img_ic->type == Q_BOX_INLINE_CONTAINER);
+        img_line = img_ic->first_child;
+        assert(img_line != NULL);
+        assert(img_line->type == Q_BOX_LINE);
+
+        img_a = img_line->first_child;
+        assert(img_a != NULL);
+        img_b = img_a->next_sibling;
+        assert(img_b != NULL);
+        img_c = img_b->next_sibling;
+        assert(img_c != NULL);
+        assert(img_c->next_sibling == NULL);
+
+        assert(img_a->type == Q_BOX_IMAGE);
+        assert(img_b->type == Q_BOX_IMAGE);
+        assert(img_c->type == Q_BOX_IMAGE);
+        assert(nearly_equal(img_a->y, img_b->y));
+        assert(nearly_equal(img_b->y, img_c->y));
+        assert(img_b->x > img_a->x);
+        assert(img_c->x > img_b->x);
+
+        q_layout_free_tree(img_root);
+        q_document_destroy(img_doc);
+    }
+
     /* ── overflow:hidden clipping ────────────────────────────────────────── */
     {
         q_document_t *ov_doc;
@@ -552,6 +621,47 @@ int main(int argc, char **argv)
 
         q_layout_free_tree(ov_root);
         q_document_destroy(ov_doc);
+    }
+
+    /* ── Float layout context (phase 7) ──────────────────────────────────── */
+    {
+        q_document_t *flt_doc;
+        q_box_t *flt_root;
+        q_box_t *flt_container;
+        q_box_t *flt_ic;
+        q_box_t *flt_line;
+        q_box_t *flt_img;
+        q_box_t *flt_text;
+
+        flt_doc = q_document_create();
+        assert(flt_doc != NULL);
+        assert(q_document_load_url(flt_doc, "file://./tests/html/float_text_wrap.html") == 0);
+
+        flt_root = q_layout_build_tree(flt_doc);
+        assert(flt_root != NULL);
+        q_layout_measure(flt_root, 240.0f, 0.0f);
+        q_layout_position(flt_root, 0.0f, 0.0f);
+
+        flt_container = flt_root->first_child;
+        assert(flt_container != NULL);
+        flt_ic = flt_container->first_child;
+        assert(flt_ic != NULL);
+        flt_line = flt_ic->first_child;
+        assert(flt_line != NULL);
+        assert(flt_line->type == Q_BOX_LINE);
+
+        flt_img = flt_line->first_child;
+        assert(flt_img != NULL);
+        assert(flt_img->type == Q_BOX_IMAGE);
+        assert(flt_img->float_type == Q_FLOAT_LEFT);
+
+        flt_text = flt_img->next_sibling;
+        assert(flt_text != NULL);
+        assert(flt_text->type == Q_BOX_TEXT);
+        assert(flt_text->x >= flt_img->x + flt_img->width);
+
+        q_layout_free_tree(flt_root);
+        q_document_destroy(flt_doc);
     }
 
     /* ── Root-level scrolling + Q_DIRTY_SCROLL ──────────────────────────── */
@@ -833,6 +943,7 @@ int main(int argc, char **argv)
         render_html_case_to_png("file://./tests/html/flex_row.html", "output_flex_row.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/absolute_pos.html", "output_absolute_pos.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/img_element.html", "output_img_element.png", TEST_WIDTH, TEST_HEIGHT);
+        render_html_case_to_png("file://./tests/html/float_text_wrap.html", "output_float_text_wrap.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/z_index_stack.html", "output_z_index_stack.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/overflow_hidden.html", "output_overflow_hidden.png", TEST_WIDTH, TEST_HEIGHT);
 #else

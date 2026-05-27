@@ -119,6 +119,29 @@ typedef enum q_overflow_type {
     Q_OVERFLOW_CLIP    = 4,
 } q_overflow_type_t;
 
+typedef enum q_float_type {
+    Q_FLOAT_NONE  = 0,
+    Q_FLOAT_LEFT  = 1,
+    Q_FLOAT_RIGHT = 2,
+} q_float_type_t;
+
+typedef enum q_clear_type {
+    Q_CLEAR_NONE  = 0,
+    Q_CLEAR_LEFT  = 1,
+    Q_CLEAR_RIGHT = 2,
+    Q_CLEAR_BOTH  = 3,
+} q_clear_type_t;
+
+typedef struct q_float_entry {
+    struct q_box       *box;
+    struct q_float_entry *next;
+} q_float_entry_t;
+
+typedef struct q_float_ctx {
+    q_float_entry_t *left_floats;
+    q_float_entry_t *right_floats;
+} q_float_ctx_t;
+
 struct q_box {
     q_box_type_t     type;
     int              is_flex_container;
@@ -157,6 +180,8 @@ struct q_box {
     float style_left;
     float style_width;
     float style_height;
+    q_float_type_t float_type;
+    q_clear_type_t clear_type;
 };
 
 /* ── Dirty flags for incremental relayout ── */
@@ -196,6 +221,12 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h);
 void q_layout_position(q_box_t *box, float origin_x, float origin_y);
 void q_layout_position_absolute(q_box_t *root);
 void q_layout_line_wrap(q_box_t *inline_container);
+float q_float_ctx_left_edge(const q_float_ctx_t *ctx, float y, float line_h);
+float q_float_ctx_right_edge(const q_float_ctx_t *ctx, float y, float line_h, float containing_w);
+float q_float_ctx_clear_y(const q_float_ctx_t *ctx, q_clear_type_t clear);
+float q_float_ctx_next_y(const q_float_ctx_t *ctx, float y, float line_h);
+int q_float_ctx_add(q_float_ctx_t *ctx, q_box_t *float_box, q_float_type_t side);
+void q_float_ctx_reset(q_float_ctx_t *ctx);
 void q_paint_box(q_box_t *box);
 void q_paint_fill_rect(uint8_t *pixels, int buf_w, int buf_h,
                        int x, int y, int w, int h, uint32_t color);

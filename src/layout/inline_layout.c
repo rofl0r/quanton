@@ -114,72 +114,115 @@ void q_layout_line_wrap(q_box_t *ic)
     ic->last_child = NULL;
 
     for (; orig != NULL; orig = next_orig) {
-        const char *text = orig->text;
-        size_t text_len = orig->text_len;
-        size_t i = 0;
-
         next_orig = orig->next_sibling;
 
-        while (i < text_len) {
-            size_t word_start;
-            size_t word_len;
-            float word_w;
-            float word_h;
+        if (orig->type == Q_BOX_TEXT) {
+            const char *text = orig->text;
+            size_t text_len = orig->text_len;
+            size_t i = 0;
 
-            /* skip whitespace */
-            while (i < text_len && isspace((unsigned char) text[i])) {
-                ++i;
-            }
-            if (i >= text_len) {
-                break;
-            }
+            while (i < text_len) {
+                size_t word_start;
+                size_t word_len;
+                float word_w;
+                float word_h;
 
-            word_start = i;
-            while (i < text_len && !isspace((unsigned char) text[i])) {
-                ++i;
-            }
-            word_len = i - word_start;
+                /* skip whitespace */
+                while (i < text_len && isspace((unsigned char) text[i])) {
+                    ++i;
+                }
+                if (i >= text_len) {
+                    break;
+                }
 
-            word_w = measure_word(text + word_start, word_len);
-            word_h = Q_LINE_DEFAULT_FONT_SIZE * 1.2f;
+                word_start = i;
+                while (i < text_len && !isspace((unsigned char) text[i])) {
+                    ++i;
+                }
+                word_len = i - word_start;
 
-            /* Open first line if needed */
-            if (line == NULL) {
-                line = make_line_box(ic);
+                word_w = measure_word(text + word_start, word_len);
+                word_h = Q_LINE_DEFAULT_FONT_SIZE * 1.2f;
+
+                /* Open first line if needed */
                 if (line == NULL) {
+                    line = make_line_box(ic);
+                    if (line == NULL) {
+                        goto cleanup;
+                    }
+                    cursor_x = 0.0f;
+                    line_h = 0.0f;
+                }
+
+                /* Break to new line when word doesn't fit on a non-empty line */
+                if (line->first_child != NULL && container_w > 0.0f
+                    && cursor_x + word_w > container_w) {
+                    line->height = line_h;
+                    line = make_line_box(ic);
+                    if (line == NULL) {
+                        goto cleanup;
+                    }
+                    cursor_x = 0.0f;
+                    line_h = 0.0f;
+                }
+
+                if (make_word_box(line, orig->dom_node, text + word_start, word_len,
+                                  word_w, word_h) == NULL) {
                     goto cleanup;
                 }
-                cursor_x = 0.0f;
-                line_h = 0.0f;
-            }
 
-            /* Break to new line when word doesn't fit on a non-empty line */
-            if (line->first_child != NULL && container_w > 0.0f
-                && cursor_x + word_w > container_w) {
-                line->height = line_h;
-                line = make_line_box(ic);
-                if (line == NULL) {
-                    goto cleanup;
+                cursor_x += word_w + Q_LINE_WORD_SPACING;
+                if (word_h > line_h) {
+                    line_h = word_h;
                 }
-                cursor_x = 0.0f;
-                line_h = 0.0f;
             }
 
-            if (make_word_box(line, orig->dom_node, text + word_start, word_len,
-                              word_w, word_h) == NULL) {
-                goto cleanup;
-            }
-
-            cursor_x += word_w + Q_LINE_WORD_SPACING;
-            if (word_h > line_h) {
-                line_h = word_h;
-            }
+            /* Free the original (unsplit) text box; text pointer is DOM-owned */
+            q_shaped_run_free(orig->run);
+            free(orig->tile);
+            free(orig);
+            continue;
         }
 
-        /* Free the original (unsplit) text box; text pointer is DOM-owned */
-        q_shaped_run_free(orig->run);
-        free(orig->tile);
-        free(orig);
+        q_layout_measure(orig, container_w, 0.0f);
+        if (orig->height <= 0.0f) {
+            orig->height = Q_LINE_DEFAULT_FONT_SIZE * 1.2f;
+        }
+
+        if (line == NULL) {
+            line = make_line_box(ic);
+            if (line == NULL) {
+                goto cleanup;
+            }
+            cursor_x = 0.0f;
+            line_h = 0.0f;
+        }
+
+        if (line->first_child != NULL && container_w > 0.0f
+            && cursor_x + orig->width > container_w) {
+            line->height = line_h;
+            line = make_line_box(ic);
+            if (line == NULL) {
+                goto cleanup;
+            }
+            cursor_x = 0.0f;
+            line_h = 0.0f;
+        }
+
+        orig->next_sibling = NULL;
+        orig->prev_sibling = line->last_child;
+        orig->parent = line;
+        if (line->last_child != NULL) {
+            line->last_child->next_sibling = orig;
+        } else {
+            line->first_child = orig;
+        }
+        line->last_child = orig;
+
+        cursor_x += orig->width + Q_LINE_WORD_SPACING;
+        if (orig->height > line_h) {
+            line_h = orig->height;
+        }
     }
 
     if (line != NULL) {
@@ -191,8 +234,12 @@ cleanup:
     /* Allocation failure: free remaining original text boxes */
     for (; orig != NULL; orig = next_orig) {
         next_orig = orig->next_sibling;
-        q_shaped_run_free(orig->run);
-        free(orig->tile);
-        free(orig);
+        if (orig->type == Q_BOX_TEXT) {
+            q_shaped_run_free(orig->run);
+            free(orig->tile);
+            free(orig);
+        } else {
+            q_layout_free_tree(orig);
+        }
     }
 }
