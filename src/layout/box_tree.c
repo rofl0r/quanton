@@ -7,6 +7,10 @@
 #include <ctype.h>
 #include <stdlib.h>
 
+#define Q_DEFAULT_BACKGROUND 0xF2F2F2FFu
+#define Q_DEFAULT_BORDER 0x303030FFu
+#define Q_DEFAULT_BORDER_WIDTH 1.0f
+
 static q_box_t *q_box_create(q_box_type_t type, lxb_dom_node_t *dom_node,
                               const char *text, size_t text_len)
 {
@@ -19,6 +23,15 @@ static q_box_t *q_box_create(q_box_type_t type, lxb_dom_node_t *dom_node,
     box->dom_node = dom_node;
     box->text = text;
     box->text_len = text_len;
+    box->background_color = Q_DEFAULT_BACKGROUND;
+    box->border_color[0] = Q_DEFAULT_BORDER;
+    box->border_color[1] = Q_DEFAULT_BORDER;
+    box->border_color[2] = Q_DEFAULT_BORDER;
+    box->border_color[3] = Q_DEFAULT_BORDER;
+    box->border_width[0] = Q_DEFAULT_BORDER_WIDTH;
+    box->border_width[1] = Q_DEFAULT_BORDER_WIDTH;
+    box->border_width[2] = Q_DEFAULT_BORDER_WIDTH;
+    box->border_width[3] = Q_DEFAULT_BORDER_WIDTH;
 
     return box;
 }
@@ -145,5 +158,6 @@ void q_layout_free_tree(q_box_t *root)
     }
 
     q_shaped_run_free(root->run);
+    free(root->tile);
     free(root);
 }

@@ -25,6 +25,7 @@ src/resource/resource.c \
 src/integration/lexbor_shim.c \
 src/layout/box_tree.c \
 src/layout/block_layout.c \
+src/paint/paint.c \
 src/font/font.c \
 third_party/libschrift/schrift.c
 

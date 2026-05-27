@@ -65,12 +65,25 @@ struct q_box {
     const char *text;
     size_t text_len;
     q_shaped_run_t *run;
+    float border_width[4];
+    uint32_t border_color[4];
+    uint32_t background_color;
+    uint8_t *tile;
+    int tile_w;
+    int tile_h;
 };
 
 q_box_t *q_layout_build_tree(q_document_t *doc);
 void q_layout_free_tree(q_box_t *root);
 void q_layout_measure(q_box_t *box, float containing_w, float containing_h);
 void q_layout_position(q_box_t *box, float origin_x, float origin_y);
+void q_paint_box(q_box_t *box);
+void q_paint_fill_rect(uint8_t *pixels, int buf_w, int buf_h,
+                       int x, int y, int w, int h, uint32_t color);
+void q_paint_borders(q_box_t *box);
+void q_paint_composite(uint8_t *dst, int dst_w, int dst_h,
+                       const uint8_t *src, int src_w, int src_h,
+                       int dx, int dy);
 
 /* task 3: font cache + libschrift wrapper surface */
 q_font_cache_t *q_font_cache_create(void);
