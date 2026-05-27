@@ -543,6 +543,7 @@ static void q_paint_list_marker(q_box_t *box)
         if (run == NULL) {
             return;
         }
+        run->font = font;
         marker_run_y = marker_y - (int) lroundf(run->ascender * 0.5f);
         if (marker_run_y < 0) {
             marker_run_y = 0;
