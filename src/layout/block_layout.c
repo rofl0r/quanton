@@ -263,6 +263,11 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
         return;
     }
 
+    if (box->type == Q_BOX_TABLE) {
+        q_table_measure(box, containing_w);
+        return;
+    }
+
     /* Apply explicit CSS width override before measuring children */
     if (!isnan(box->style_width)) {
         box->width = box->style_width;
@@ -407,6 +412,11 @@ void q_layout_position(q_box_t *box, float origin_x, float origin_y)
 
     box->x = origin_x;
     box->y = origin_y;
+
+    if (box->type == Q_BOX_TABLE) {
+        q_table_position(box, origin_x, origin_y);
+        return;
+    }
 
     if (box->type == Q_BOX_LINE) {
         /* Position word children left-to-right */

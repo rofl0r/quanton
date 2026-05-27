@@ -459,3 +459,89 @@ size_t q_dom_query_selector_all(quanton_view_t *view,
 {
     return q_run_selector(view, selector, out, out_max);
 }
+
+/* ── getElementById ──────────────────────────────────────────────────────── */
+
+lxb_dom_element_t *q_dom_get_element_by_id(quanton_view_t *view,
+                                             const char *id)
+{
+    lxb_dom_element_t *result = NULL;
+    char               selector[256];
+    size_t             id_len;
+    size_t             sel_len;
+
+    if (id == NULL) {
+        return NULL;
+    }
+
+    id_len  = strlen(id);
+    sel_len = id_len + 1; /* '#' + id */
+
+    if (sel_len >= sizeof(selector)) {
+        return NULL;
+    }
+
+    selector[0] = '#';
+    memcpy(selector + 1, id, id_len + 1); /* includes NUL */
+
+    q_run_selector(view, selector, &result, 1);
+    return result;
+}
+
+/* ── innerHTML setter ─────────────────────────────────────────────────────── */
+
+/*
+ * q_dom_set_inner_html — parse html as a fragment in el's context, replace
+ * el's children with the result, and schedule Q_DIRTY_LAYOUT on view.
+ *
+ * The fragment is parsed using lxb_html_document_parse_fragment (the same
+ * mechanism lexbor uses internally for element.innerHTML = "…").
+ * Parsed nodes are moved into el; the temporary fragment root is destroyed.
+ *
+ * Repaint is left to the caller: call q_view_update(view) afterwards.
+ *
+ * Returns 0 on success, -1 on failure.
+ */
+int q_dom_set_inner_html(quanton_view_t    *view,
+                          lxb_dom_element_t *el,
+                          const char        *html,
+                          size_t             len)
+{
+    lxb_html_document_t *doc;
+    lxb_dom_node_t      *el_node;
+    lxb_dom_node_t      *frag;
+    lxb_dom_node_t      *child;
+
+    if (view == NULL || el == NULL || html == NULL) {
+        return -1;
+    }
+
+    doc = q_document_handle(view->document);
+    if (doc == NULL) {
+        return -1;
+    }
+
+    el_node = lxb_dom_interface_node(el);
+
+    frag = lxb_html_document_parse_fragment(
+               doc, el, (const lxb_char_t *) html, len);
+    if (frag == NULL) {
+        return -1;
+    }
+
+    /* Remove all existing children */
+    while (el_node->first_child != NULL) {
+        lxb_dom_node_destroy_deep(el_node->first_child);
+    }
+
+    /* Move parsed nodes from fragment root into el */
+    while (frag->first_child != NULL) {
+        child = frag->first_child;
+        lxb_dom_node_remove(child);
+        lxb_dom_node_insert_child(el_node, child);
+    }
+    lxb_dom_node_destroy(frag);
+
+    q_dom_mark_dirty(view, el_node, Q_DIRTY_LAYOUT);
+    return 0;
+}

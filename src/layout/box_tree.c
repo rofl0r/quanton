@@ -714,5 +714,8 @@ void q_layout_free_tree(q_box_t *root)
     q_shaped_run_free(root->run);
     q_image_release(root->image);
     free(root->tile);
+    if (root->table != NULL) {
+        q_table_free(root->table);
+    }
     free(root);
 }

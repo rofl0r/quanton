@@ -13,6 +13,7 @@ typedef struct lxb_css_rule_declaration lxb_css_rule_declaration_t;
 
 typedef struct q_document    q_document_t;
 typedef struct q_box         q_box_t;
+typedef struct q_table       q_table_t;
 typedef struct q_font        q_font_t;
 typedef struct q_font_cache  q_font_cache_t;
 typedef struct q_image       q_image_t;
@@ -147,6 +148,35 @@ typedef struct q_float_ctx {
     q_float_entry_t *right_floats;
 } q_float_ctx_t;
 
+/* ── Table layout data ── */
+typedef struct q_table_col {
+    float min_width;
+    float max_width;
+    float final_width;
+} q_table_col_t;
+
+typedef struct q_table_row {
+    float    height;
+    q_box_t *box;
+} q_table_row_t;
+
+typedef struct q_table_span {
+    int      row;
+    int      col;
+    int      rowspan;
+    int      colspan;
+    q_box_t *cell_box;
+} q_table_span_t;
+
+struct q_table {
+    int             col_count;
+    int             row_count;
+    q_table_col_t  *cols;
+    q_table_row_t  *rows;
+    q_table_span_t *spans;
+    int             span_count;
+};
+
 struct q_box {
     q_box_type_t     type;
     int              is_flex_container;
@@ -187,6 +217,7 @@ struct q_box {
     float style_height;
     q_float_type_t float_type;
     q_clear_type_t clear_type;
+    struct q_table *table;   /* non-NULL for Q_BOX_TABLE after measure */
 };
 
 /* ── Dirty flags for incremental relayout ── */
@@ -227,6 +258,9 @@ void q_layout_position(q_box_t *box, float origin_x, float origin_y);
 void q_layout_position_absolute(q_box_t *root);
 void q_layout_line_wrap(q_box_t *inline_container);
 void q_table_fixup_anonymous(q_box_t *root);
+void q_table_measure(q_box_t *table_box, float containing_w);
+void q_table_position(q_box_t *table_box, float origin_x, float origin_y);
+void q_table_free(q_table_t *t);
 float q_float_ctx_left_edge(const q_float_ctx_t *ctx, float y, float line_h);
 float q_float_ctx_right_edge(const q_float_ctx_t *ctx, float y, float line_h, float containing_w);
 float q_float_ctx_clear_y(const q_float_ctx_t *ctx, q_clear_type_t clear);
@@ -362,6 +396,19 @@ lxb_dom_element_t *q_dom_query_selector(quanton_view_t *view,
 size_t q_dom_query_selector_all(quanton_view_t *view,
                                  const char *selector,
                                  lxb_dom_element_t **out, size_t out_max);
+
+/* getElementById — finds the first element with the given id attribute. */
+lxb_dom_element_t *q_dom_get_element_by_id(quanton_view_t *view,
+                                             const char *id);
+
+/*
+ * innerHTML setter — parses html as a fragment in el's context, replaces
+ * el's children with the result, and marks the view Q_DIRTY_LAYOUT.
+ * Returns 0 on success, -1 on failure.
+ */
+int q_dom_set_inner_html(quanton_view_t *view,
+                          lxb_dom_element_t *el,
+                          const char *html, size_t len);
 
 /* ── Backend vtable instances ── */
 extern const q_backend_vt_t q_backend_x11;
