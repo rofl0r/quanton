@@ -108,6 +108,8 @@ struct q_box {
     q_box_type_t     type;
     int              is_flex_container;
     q_position_type_t position;  /* CSS position: static/relative/absolute/fixed */
+    int              has_z_index; /* 1 when z-index explicitly set */
+    int              z_index;     /* CSS z-index value */
     float x;
     float y;
     float width;

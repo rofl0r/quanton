@@ -83,8 +83,46 @@ static float css_parse_length(const lxb_char_t *val, size_t vlen)
     return strtof(buf, NULL);
 }
 
+static int css_parse_int(const lxb_char_t *val, size_t vlen, int *out)
+{
+    char buf[32];
+    size_t i = 0;
+    size_t n;
+    char *endp;
+    long z;
+
+    if (out == NULL) {
+        return 0;
+    }
+
+    while (i < vlen && isspace((unsigned char) val[i])) {
+        ++i;
+    }
+    n = vlen - i;
+    if (n == 0 || n > sizeof(buf) - 1) {
+        return 0;
+    }
+
+    memcpy(buf, val + i, n);
+    buf[n] = '\0';
+
+    z = strtol(buf, &endp, 10);
+    if (endp == buf) {
+        return 0;
+    }
+    while (*endp != '\0') {
+        if (!isspace((unsigned char) *endp)) {
+            return 0;
+        }
+        ++endp;
+    }
+
+    *out = (int) z;
+    return 1;
+}
+
 /* Parse relevant CSS properties from a style attribute string and apply them
- * to *box.  Handles: display, position, top/right/bottom/left, width, height. */
+ * to *box.  Handles: display, position, z-index, top/right/bottom/left, width, height. */
 static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
                                   q_box_t *box)
 {
@@ -156,6 +194,12 @@ static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
                 box->position = Q_POSITION_FIXED;
             } else if (css_value_is(val, val_len, "relative")) {
                 box->position = Q_POSITION_RELATIVE;
+            }
+        } else if (css_name_eq(prop, prop_len, "z-index")) {
+            int z;
+            if (css_parse_int(val, val_len, &z)) {
+                box->has_z_index = 1;
+                box->z_index = z;
             }
         } else if (css_name_eq(prop, prop_len, "top")) {
             box->style_top = css_parse_length(val, val_len);

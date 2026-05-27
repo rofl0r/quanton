@@ -91,6 +91,8 @@ clean:
 	    test test_x11 test_sdl2 test_png output.png
 	rm -f src/backend/x11/x11_backend.o src/backend/sdl2/sdl2_backend.o \
 	    src/backend/png/png_backend.o
+
+clean_lexbor:
 	rm -rf build lexbor/build
 
-.PHONY: all test test_x11 test_sdl2 test_png clean lexbor_all
+.PHONY: all test test_x11 test_sdl2 test_png clean clean_lexbor lexbor_all
