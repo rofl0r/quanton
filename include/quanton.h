@@ -175,6 +175,7 @@ struct q_table {
     q_table_row_t  *rows;
     q_table_span_t *spans;
     int             span_count;
+    int             border_collapse;
 };
 
 struct q_box {
@@ -217,6 +218,7 @@ struct q_box {
     float style_height;
     q_float_type_t float_type;
     q_clear_type_t clear_type;
+    int table_border_collapse;  /* 1 when border-collapse: collapse */
     struct q_table *table;   /* non-NULL for Q_BOX_TABLE after measure */
 };
 

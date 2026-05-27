@@ -998,6 +998,8 @@ int main(int argc, char **argv)
         render_html_case_to_png("file://./tests/html/float_text_wrap.html", "output_float_text_wrap.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/z_index_stack.html", "output_z_index_stack.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/overflow_hidden.html", "output_overflow_hidden.png", TEST_WIDTH, TEST_HEIGHT);
+        render_html_case_to_png("file://./tests/html/table_border_collapse.html", "output_table_border_collapse.png", TEST_WIDTH, TEST_HEIGHT);
+        render_html_case_to_png("file://./tests/html/table_header_cells.html", "output_table_header_cells.png", TEST_WIDTH, TEST_HEIGHT);
 #else
         q_document_t *interactive_doc = NULL;
         q_box_t *interactive_root = root;
@@ -1364,7 +1366,91 @@ int main(int argc, char **argv)
         q_document_destroy(rsdoc);
     }
 
-    /* Test 4: getElementById and setInnerHTML DOM helpers */
+    /* Test 4: border-collapse keeps single interior borders */
+    {
+        q_document_t *bdoc = q_document_create();
+        q_box_t      *broot;
+        q_box_t      *table;
+        int           boundary_x;
+        int           sample_y;
+
+        assert(bdoc != NULL);
+        assert(q_document_load_url(bdoc, "file://./tests/html/table_border_collapse.html") == 0);
+        broot = q_layout_build_tree(bdoc);
+        assert(broot != NULL);
+
+        q_layout_measure(broot, 800.0f, 600.0f);
+        q_layout_position(broot, 0.0f, 0.0f);
+
+        table = broot->first_child;
+        assert(table != NULL);
+        assert(table->type == Q_BOX_TABLE);
+        assert(table->table != NULL);
+        assert(table->table->border_collapse == 1);
+
+        q_paint_box(broot);
+        assert(broot->tile != NULL);
+
+        boundary_x = (int) lroundf(table->table->cols[0].final_width);
+        sample_y = (int) lroundf(table->table->rows[0].height + 8.0f);
+
+        assert_pixel_rgba(broot->tile, broot->tile_w, broot->tile_h,
+                          boundary_x, sample_y, 48, 48, 48, 255);
+        assert(broot->tile[((size_t) sample_y * (size_t) broot->tile_w + (size_t) (boundary_x + 1)) * 4u + 0] != 48
+               || broot->tile[((size_t) sample_y * (size_t) broot->tile_w + (size_t) (boundary_x + 1)) * 4u + 1] != 48
+               || broot->tile[((size_t) sample_y * (size_t) broot->tile_w + (size_t) (boundary_x + 1)) * 4u + 2] != 48);
+
+        q_layout_free_tree(broot);
+        q_document_destroy(bdoc);
+    }
+
+    /* Test 5: TH background paint differs from body cells */
+    {
+        q_document_t *hdoc = q_document_create();
+        q_box_t      *hroot;
+        q_box_t      *table;
+        q_box_t      *thead_sec;
+        q_box_t      *tbody_sec;
+        q_box_t      *thead_row;
+        q_box_t      *tbody_row;
+        int           sample_x;
+        int           header_y;
+        int           body_y;
+
+        assert(hdoc != NULL);
+        assert(q_document_load_url(hdoc, "file://./tests/html/table_header_cells.html") == 0);
+        hroot = q_layout_build_tree(hdoc);
+        assert(hroot != NULL);
+
+        q_layout_measure(hroot, 800.0f, 600.0f);
+        q_layout_position(hroot, 0.0f, 0.0f);
+        q_paint_box(hroot);
+        assert(hroot->tile != NULL);
+
+        table = hroot->first_child;
+        assert(table != NULL && table->type == Q_BOX_TABLE);
+        thead_sec = table->first_child;
+        assert(thead_sec != NULL);
+        tbody_sec = thead_sec->next_sibling;
+        assert(tbody_sec != NULL);
+        thead_row = thead_sec->first_child;
+        tbody_row = tbody_sec->first_child;
+        assert(thead_row != NULL && tbody_row != NULL);
+
+        sample_x = (int) lroundf(table->x + 100.0f);
+        header_y = (int) lroundf(thead_row->y + 8.0f);
+        body_y   = (int) lroundf(tbody_row->y + 8.0f);
+
+        assert_pixel_rgba(hroot->tile, hroot->tile_w, hroot->tile_h,
+                          sample_x, header_y, 216, 226, 242, 255);
+        assert_pixel_rgba(hroot->tile, hroot->tile_w, hroot->tile_h,
+                          sample_x, body_y, 247, 247, 247, 255);
+
+        q_layout_free_tree(hroot);
+        q_document_destroy(hdoc);
+    }
+
+    /* Test 6: getElementById and setInnerHTML DOM helpers */
     {
         static const char id_html[] =
             "<html><body>"

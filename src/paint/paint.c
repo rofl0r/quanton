@@ -267,6 +267,40 @@ static int q_paint_child_cmp(const void *a, const void *b)
     return ea->dom_order - eb->dom_order;
 }
 
+static q_table_t *q_paint_find_cell_table(q_box_t *cell)
+{
+    q_box_t *cur;
+
+    if (cell == NULL || cell->type != Q_BOX_TABLE_CELL) {
+        return NULL;
+    }
+
+    for (cur = cell->parent; cur != NULL; cur = cur->parent) {
+        if (cur->type == Q_BOX_TABLE && cur->table != NULL) {
+            return cur->table;
+        }
+    }
+
+    return NULL;
+}
+
+static q_table_span_t *q_paint_find_cell_span(q_table_t *table, q_box_t *cell)
+{
+    int i;
+
+    if (table == NULL || cell == NULL) {
+        return NULL;
+    }
+
+    for (i = 0; i < table->span_count; i++) {
+        if (table->spans[i].cell_box == cell) {
+            return &table->spans[i];
+        }
+    }
+
+    return NULL;
+}
+
 static void q_paint_box_child(q_box_t *parent, q_box_t *child)
 {
     int dx;
@@ -458,6 +492,21 @@ void q_paint_borders(q_box_t *box)
     bottom = (int) ceilf(box->border_width[2]);
     left = (int) ceilf(box->border_width[3]);
 
+    if (box->type == Q_BOX_TABLE_CELL) {
+        q_table_t *table = q_paint_find_cell_table(box);
+        if (table != NULL && table->border_collapse) {
+            q_table_span_t *span = q_paint_find_cell_span(table, box);
+            if (span != NULL) {
+                if (span->col + span->colspan < table->col_count) {
+                    right = 0;
+                }
+                if (span->row + span->rowspan < table->row_count) {
+                    bottom = 0;
+                }
+            }
+        }
+    }
+
     if (top > 0) {
         q_paint_fill_rect(box->tile, w, h, 0, 0, w, top, box->border_color[0]);
     }
@@ -613,7 +662,10 @@ void q_paint_box(q_box_t *box)
     box->tile_w = w;
     box->tile_h = h;
 
-    if (box->type == Q_BOX_BLOCK) {
+    if (box->type == Q_BOX_BLOCK
+            || box->type == Q_BOX_TABLE
+            || box->type == Q_BOX_TABLE_CELL
+            || box->type == Q_BOX_TABLE_CAPTION) {
         q_paint_fill_rect(box->tile, w, h, 0, 0, w, h, box->background_color);
         q_paint_borders(box);
     } else if (box->type == Q_BOX_IMAGE) {

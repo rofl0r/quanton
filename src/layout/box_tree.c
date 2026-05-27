@@ -408,6 +408,8 @@ static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
             } else {
                 box->clear_type = Q_CLEAR_NONE;
             }
+        } else if (css_name_eq(prop, prop_len, "border-collapse")) {
+            box->table_border_collapse = css_value_is(val, val_len, "collapse") ? 1 : 0;
         }
     }
 }
