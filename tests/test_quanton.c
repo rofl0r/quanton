@@ -660,6 +660,62 @@ int main(int argc, char **argv)
         q_document_destroy(clr_doc);
     }
 
+    /* ── Table anonymous box fixup (phase 9) ─────────────────────────────── */
+    {
+        q_document_t *tbl_doc;
+        q_box_t *tbl_root;
+        q_box_t *table;
+        q_box_t *table_child;
+        q_box_t *sec1;
+        q_box_t *sec2;
+        q_box_t *row;
+        q_box_t *cell;
+        q_box_t *wrapped_block;
+
+        tbl_doc = q_document_create();
+        assert(tbl_doc != NULL);
+        assert(q_document_load_url(tbl_doc, "file://./tests/html/table_anonymous_fixup.html") == 0);
+
+        tbl_root = q_layout_build_tree(tbl_doc);
+        assert(tbl_root != NULL);
+
+        table = tbl_root->first_child;
+        assert(table != NULL);
+        assert(table->type == Q_BOX_TABLE);
+
+        for (table_child = table->first_child; table_child != NULL; table_child = table_child->next_sibling) {
+            assert(table_child->type != Q_BOX_TABLE_ROW);
+            assert(table_child->type != Q_BOX_TABLE_CELL);
+        }
+
+        sec1 = table->first_child;
+        assert(sec1 != NULL);
+        assert(sec1->type == Q_BOX_TABLE_SECTION);
+        row = sec1->first_child;
+        assert(row != NULL);
+        assert(row->type == Q_BOX_TABLE_ROW);
+        cell = row->first_child;
+        assert(cell != NULL);
+        assert(cell->type == Q_BOX_TABLE_CELL);
+
+        sec2 = sec1->next_sibling;
+        assert(sec2 != NULL);
+        assert(sec2->type == Q_BOX_TABLE_SECTION);
+        wrapped_block = NULL;
+        for (row = sec2->first_child; row != NULL && wrapped_block == NULL; row = row->next_sibling) {
+            for (cell = row->first_child; cell != NULL; cell = cell->next_sibling) {
+                if (cell->first_child != NULL && cell->first_child->type == Q_BOX_BLOCK) {
+                    wrapped_block = cell->first_child;
+                    break;
+                }
+            }
+        }
+        assert(wrapped_block != NULL);
+
+        q_layout_free_tree(tbl_root);
+        q_document_destroy(tbl_doc);
+    }
+
     /* ── Root-level scrolling + Q_DIRTY_SCROLL ──────────────────────────── */
     {
         static const char scroll_html[] =

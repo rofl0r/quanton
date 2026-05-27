@@ -99,7 +99,12 @@ typedef enum q_box_type {
     Q_BOX_IMAGE,
     Q_BOX_TEXT,
     Q_BOX_INLINE_CONTAINER, /* anonymous block wrapping consecutive inline content */
-    Q_BOX_LINE              /* one wrapped line inside an inline container */
+    Q_BOX_LINE,             /* one wrapped line inside an inline container */
+    Q_BOX_TABLE,
+    Q_BOX_TABLE_SECTION,
+    Q_BOX_TABLE_ROW,
+    Q_BOX_TABLE_CELL,
+    Q_BOX_TABLE_CAPTION
 } q_box_type_t;
 
 /* CSS position property values (Q_POSITION_STATIC == 0 matches calloc zero) */
@@ -221,6 +226,7 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h);
 void q_layout_position(q_box_t *box, float origin_x, float origin_y);
 void q_layout_position_absolute(q_box_t *root);
 void q_layout_line_wrap(q_box_t *inline_container);
+void q_table_fixup_anonymous(q_box_t *root);
 float q_float_ctx_left_edge(const q_float_ctx_t *ctx, float y, float line_h);
 float q_float_ctx_right_edge(const q_float_ctx_t *ctx, float y, float line_h, float containing_w);
 float q_float_ctx_clear_y(const q_float_ctx_t *ctx, q_clear_type_t clear);

@@ -285,6 +285,37 @@ static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
         if (css_name_eq(prop, prop_len, "display")) {
             if (css_value_is(val, val_len, "flex")) {
                 box->is_flex_container = 1;
+                if (box->type != Q_BOX_IMAGE) {
+                    box->type = Q_BOX_BLOCK;
+                }
+            } else if (css_value_is(val, val_len, "table")
+                       || css_value_is(val, val_len, "inline-table")) {
+                box->is_flex_container = 0;
+                if (box->type != Q_BOX_IMAGE) {
+                    box->type = Q_BOX_TABLE;
+                }
+            } else if (css_value_is(val, val_len, "table-row-group")
+                       || css_value_is(val, val_len, "table-header-group")
+                       || css_value_is(val, val_len, "table-footer-group")) {
+                box->is_flex_container = 0;
+                if (box->type != Q_BOX_IMAGE) {
+                    box->type = Q_BOX_TABLE_SECTION;
+                }
+            } else if (css_value_is(val, val_len, "table-row")) {
+                box->is_flex_container = 0;
+                if (box->type != Q_BOX_IMAGE) {
+                    box->type = Q_BOX_TABLE_ROW;
+                }
+            } else if (css_value_is(val, val_len, "table-cell")) {
+                box->is_flex_container = 0;
+                if (box->type != Q_BOX_IMAGE) {
+                    box->type = Q_BOX_TABLE_CELL;
+                }
+            } else if (css_value_is(val, val_len, "table-caption")) {
+                box->is_flex_container = 0;
+                if (box->type != Q_BOX_IMAGE) {
+                    box->type = Q_BOX_TABLE_CAPTION;
+                }
             }
         } else if (css_name_eq(prop, prop_len, "position")) {
             if (css_value_is(val, val_len, "absolute")) {
@@ -491,6 +522,29 @@ static int q_text_is_whitespace(const lxb_char_t *text, size_t len)
     return 1;
 }
 
+static q_box_type_t q_box_type_from_tag_id(lxb_tag_id_t tag_id)
+{
+    switch (tag_id) {
+        case LXB_TAG_IMG:
+            return Q_BOX_IMAGE;
+        case LXB_TAG_TABLE:
+            return Q_BOX_TABLE;
+        case LXB_TAG_THEAD:
+        case LXB_TAG_TBODY:
+        case LXB_TAG_TFOOT:
+            return Q_BOX_TABLE_SECTION;
+        case LXB_TAG_TR:
+            return Q_BOX_TABLE_ROW;
+        case LXB_TAG_TD:
+        case LXB_TAG_TH:
+            return Q_BOX_TABLE_CELL;
+        case LXB_TAG_CAPTION:
+            return Q_BOX_TABLE_CAPTION;
+        default:
+            return Q_BOX_BLOCK;
+    }
+}
+
 static q_box_t *q_ensure_inline_container(q_box_t *parent)
 {
     q_box_t *ic;
@@ -527,10 +581,9 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
     {
         q_box_type_t type = Q_BOX_BLOCK;
 
-        if (node->type == LXB_DOM_NODE_TYPE_ELEMENT
-            && lxb_dom_node_tag_id(node) == LXB_TAG_IMG)
+        if (node->type == LXB_DOM_NODE_TYPE_ELEMENT)
         {
-            type = Q_BOX_IMAGE;
+            type = q_box_type_from_tag_id(lxb_dom_node_tag_id(node));
         }
 
         current = q_box_create(type, node, NULL, 0);
@@ -636,6 +689,8 @@ q_box_t *q_layout_build_tree(q_document_t *doc)
             return NULL;
         }
     }
+
+    q_table_fixup_anonymous(root);
 
     return root;
 }
