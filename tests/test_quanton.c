@@ -11,9 +11,15 @@ static int nearly_equal(float a, float b)
     return fabsf(a - b) < FLOAT_TOLERANCE;
 }
 
-static void assert_pixel_rgba(const uint8_t *pixels, int width, int x, int y,
+static void assert_pixel_rgba(const uint8_t *pixels, int width, int height, int x, int y,
                               uint8_t r, uint8_t g, uint8_t b, uint8_t a)
 {
+    assert(pixels != NULL);
+    assert(width > 0);
+    assert(x >= 0);
+    assert(y >= 0);
+    assert(x < width);
+    assert(y < height);
     size_t idx = (size_t) (y * width + x) * 4u;
     assert(pixels[idx + 0] == r);
     assert(pixels[idx + 1] == g);
@@ -97,13 +103,13 @@ int main(void)
     assert(first_block->tile_w > 4);
     assert(first_block->tile_h > 4);
 
-    assert_pixel_rgba(first_block->tile, first_block->tile_w, 3, 0, 170, 0, 0, 255);
-    assert_pixel_rgba(first_block->tile, first_block->tile_w, first_block->tile_w - 1, 3, 0, 170, 0, 255);
-    assert_pixel_rgba(first_block->tile, first_block->tile_w, 3, first_block->tile_h - 1, 0, 0, 170, 255);
-    assert_pixel_rgba(first_block->tile, first_block->tile_w, 0, 3, 170, 170, 0, 255);
-    assert_pixel_rgba(first_block->tile, first_block->tile_w, 3, 3, 16, 32, 48, 255);
+    assert_pixel_rgba(first_block->tile, first_block->tile_w, first_block->tile_h, 3, 0, 170, 0, 0, 255);
+    assert_pixel_rgba(first_block->tile, first_block->tile_w, first_block->tile_h, first_block->tile_w - 1, 3, 0, 170, 0, 255);
+    assert_pixel_rgba(first_block->tile, first_block->tile_w, first_block->tile_h, 3, first_block->tile_h - 1, 0, 0, 170, 255);
+    assert_pixel_rgba(first_block->tile, first_block->tile_w, first_block->tile_h, 0, 3, 170, 170, 0, 255);
+    assert_pixel_rgba(first_block->tile, first_block->tile_w, first_block->tile_h, 3, 3, 16, 32, 48, 255);
 
-    assert_pixel_rgba(root->tile, root->tile_w, 3, 3, 16, 32, 48, 255);
+    assert_pixel_rgba(root->tile, root->tile_w, root->tile_h, 3, 3, 16, 32, 48, 255);
 
     q_layout_free_tree(root);
 
