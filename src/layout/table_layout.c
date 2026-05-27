@@ -5,7 +5,7 @@
 
 #define Q_DEFAULT_BACKGROUND 0xF2F2F2FFu
 #define Q_DEFAULT_BORDER 0x303030FFu
-#define Q_DEFAULT_BORDER_WIDTH 1.0f
+#define Q_DEFAULT_BORDER_WIDTH 0.0f
 
 static q_box_t *q_table_create_anonymous_box(q_box_type_t type)
 {
@@ -29,6 +29,7 @@ static q_box_t *q_table_create_anonymous_box(q_box_type_t type)
     box->style_bottom = (float) NAN;
     box->style_left = (float) NAN;
     box->style_width = (float) NAN;
+    box->style_width_pct = (float) NAN;
     box->style_height = (float) NAN;
 
     return box;
@@ -183,7 +184,7 @@ void q_table_fixup_anonymous(q_box_t *root)
 #define Q_LAYOUT_WORD_SPACING  4.0f
 #define Q_TABLE_MAX_COLS       128
 #define Q_TABLE_MAX_ROWS       1024
-#define Q_TABLE_CELL_PAD       8.0f   /* synthetic cell padding (left+right) */
+#define Q_TABLE_CELL_PAD       2.0f   /* cell padding estimate (1px each side) */
 #define Q_TABLE_DEFAULT_FONT_SIZE   16.0f
 #define Q_TABLE_DEFAULT_FONT_WEIGHT 400
 #define Q_TABLE_MIN_ROW_HEIGHT      20.0f
@@ -507,9 +508,43 @@ void q_table_measure(q_box_t *table_box, float containing_w)
                     nat_w = min_col_w;
                 }
 
+                /* Check for explicit % or px width hint on the cell */
                 if (cs == 1) {
-                    if (nat_w > t->cols[c].max_width) {
-                        t->cols[c].max_width = nat_w;
+                    /* style_width_pct already set by parse_style_attribute; also
+                     * check the HTML width attribute (may be "N%" or "N") */
+                    float pct = 0.0f;
+                    if (!isnan(cell->style_width_pct) && cell->style_width_pct > 0.0f) {
+                        pct = cell->style_width_pct;
+                    } else if (cell->dom_node != NULL &&
+                               cell->dom_node->type == LXB_DOM_NODE_TYPE_ELEMENT) {
+                        size_t wlen = 0;
+                        const lxb_char_t *wval = lxb_dom_element_get_attribute(
+                            lxb_dom_interface_element(cell->dom_node),
+                            (const lxb_char_t *) "width", 5, &wlen);
+                        if (wval != NULL && wlen > 0) {
+                            /* Check if ends in '%' */
+                            size_t trimmed = wlen;
+                            while (trimmed > 0 &&
+                                   ((unsigned char) wval[trimmed-1] == '%' ||
+                                    (unsigned char) wval[trimmed-1] == ' ')) {
+                                trimmed--;
+                            }
+                            if (trimmed < wlen) {
+                                /* had a % */
+                                float v = strtof((const char *) wval, NULL);
+                                if (v > 0.0f) pct = v;
+                            }
+                        }
+                    }
+
+                    if (pct > 0.0f) {
+                        if (pct > t->cols[c].pct_hint) {
+                            t->cols[c].pct_hint = pct;
+                        }
+                    } else {
+                        if (nat_w > t->cols[c].max_width) {
+                            t->cols[c].max_width = nat_w;
+                        }
                     }
                 } else {
                     per_col = nat_w / (float) cs;
@@ -532,23 +567,77 @@ void q_table_measure(q_box_t *table_box, float containing_w)
     /* ── Pass 3: final column widths ──────────────────────────────────────── */
     if (!isnan(table_box->style_width) && table_box->style_width > 0.0f) {
         table_w = table_box->style_width;
+    } else if (!isnan(table_box->style_width_pct) && table_box->style_width_pct > 0.0f
+               && containing_w > 0.0f) {
+        table_w = containing_w * table_box->style_width_pct / 100.0f;
     } else {
         table_w = (containing_w > 0.0f) ? containing_w : 0.0f;
     }
 
-    {
-        float total_natural = 0.0f;
-        int ci;
+    /* Store border-spacing for use in position phase */
+    t->border_spacing = table_box->table_border_spacing;
 
+    {
+        float bsp  = t->border_spacing;
+        /* Space consumed by gaps: (ncols+1) gaps of bsp each */
+        float spacing_total = bsp * (float) (ncols + 1);
+        float available_for_cols = table_w - spacing_total;
+        int ci;
+        float total_pct  = 0.0f;   /* sum of pct_hint across pct-cols */
+        float total_nat  = 0.0f;   /* sum of max_width across non-pct-cols */
+        int   npct_cols  = 0;
+        int   nnat_cols  = 0;
+
+        if (available_for_cols < min_col_w * (float) ncols) {
+            available_for_cols = min_col_w * (float) ncols;
+        }
+
+        /* Ensure minimum max_width for all columns */
         for (ci = 0; ci < ncols; ci++) {
             if (t->cols[ci].max_width < min_col_w) {
                 t->cols[ci].max_width = min_col_w;
             }
-            total_natural += t->cols[ci].max_width;
         }
 
-        if (total_natural > 0.0f && table_w > 0.0f) {
-            float scale = table_w / total_natural;
+        /* Sum pct and natural pools */
+        for (ci = 0; ci < ncols; ci++) {
+            if (t->cols[ci].pct_hint > 0.0f) {
+                total_pct += t->cols[ci].pct_hint;
+                npct_cols++;
+            } else {
+                total_nat += t->cols[ci].max_width;
+                nnat_cols++;
+            }
+        }
+
+        if (npct_cols > 0 && available_for_cols > 0.0f) {
+            /* Scale pct-cols so they don't exceed available space in total.
+             * If total_pct > 100, scale down proportionally. */
+            float pct_scale = (total_pct > 100.0f) ? (100.0f / total_pct) : 1.0f;
+            /* Pixels claimed by pct-cols (capped at available space) */
+            float pct_pixels = available_for_cols * (total_pct * pct_scale / 100.0f);
+            /* Remaining pixels for natural-width columns */
+            float nat_pixels = available_for_cols - pct_pixels;
+
+            for (ci = 0; ci < ncols; ci++) {
+                if (t->cols[ci].pct_hint > 0.0f) {
+                    float fw = available_for_cols * t->cols[ci].pct_hint * pct_scale / 100.0f;
+                    if (fw < min_col_w) fw = min_col_w;
+                    t->cols[ci].final_width = fw;
+                } else {
+                    /* Distribute remaining pixels proportionally to natural width */
+                    float fw;
+                    if (total_nat > 0.0f) {
+                        fw = nat_pixels * (t->cols[ci].max_width / total_nat);
+                    } else {
+                        fw = (nnat_cols > 0) ? (nat_pixels / (float) nnat_cols) : min_col_w;
+                    }
+                    if (fw < min_col_w) fw = min_col_w;
+                    t->cols[ci].final_width = fw;
+                }
+            }
+        } else if (total_nat > 0.0f && available_for_cols > 0.0f) {
+            float scale = available_for_cols / total_nat;
             for (ci = 0; ci < ncols; ci++) {
                 t->cols[ci].final_width = t->cols[ci].max_width * scale;
                 if (t->cols[ci].final_width < min_col_w) {
@@ -557,8 +646,8 @@ void q_table_measure(q_box_t *table_box, float containing_w)
             }
         } else {
             /* Fallback: equal distribution */
-            float equal_w = (ncols > 0 && table_w > 0.0f)
-                            ? (table_w / (float) ncols)
+            float equal_w = (ncols > 0 && available_for_cols > 0.0f)
+                            ? (available_for_cols / (float) ncols)
                             : min_col_w;
             for (ci = 0; ci < ncols; ci++) {
                 t->cols[ci].final_width = equal_w;
@@ -628,13 +717,15 @@ void q_table_measure(q_box_t *table_box, float containing_w)
 
     /* ── Compute total table dimensions ──────────────────────────────────── */
     {
+        float bsp    = t->border_spacing;
         float total_h = 0.0f;
         int ri;
         for (ri = 0; ri < nrows; ri++) {
             total_h += t->rows[ri].height;
         }
         table_box->width  = table_w;
-        table_box->height = total_h;
+        /* height includes top + bottom spacing gaps */
+        table_box->height = total_h + bsp * (float) (nrows + 1);
     }
 
     table_box->table = t;
@@ -675,13 +766,16 @@ void q_table_position(q_box_t *table_box, float origin_x, float origin_y)
         return;
     }
 
-    row_y[0] = origin_y;
-    for (r = 0; r < nrows; r++) {
-        row_y[r + 1] = row_y[r] + t->rows[r].height;
-    }
-    col_x[0] = origin_x;
-    for (c = 0; c < ncols; c++) {
-        col_x[c + 1] = col_x[c] + t->cols[c].final_width;
+    {
+        float bsp = t->border_spacing;
+        row_y[0] = origin_y + bsp;
+        for (r = 0; r < nrows; r++) {
+            row_y[r + 1] = row_y[r] + t->rows[r].height + bsp;
+        }
+        col_x[0] = origin_x + bsp;
+        for (c = 0; c < ncols; c++) {
+            col_x[c + 1] = col_x[c] + t->cols[c].final_width + bsp;
+        }
     }
 
     /* Position each cell using pre-computed spans */

@@ -15,7 +15,7 @@
 
 #define Q_DEFAULT_BACKGROUND 0xF2F2F2FFu
 #define Q_DEFAULT_BORDER 0x303030FFu
-#define Q_DEFAULT_BORDER_WIDTH 1.0f
+#define Q_DEFAULT_BORDER_WIDTH 0.0f
 #define Q_CSS_INT_PARSE_BUF_SIZE 64u
 
 /* ─── Inline CSS style attribute parser ─────────────────────────────────── */
@@ -66,12 +66,20 @@ static int css_value_is(const lxb_char_t *val, size_t vlen, const char *kw)
 /* Parse a CSS length value (e.g. "10px", "  20 ", "0") and return it as a
  * float in pixels.  Units other than px are accepted but treated as px.
  * Returns 0.0f on parse failure. */
-static float css_parse_length(const lxb_char_t *val, size_t vlen)
+/* Parse a CSS length value (number + optional unit suffix).
+ * If is_pct is non-NULL it is set to 1 when the value ends in '%', else 0.
+ * Pass NULL for is_pct when percentage detection is not needed. */
+static float css_parse_length_pct(const lxb_char_t *val, size_t vlen, int *is_pct)
 {
+    int _dummy;
     char buf[32];
     size_t i = 0;
     size_t n;
+    char *endp = NULL;
+    float result;
 
+    if (is_pct == NULL) is_pct = &_dummy;
+    *is_pct = 0;
     while (i < vlen && isspace((unsigned char) val[i])) {
         ++i;
     }
@@ -84,7 +92,14 @@ static float css_parse_length(const lxb_char_t *val, size_t vlen)
     }
     memcpy(buf, val + i, n);
     buf[n] = '\0';
-    return strtof(buf, NULL);
+    result = strtof(buf, &endp);
+    if (endp != NULL) {
+        while (*endp == ' ' || *endp == '\t') ++endp;
+        if (*endp == '%') {
+            *is_pct = 1;
+        }
+    }
+    return result;
 }
 
 static int css_parse_int(const lxb_char_t *val, size_t vlen, int *out)
@@ -282,7 +297,7 @@ static void css_apply_border_radius_shorthand(const lxb_char_t *val, size_t vlen
         return;
     }
     for (i = 0; i < count; ++i) {
-        values[i] = css_parse_length(tokens[i], token_lens[i]);
+        values[i] = css_parse_length_pct(tokens[i], token_lens[i], NULL);
         if (values[i] < 0.0f) {
             values[i] = 0.0f;
         }
@@ -532,17 +547,127 @@ static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
                 box->z_index = z;
             }
         } else if (css_name_eq(prop, prop_len, "top")) {
-            box->style_top = css_parse_length(val, val_len);
+            box->style_top = css_parse_length_pct(val, val_len, NULL);
         } else if (css_name_eq(prop, prop_len, "right")) {
-            box->style_right = css_parse_length(val, val_len);
+            box->style_right = css_parse_length_pct(val, val_len, NULL);
         } else if (css_name_eq(prop, prop_len, "bottom")) {
-            box->style_bottom = css_parse_length(val, val_len);
+            box->style_bottom = css_parse_length_pct(val, val_len, NULL);
         } else if (css_name_eq(prop, prop_len, "left")) {
-            box->style_left = css_parse_length(val, val_len);
+            box->style_left = css_parse_length_pct(val, val_len, NULL);
         } else if (css_name_eq(prop, prop_len, "width")) {
-            box->style_width = css_parse_length(val, val_len);
+            {
+                int is_pct = 0;
+                float v = css_parse_length_pct(val, val_len, &is_pct);
+                if (is_pct) {
+                    box->style_width_pct = v;
+                    box->style_width = (float) NAN;
+                } else {
+                    box->style_width = v;
+                    box->style_width_pct = (float) NAN;
+                }
+            }
         } else if (css_name_eq(prop, prop_len, "height")) {
-            box->style_height = css_parse_length(val, val_len);
+            box->style_height = css_parse_length_pct(val, val_len, NULL);
+        } else if (css_name_eq(prop, prop_len, "padding")) {
+            float v = css_parse_length_pct(val, val_len, NULL);
+            box->padding_top    = v;
+            box->padding_right  = v;
+            box->padding_bottom = v;
+            box->padding_left   = v;
+        } else if (css_name_eq(prop, prop_len, "padding-top")) {
+            box->padding_top    = css_parse_length_pct(val, val_len, NULL);
+        } else if (css_name_eq(prop, prop_len, "padding-right")) {
+            box->padding_right  = css_parse_length_pct(val, val_len, NULL);
+        } else if (css_name_eq(prop, prop_len, "padding-bottom")) {
+            box->padding_bottom = css_parse_length_pct(val, val_len, NULL);
+        } else if (css_name_eq(prop, prop_len, "padding-left")) {
+            box->padding_left   = css_parse_length_pct(val, val_len, NULL);
+        } else if (css_name_eq(prop, prop_len, "border-width")) {
+            float v = css_parse_length_pct(val, val_len, NULL);
+            box->border_width[0] = v;
+            box->border_width[1] = v;
+            box->border_width[2] = v;
+            box->border_width[3] = v;
+        } else if (css_name_eq(prop, prop_len, "border-top-width")) {
+            box->border_width[0] = css_parse_length_pct(val, val_len, NULL);
+        } else if (css_name_eq(prop, prop_len, "border-right-width")) {
+            box->border_width[1] = css_parse_length_pct(val, val_len, NULL);
+        } else if (css_name_eq(prop, prop_len, "border-bottom-width")) {
+            box->border_width[2] = css_parse_length_pct(val, val_len, NULL);
+        } else if (css_name_eq(prop, prop_len, "border-left-width")) {
+            box->border_width[3] = css_parse_length_pct(val, val_len, NULL);
+        } else if (css_name_eq(prop, prop_len, "border-color")) {
+            uint32_t color;
+            if (css_parse_color(val, val_len, &color)) {
+                box->border_color[0] = color;
+                box->border_color[1] = color;
+                box->border_color[2] = color;
+                box->border_color[3] = color;
+            }
+        } else if (css_name_eq(prop, prop_len, "border-top-color")) {
+            uint32_t color;
+            if (css_parse_color(val, val_len, &color)) {
+                box->border_color[0] = color;
+            }
+        } else if (css_name_eq(prop, prop_len, "border-right-color")) {
+            uint32_t color;
+            if (css_parse_color(val, val_len, &color)) {
+                box->border_color[1] = color;
+            }
+        } else if (css_name_eq(prop, prop_len, "border-bottom-color")) {
+            uint32_t color;
+            if (css_parse_color(val, val_len, &color)) {
+                box->border_color[2] = color;
+            }
+        } else if (css_name_eq(prop, prop_len, "border-left-color")) {
+            uint32_t color;
+            if (css_parse_color(val, val_len, &color)) {
+                box->border_color[3] = color;
+            }
+        } else if (css_name_eq(prop, prop_len, "border-spacing")) {
+            box->table_border_spacing = css_parse_length_pct(val, val_len, NULL);
+        } else if (css_name_eq(prop, prop_len, "border")) {
+            /* Simplified border shorthand: parse space-separated tokens for
+             * a width (number+unit), style keyword (ignored), and color. */
+            {
+                const lxb_char_t *p = val;
+                size_t rem = val_len;
+                float bw = -1.0f;
+                uint32_t bcolor = 0;
+                int got_color = 0;
+
+                while (rem > 0) {
+                    /* skip whitespace */
+                    while (rem > 0 && isspace((unsigned char) *p)) { ++p; --rem; }
+                    if (rem == 0) break;
+                    /* find end of token */
+                    {
+                        size_t tlen = 0;
+                        while (tlen < rem && !isspace((unsigned char) p[tlen])) ++tlen;
+                        /* try as color */
+                        if (!got_color && css_parse_color(p, tlen, &bcolor)) {
+                            got_color = 1;
+                        } else if (bw < 0.0f) {
+                            float v = strtof((const char *) p, NULL);
+                            if (v >= 0.0f) bw = v;
+                        }
+                        p   += tlen;
+                        rem -= tlen;
+                    }
+                }
+                if (bw >= 0.0f) {
+                    box->border_width[0] = bw;
+                    box->border_width[1] = bw;
+                    box->border_width[2] = bw;
+                    box->border_width[3] = bw;
+                }
+                if (got_color) {
+                    box->border_color[0] = bcolor;
+                    box->border_color[1] = bcolor;
+                    box->border_color[2] = bcolor;
+                    box->border_color[3] = bcolor;
+                }
+            }
         } else if (css_name_eq(prop, prop_len, "background-color")) {
             uint32_t color;
             if (css_parse_color(val, val_len, &color)) {
@@ -636,6 +761,10 @@ static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
             }
         } else if (css_name_eq(prop, prop_len, "border-collapse")) {
             box->table_border_collapse = css_value_is(val, val_len, "collapse") ? 1 : 0;
+            if (box->table_border_collapse) {
+                /* collapse implies no gap between cells */
+                box->table_border_spacing = 0.0f;
+            }
         } else if (css_name_eq(prop, prop_len, "white-space")) {
             if (css_value_is(val, val_len, "pre")) {
                 box->white_space = Q_WHITE_SPACE_PRE;
@@ -685,16 +814,16 @@ static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
         } else if (css_name_eq(prop, prop_len, "border-radius")) {
             css_apply_border_radius_shorthand(val, val_len, box);
         } else if (css_name_eq(prop, prop_len, "border-top-left-radius")) {
-            float r = css_parse_length(val, val_len);
+            float r = css_parse_length_pct(val, val_len, NULL);
             box->border_radius[0] = (r < 0.0f) ? 0.0f : r;
         } else if (css_name_eq(prop, prop_len, "border-top-right-radius")) {
-            float r = css_parse_length(val, val_len);
+            float r = css_parse_length_pct(val, val_len, NULL);
             box->border_radius[1] = (r < 0.0f) ? 0.0f : r;
         } else if (css_name_eq(prop, prop_len, "border-bottom-right-radius")) {
-            float r = css_parse_length(val, val_len);
+            float r = css_parse_length_pct(val, val_len, NULL);
             box->border_radius[2] = (r < 0.0f) ? 0.0f : r;
         } else if (css_name_eq(prop, prop_len, "border-bottom-left-radius")) {
-            float r = css_parse_length(val, val_len);
+            float r = css_parse_length_pct(val, val_len, NULL);
             box->border_radius[3] = (r < 0.0f) ? 0.0f : r;
         }
     }
@@ -740,12 +869,19 @@ static q_box_t *q_box_create(q_box_type_t type, lxb_dom_node_t *dom_node,
     }
 
     /* NaN sentinel = "not set" for all explicit style dimensions / offsets */
-    box->style_top    = (float) NAN;
-    box->style_right  = (float) NAN;
-    box->style_bottom = (float) NAN;
-    box->style_left   = (float) NAN;
-    box->style_width  = (float) NAN;
-    box->style_height = (float) NAN;
+    box->style_top       = (float) NAN;
+    box->style_right     = (float) NAN;
+    box->style_bottom    = (float) NAN;
+    box->style_left      = (float) NAN;
+    box->style_width     = (float) NAN;
+    box->style_width_pct = (float) NAN;
+    box->style_height    = (float) NAN;
+
+    /* UA stylesheet defaults for specific element types */
+    if (type == Q_BOX_TABLE) {
+        /* WHATWG UA: table { border-spacing: 2px } */
+        box->table_border_spacing = 2.0f;
+    }
 
     return box;
 }
@@ -889,12 +1025,23 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
 
         current = q_box_create(type, node, NULL, 0);
         if (current != NULL && lxb_dom_node_type(node) == LXB_DOM_NODE_TYPE_ELEMENT) {
+            lxb_tag_id_t tag_id = lxb_dom_node_tag_id(node);
             size_t style_len = 0;
             const lxb_char_t *style =
                 lxb_dom_element_get_attribute(lxb_dom_interface_element(node),
                                               (const lxb_char_t *) "style",
                                               sizeof("style") - 1,
                                               &style_len);
+
+            /* UA stylesheet defaults applied before author styles */
+            if (tag_id == LXB_TAG_TD || tag_id == LXB_TAG_TH) {
+                /* WHATWG UA: td, th { padding: 1px } */
+                current->padding_top    = 1.0f;
+                current->padding_right  = 1.0f;
+                current->padding_bottom = 1.0f;
+                current->padding_left   = 1.0f;
+            }
+
             if (style != NULL && style_len > 0) {
                 parse_style_attribute(style, style_len, current, doc);
             }
@@ -986,6 +1133,28 @@ q_box_t *q_layout_build_tree(q_document_t *doc)
     root = q_box_create(Q_BOX_BLOCK, root_node, NULL, 0);
     if (root == NULL) {
         return NULL;
+    }
+
+    if (body != NULL) {
+        /* WHATWG UA stylesheet: body { margin: 8px }
+         * Implemented as padding since we lack full margin support. */
+        root->padding_top    = 8.0f;
+        root->padding_right  = 8.0f;
+        root->padding_bottom = 8.0f;
+        root->padding_left   = 8.0f;
+
+        /* Apply any inline style on <body> itself (may override the above) */
+        {
+            lxb_dom_element_t *body_el = lxb_dom_interface_element(
+                lxb_dom_interface_node(body));
+            size_t style_len = 0;
+            const lxb_char_t *style = lxb_dom_element_get_attribute(
+                body_el, (const lxb_char_t *) "style",
+                sizeof("style") - 1, &style_len);
+            if (style != NULL && style_len > 0) {
+                parse_style_attribute(style, style_len, root, doc);
+            }
+        }
     }
 
     for (root_node = root_node->first_child; root_node != NULL; root_node = root_node->next) {

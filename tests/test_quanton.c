@@ -311,9 +311,11 @@ int main(int argc, char **argv)
     second_block = first_block->next_sibling;
     assert(first_block != NULL);
     assert(second_block != NULL);
-    assert(nearly_equal(first_block->x, 10.0f));
-    assert(nearly_equal(first_block->y, 20.0f));
-    assert(nearly_equal(first_block->width, 320.0f));
+    /* body has 8px UA padding; origin was (10,20), so children start at (18,28)
+     * and their width is reduced to 320 - 2*8 = 304. */
+    assert(nearly_equal(first_block->x, 18.0f));
+    assert(nearly_equal(first_block->y, 28.0f));
+    assert(nearly_equal(first_block->width, 304.0f));
     assert(first_block->height > 0.0f);
     assert(nearly_equal(second_block->y, first_block->y + first_block->height));
 
@@ -335,7 +337,8 @@ int main(int argc, char **argv)
     if (first_text->run != NULL) {
         assert(first_text->run->count > 0);
     }
-    assert(q_hit_test(root, 11, 21) == first_text);
+    /* first_text starts at (18,28) = origin(10,20) + body-padding(8,8) */
+    assert(q_hit_test(root, 19, 29) == first_text);
     assert(q_event_find_delegate(first_text->dom_node, "data-hit") == first_block->dom_node);
 
     {
@@ -352,8 +355,8 @@ int main(int argc, char **argv)
         g_event_target = NULL;
 
         ev.type = Q_EVENT_MOUSE_MOVE;
-        ev.mouse_x = 11;
-        ev.mouse_y = 21;
+        ev.mouse_x = 19;
+        ev.mouse_y = 29;
         q_event_dispatch(&ev_view, &ev);
 
         assert(g_event_called == 1);
@@ -441,7 +444,8 @@ int main(int argc, char **argv)
         assert(img_box->tile != NULL);
         assert_pixel_rgba(img_box->tile, img_box->tile_w, img_box->tile_h, 0, 0,
                           0x12, 0x34, 0x56, 0xFF);
-        assert_pixel_rgba(img_root->tile, img_root->tile_w, img_root->tile_h, 0, 0,
+        /* Image starts at body padding offset (8,8) in the root tile */
+        assert_pixel_rgba(img_root->tile, img_root->tile_w, img_root->tile_h, 8, 8,
                           0x12, 0x34, 0x56, 0xFF);
 
         q_layout_free_tree(img_root);
@@ -977,7 +981,7 @@ int main(int argc, char **argv)
                           50, 20, 0xe0, 0x40, 0x40, 0xff);
 
         /* y=38 is the last row inside the clipped content area (the parent has
-         * a 1-pixel default border, so the content region is y=1..38). */
+         * no default border, so the content region is y=0..39). */
         assert_pixel_rgba(ov_parent->tile, ov_parent->tile_w, ov_parent->tile_h,
                           50, 38, 0xe0, 0x40, 0x40, 0xff);
 
@@ -1165,7 +1169,7 @@ int main(int argc, char **argv)
 
         q_composite_frame(&scroll_view);
         assert(nearly_equal(scroll_view.doc_width, 120.0f));
-        assert(nearly_equal(scroll_view.doc_height, 100.0f));
+        assert(nearly_equal(scroll_view.doc_height, 116.0f)); /* 8px body pad top+bottom + 20+80 */
         assert_pixel_rgba(scroll_view.framebuffer, scroll_view.vp_width, scroll_view.vp_height,
                           80, 10, 0xC0, 0x20, 0x20, 0xFF);
 
@@ -1198,7 +1202,7 @@ int main(int argc, char **argv)
         scroll_ev.wheel_delta = -2;
         q_event_dispatch(&scroll_view, &scroll_ev);
         assert(g_event_called == 1);
-        assert(nearly_equal(scroll_view.scroll_y, 60.0f));
+        assert(nearly_equal(scroll_view.scroll_y, 76.0f)); /* wheel 2*40=80, clamped to doc_h(116)-vp_h(40) */
         assert(scroll_view.dirty_flags == 0);
         assert_pixel_rgba(scroll_view.framebuffer, scroll_view.vp_width, scroll_view.vp_height,
                           80, 10, 0x20, 0x40, 0xC0, 0xFF);
@@ -1242,9 +1246,9 @@ int main(int argc, char **argv)
         assert(flex_c != NULL);
         assert(flex_c->next_sibling == NULL);
 
-        assert(nearly_equal(flex_a->width, 100.0f));
-        assert(nearly_equal(flex_b->width, 100.0f));
-        assert(nearly_equal(flex_c->width, 100.0f));
+        assert(nearly_equal(flex_a->width, flex_container->width / 3.0f));
+        assert(nearly_equal(flex_b->width, flex_container->width / 3.0f));
+        assert(nearly_equal(flex_c->width, flex_container->width / 3.0f));
         assert(nearly_equal(flex_b->x, flex_a->x + flex_a->width));
         assert(nearly_equal(flex_c->x, flex_b->x + flex_b->width));
         assert(nearly_equal(flex_a->y, flex_container->y));
@@ -1398,6 +1402,8 @@ int main(int argc, char **argv)
         render_html_case_to_png("file://./tests/html/overflow_hidden.html", "output_overflow_hidden.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/table_border_collapse.html", "output_table_border_collapse.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/table_header_cells.html", "output_table_header_cells.png", TEST_WIDTH, TEST_HEIGHT);
+        render_html_case_to_png("file://./tests/html/bg_image.html", "output_bg_image.png", TEST_WIDTH, TEST_HEIGHT);
+        render_html_case_to_png("file://./tests/html/percent_width_table.html", "output_percent_width_table.png", TEST_WIDTH, TEST_HEIGHT);
 #else
         q_document_t *interactive_doc = NULL;
         q_box_t *interactive_root = root;
@@ -1626,7 +1632,8 @@ int main(int argc, char **argv)
         row1    = section->first_child;
         assert(row1 != NULL);
         assert(row1->type == Q_BOX_TABLE_ROW);
-        assert(fabsf(row1->x - 0.0f) < 1.0f);
+        /* Row x equals table x (rows span full table width) */
+        assert(fabsf(row1->x - table->x) < 1.0f);
 
         row2    = row1->next_sibling;
         assert(row2 != NULL);
@@ -1636,10 +1643,12 @@ int main(int argc, char **argv)
         assert(cell00 != NULL && cell01 != NULL);
         assert(cell00->type == Q_BOX_TABLE_CELL);
 
-        /* Both columns should share the 200px width */
+        /* Both columns share the available width (200 minus border-spacing gaps) */
         assert(cell00->width > 0.0f);
         assert(cell01->width > 0.0f);
-        assert(fabsf(cell00->width + cell01->width - 200.0f) < 2.0f);
+        assert(fabsf(cell00->width + cell01->width
+                     - (200.0f - (float)(table->table->col_count + 1)
+                                 * table->table->border_spacing)) < 2.0f);
 
         /* cell01 starts after cell00 */
         assert(cell01->x > cell00->x);
@@ -1695,13 +1704,14 @@ int main(int argc, char **argv)
         assert(wide_cell != NULL && right_cell != NULL);
         assert(a_cell != NULL && b_cell != NULL && c_cell != NULL);
 
-        /* Wide cell spans columns 0+1, occupies 2/3 of total width */
+        /* Combined: wide_cell + right_cell occupy total available column width */
         assert(wide_cell->width > 0.0f);
         assert(right_cell->width > 0.0f);
-        /* Combined: wide_cell + right_cell should total the table width */
-        assert(fabsf(wide_cell->width + right_cell->width - 300.0f) < 2.0f);
-        /* Wide cell starts at x=0, right_cell starts after it */
-        assert(fabsf(wide_cell->x - 0.0f) < 1.0f);
+        assert(fabsf(wide_cell->width + right_cell->width
+                     - (300.0f - (float)(table->table->col_count + 1)
+                                 * table->table->border_spacing)) < 2.0f);
+        /* wide_cell starts at first col offset: table->x + border_spacing */
+        assert(fabsf(wide_cell->x - (table->x + table->table->border_spacing)) < 1.0f);
         assert(right_cell->x > wide_cell->x);
 
         /* Second row: three cells side by side */
@@ -1754,8 +1764,8 @@ int main(int argc, char **argv)
         /* Tall cell's height >= sum of the two rows */
         assert(tall_cell->height >= table->table->rows[0].height
                                    + table->table->rows[1].height - 1.0f);
-        /* Tall cell starts at x=0, top-right starts after it */
-        assert(fabsf(tall_cell->x - 0.0f) < 1.0f);
+        /* Tall cell starts at first col offset: table->x + border_spacing */
+        assert(fabsf(tall_cell->x - (table->x + table->table->border_spacing)) < 1.0f);
         assert(topright_cell->x > tall_cell->x);
         /* Bottom-right cell is below top-right */
         assert(botright_cell->y > topright_cell->y);
@@ -1789,8 +1799,8 @@ int main(int argc, char **argv)
         q_paint_box(broot);
         assert(broot->tile != NULL);
 
-        boundary_x = (int) lroundf(table->table->cols[0].final_width);
-        sample_y = (int) lroundf(table->table->rows[0].height + 8.0f);
+        boundary_x = (int) lroundf(table->x + table->table->cols[0].final_width);
+        sample_y = (int) lroundf(table->y + table->table->rows[0].height + 8.0f);
 
         assert_pixel_rgba(broot->tile, broot->tile_w, broot->tile_h,
                           boundary_x, sample_y, 48, 48, 48, 255);

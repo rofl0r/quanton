@@ -180,6 +180,7 @@ typedef struct q_table_col {
     float min_width;
     float max_width;
     float final_width;
+    float pct_hint;     /* percentage-width hint (0 = none) */
 } q_table_col_t;
 
 typedef struct q_table_row {
@@ -203,6 +204,7 @@ struct q_table {
     q_table_span_t *spans;
     int             span_count;
     int             border_collapse;
+    float           border_spacing;  /* CSS border-spacing (0 when collapsed) */
 };
 
 struct q_box {
@@ -245,14 +247,21 @@ struct q_box {
     float style_bottom;
     float style_left;
     float style_width;
+    float style_width_pct;   /* percentage width (NaN = not set) */
     float style_height;
+    /* CSS box model spacing */
+    float padding_top;
+    float padding_right;
+    float padding_bottom;
+    float padding_left;
     q_float_type_t float_type;
     q_clear_type_t clear_type;
     q_white_space_type_t white_space;
     q_vertical_align_type_t vertical_align;
     uint8_t text_decoration;
     int is_inline_block;
-    int table_border_collapse;  /* 1 when border-collapse: collapse */
+    int table_border_collapse;     /* 1 when border-collapse: collapse */
+    float table_border_spacing;    /* CSS border-spacing for TABLE boxes (default 2) */
     struct q_table *table;   /* non-NULL for Q_BOX_TABLE after measure */
 };
 
