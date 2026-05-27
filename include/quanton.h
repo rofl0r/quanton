@@ -96,9 +96,18 @@ typedef enum q_box_type {
     Q_BOX_LINE              /* one wrapped line inside an inline container */
 } q_box_type_t;
 
+/* CSS position property values (Q_POSITION_STATIC == 0 matches calloc zero) */
+typedef enum q_position_type {
+    Q_POSITION_STATIC   = 0,
+    Q_POSITION_RELATIVE = 1,
+    Q_POSITION_ABSOLUTE = 2,
+    Q_POSITION_FIXED    = 3
+} q_position_type_t;
+
 struct q_box {
-    q_box_type_t type;
-    int is_flex_container;
+    q_box_type_t     type;
+    int              is_flex_container;
+    q_position_type_t position;  /* CSS position: static/relative/absolute/fixed */
     float x;
     float y;
     float width;
@@ -118,6 +127,13 @@ struct q_box {
     uint8_t *tile;
     int tile_w;
     int tile_h;
+    /* Explicit CSS dimensions / offsets (NaN = not set, use normal flow) */
+    float style_top;
+    float style_right;
+    float style_bottom;
+    float style_left;
+    float style_width;
+    float style_height;
 };
 
 /* ── Application context (one per process) ── */
@@ -144,6 +160,7 @@ q_box_t *q_layout_build_tree(q_document_t *doc);
 void q_layout_free_tree(q_box_t *root);
 void q_layout_measure(q_box_t *box, float containing_w, float containing_h);
 void q_layout_position(q_box_t *box, float origin_x, float origin_y);
+void q_layout_position_absolute(q_box_t *root);
 void q_layout_line_wrap(q_box_t *inline_container);
 void q_paint_box(q_box_t *box);
 void q_paint_fill_rect(uint8_t *pixels, int buf_w, int buf_h,
