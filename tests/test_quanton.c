@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #define FLOAT_TOLERANCE 0.01f
 #define TEST_WIDTH 800
@@ -85,6 +86,27 @@ static void assert_pixel_rgba(const uint8_t *pixels, int width, int height, int 
     assert(pixels[idx + 1] == g);
     assert(pixels[idx + 2] == b);
     assert(pixels[idx + 3] == a);
+}
+
+static void write_test_png_file(const char *path)
+{
+    static const uint8_t png_bytes[] = {
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+        0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+        0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41,
+        0x54, 0x78, 0x9C, 0x63, 0x10, 0x32, 0x09, 0xFB,
+        0x0F, 0x00, 0x02, 0x94, 0x01, 0x9C, 0x1D, 0x5B,
+        0x46, 0x5F, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
+        0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82
+    };
+    FILE *fp;
+
+    fp = fopen(path, "wb");
+    assert(fp != NULL);
+    assert(fwrite(png_bytes, 1, sizeof(png_bytes), fp) == sizeof(png_bytes));
+    fclose(fp);
 }
 
 #if defined(QUANTON_BACKEND_PNG) || defined(QUANTON_BACKEND_X11) || defined(QUANTON_BACKEND_SDL2)
@@ -252,6 +274,30 @@ int main(int argc, char **argv)
     assert(len > 0);
     q_resource_free(buf);
 
+    {
+        char *resolved;
+
+        resolved = q_url_resolve("file://./tests/html/input.html", "../images/pixel.png");
+        assert(resolved != NULL);
+        assert(strcmp(resolved, "file://./tests/html/../images/pixel.png") == 0);
+        free(resolved);
+
+        resolved = q_url_resolve("file:///tmp/quanton/input.html", "pixel.png");
+        assert(resolved != NULL);
+        assert(strcmp(resolved, "file:///tmp/quanton/pixel.png") == 0);
+        free(resolved);
+
+        resolved = q_url_resolve("file://./tests/html/input.html", "/tmp/quanton/pixel.png");
+        assert(resolved != NULL);
+        assert(strcmp(resolved, "file:///tmp/quanton/pixel.png") == 0);
+        free(resolved);
+
+        resolved = q_url_resolve(NULL, "../pixel.png");
+        assert(resolved != NULL);
+        assert(strcmp(resolved, "file://./../pixel.png") == 0);
+        free(resolved);
+    }
+
     doc = q_document_create();
     assert(doc != NULL);
 
@@ -352,6 +398,56 @@ int main(int argc, char **argv)
 
     assert_pixel_rgba(root->tile, root->tile_w, root->tile_h,
                       Q_NON_TEXT_SAMPLE_X, Q_NON_TEXT_SAMPLE_Y, 16, 32, 48, 255);
+
+    {
+        static const char img_html[] =
+            "<html><body><img src='quanton_test_image.png'></body></html>";
+        static const char img_path[] = "/tmp/quanton_test_image.png";
+        q_document_t *img_doc;
+        q_box_t *img_root;
+        q_box_t *img_box;
+        q_image_t *cached_a;
+        q_image_t *cached_b;
+
+        write_test_png_file(img_path);
+
+        cached_a = q_image_load_url("file:///tmp/quanton_test_image.png");
+        assert(cached_a != NULL);
+        cached_b = q_image_load_url("file:///tmp/quanton_test_image.png");
+        assert(cached_b == cached_a);
+        assert(q_image_width(cached_a) == 1);
+        assert(q_image_height(cached_a) == 1);
+        q_image_release(cached_b);
+        q_image_release(cached_a);
+
+        img_doc = q_document_create();
+        assert(img_doc != NULL);
+        assert(q_document_load_html(img_doc, img_html, sizeof(img_html) - 1,
+                                    "file:///tmp/quanton_test_doc.html") == 0);
+
+        img_root = q_layout_build_tree(img_doc);
+        assert(img_root != NULL);
+        img_box = img_root->first_child;
+        assert(img_box != NULL);
+        assert(img_box->type == Q_BOX_IMAGE);
+        assert(img_box->image != NULL);
+
+        q_layout_measure(img_root, 100.0f, 0.0f);
+        q_layout_position(img_root, 0.0f, 0.0f);
+        assert(nearly_equal(img_box->width, 1.0f));
+        assert(nearly_equal(img_box->height, 1.0f));
+
+        q_paint_box(img_root);
+        assert(img_box->tile != NULL);
+        assert_pixel_rgba(img_box->tile, img_box->tile_w, img_box->tile_h, 0, 0,
+                          0x12, 0x34, 0x56, 0xFF);
+        assert_pixel_rgba(img_root->tile, img_root->tile_w, img_root->tile_h, 0, 0,
+                          0x12, 0x34, 0x56, 0xFF);
+
+        q_layout_free_tree(img_root);
+        q_document_destroy(img_doc);
+        unlink(img_path);
+    }
 
 #if defined(QUANTON_BACKEND_PNG) || defined(QUANTON_BACKEND_X11) || defined(QUANTON_BACKEND_SDL2)
     {

@@ -1,9 +1,11 @@
 #include "quanton.h"
 
 #include "lexbor/dom/interface.h"
+#include "lexbor/dom/interfaces/node.h"
 #include "lexbor/dom/interfaces/element.h"
 #include "lexbor/dom/interfaces/character_data.h"
 #include "lexbor/html/interfaces/document.h"
+#include "lexbor/tag/const.h"
 
 #include <ctype.h>
 #include <limits.h>
@@ -246,6 +248,14 @@ static q_box_t *q_box_create(q_box_type_t type, lxb_dom_node_t *dom_node,
     box->border_width[2] = Q_DEFAULT_BORDER_WIDTH;
     box->border_width[3] = Q_DEFAULT_BORDER_WIDTH;
 
+    if (type == Q_BOX_IMAGE) {
+        box->background_color = 0x00000000u;
+        box->border_width[0] = 0.0f;
+        box->border_width[1] = 0.0f;
+        box->border_width[2] = 0.0f;
+        box->border_width[3] = 0.0f;
+    }
+
     /* NaN sentinel = "not set" for all explicit style dimensions / offsets */
     box->style_top    = (float) NAN;
     box->style_right  = (float) NAN;
@@ -272,6 +282,45 @@ static int q_box_append_child(q_box_t *parent, q_box_t *child)
     return 0;
 }
 
+static void q_box_load_image(q_document_t *doc, q_box_t *box, lxb_dom_node_t *node)
+{
+    lxb_dom_element_t *element;
+    const lxb_char_t *src;
+    size_t src_len = 0;
+    char *src_buf;
+    char *resolved;
+
+    if (doc == NULL || box == NULL || node == NULL
+        || node->type != LXB_DOM_NODE_TYPE_ELEMENT
+        || lxb_dom_node_tag_id(node) != LXB_TAG_IMG)
+    {
+        return;
+    }
+
+    element = lxb_dom_interface_element(node);
+    src = lxb_dom_element_get_attribute(element, (const lxb_char_t *) "src", 3, &src_len);
+    if (src == NULL || src_len == 0u) {
+        return;
+    }
+
+    src_buf = (char *) malloc(src_len + 1u);
+    if (src_buf == NULL) {
+        return;
+    }
+
+    memcpy(src_buf, src, src_len);
+    src_buf[src_len] = '\0';
+
+    resolved = q_url_resolve(q_document_base_url(doc), src_buf);
+    free(src_buf);
+    if (resolved == NULL) {
+        return;
+    }
+
+    box->image = q_image_load_url(resolved);
+    free(resolved);
+}
+
 static int q_text_is_whitespace(const lxb_char_t *text, size_t len)
 {
     size_t i;
@@ -285,7 +334,7 @@ static int q_text_is_whitespace(const lxb_char_t *text, size_t len)
     return 1;
 }
 
-static int q_layout_walk_node(lxb_dom_node_t *node, q_box_t *parent)
+static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *parent)
 {
     q_box_t *current = NULL;
     q_box_t *child_parent;
@@ -294,7 +343,15 @@ static int q_layout_walk_node(lxb_dom_node_t *node, q_box_t *parent)
     if (node->type == LXB_DOM_NODE_TYPE_ELEMENT
         || node->type == LXB_DOM_NODE_TYPE_DOCUMENT)
     {
-        current = q_box_create(Q_BOX_BLOCK, node, NULL, 0);
+        q_box_type_t type = Q_BOX_BLOCK;
+
+        if (node->type == LXB_DOM_NODE_TYPE_ELEMENT
+            && lxb_dom_node_tag_id(node) == LXB_TAG_IMG)
+        {
+            type = Q_BOX_IMAGE;
+        }
+
+        current = q_box_create(type, node, NULL, 0);
         if (current != NULL && lxb_dom_node_type(node) == LXB_DOM_NODE_TYPE_ELEMENT) {
             size_t style_len = 0;
             const lxb_char_t *style =
@@ -304,6 +361,9 @@ static int q_layout_walk_node(lxb_dom_node_t *node, q_box_t *parent)
                                               &style_len);
             if (style != NULL && style_len > 0) {
                 parse_style_attribute(style, style_len, current);
+            }
+            if (type == Q_BOX_IMAGE) {
+                q_box_load_image(doc, current, node);
             }
         }
     }
@@ -356,7 +416,7 @@ static int q_layout_walk_node(lxb_dom_node_t *node, q_box_t *parent)
     child_parent = (current != NULL) ? current : parent;
 
     for (child = node->first_child; child != NULL; child = child->next) {
-        if (q_layout_walk_node(child, child_parent) != 0) {
+        if (q_layout_walk_node(doc, child, child_parent) != 0) {
             return -1;
         }
     }
@@ -393,7 +453,7 @@ q_box_t *q_layout_build_tree(q_document_t *doc)
     }
 
     for (root_node = root_node->first_child; root_node != NULL; root_node = root_node->next) {
-        if (q_layout_walk_node(root_node, root) != 0) {
+        if (q_layout_walk_node(doc, root_node, root) != 0) {
             q_layout_free_tree(root);
             return NULL;
         }
@@ -419,6 +479,7 @@ void q_layout_free_tree(q_box_t *root)
     }
 
     q_shaped_run_free(root->run);
+    q_image_release(root->image);
     free(root->tile);
     free(root);
 }

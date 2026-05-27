@@ -30,6 +30,7 @@ endif
 
 SRC = \
 src/resource/resource.c \
+src/image/image.c \
 src/integration/lexbor_shim.c \
 src/layout/box_tree.c \
 src/layout/block_layout.c \

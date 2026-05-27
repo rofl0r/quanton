@@ -15,6 +15,7 @@ typedef struct q_document    q_document_t;
 typedef struct q_box         q_box_t;
 typedef struct q_font        q_font_t;
 typedef struct q_font_cache  q_font_cache_t;
+typedef struct q_image       q_image_t;
 typedef struct quanton_ctx   quanton_ctx_t;
 typedef struct quanton_view  quanton_view_t;
 
@@ -78,6 +79,7 @@ typedef struct q_backend_vt {
 } q_backend_vt_t;
 
 /* task 1: resource loader */
+char *q_url_resolve(const char *base_url, const char *ref);
 uint8_t *q_resource_load(const char *url, size_t *out_len);
 void q_resource_free(uint8_t *buf);
 
@@ -87,12 +89,14 @@ void q_document_destroy(q_document_t *doc);
 int q_document_load_url(q_document_t *doc, const char *url);
 int q_document_load_html(q_document_t *doc, const char *html, size_t len, const char *base_url);
 lxb_html_document_t *q_document_handle(q_document_t *doc);
+const char *q_document_base_url(const q_document_t *doc);
 const lxb_css_rule_declaration_t *q_document_get_computed_style(const q_document_t *doc,
                                                                 const lxb_dom_node_t *node);
 
 /* task 4: layout pass 1 box tree builder */
 typedef enum q_box_type {
     Q_BOX_BLOCK,
+    Q_BOX_IMAGE,
     Q_BOX_TEXT,
     Q_BOX_INLINE_CONTAINER, /* anonymous block wrapping consecutive inline content */
     Q_BOX_LINE              /* one wrapped line inside an inline container */
@@ -125,6 +129,7 @@ struct q_box {
     const char *text;
     size_t text_len;
     q_shaped_run_t *run;
+    q_image_t *image;
     float border_width[4];
     uint32_t border_color[4];
     uint32_t background_color;
@@ -212,6 +217,13 @@ void q_font_render_run(const q_shaped_run_t *run,
                        int tile_w, int tile_h,
                        int dest_x, int dest_y);
 void q_shaped_run_free(q_shaped_run_t *run);
+
+/* ── Image cache / decoder ── */
+q_image_t *q_image_load_url(const char *url);
+void q_image_release(q_image_t *image);
+const uint8_t *q_image_pixels(const q_image_t *image);
+int q_image_width(const q_image_t *image);
+int q_image_height(const q_image_t *image);
 
 /* ── Compositor ── */
 

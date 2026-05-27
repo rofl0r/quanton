@@ -72,6 +72,55 @@ static void q_paint_box_child(q_box_t *parent, q_box_t *child)
                       dx, dy);
 }
 
+static void q_paint_image(q_box_t *box)
+{
+    const uint8_t *src;
+    int src_w;
+    int src_h;
+    int dst_w;
+    int dst_h;
+    int y;
+    int x;
+
+    if (box == NULL || box->tile == NULL || box->image == NULL) {
+        return;
+    }
+
+    src = q_image_pixels(box->image);
+    src_w = q_image_width(box->image);
+    src_h = q_image_height(box->image);
+    dst_w = box->tile_w;
+    dst_h = box->tile_h;
+
+    if (src == NULL || src_w <= 0 || src_h <= 0 || dst_w <= 0 || dst_h <= 0) {
+        return;
+    }
+
+    for (y = 0; y < dst_h; ++y) {
+        int sy = (y * src_h) / dst_h;
+        if (sy >= src_h) {
+            sy = src_h - 1;
+        }
+
+        for (x = 0; x < dst_w; ++x) {
+            int sx = (x * src_w) / dst_w;
+            size_t sidx;
+            size_t didx;
+
+            if (sx >= src_w) {
+                sx = src_w - 1;
+            }
+
+            sidx = (size_t) (sy * src_w + sx) * 4u;
+            didx = (size_t) (y * dst_w + x) * 4u;
+            box->tile[didx + 0] = src[sidx + 0];
+            box->tile[didx + 1] = src[sidx + 1];
+            box->tile[didx + 2] = src[sidx + 2];
+            box->tile[didx + 3] = src[sidx + 3];
+        }
+    }
+}
+
 void q_paint_fill_rect(uint8_t *pixels, int buf_w, int buf_h,
                        int x, int y, int w, int h, uint32_t color)
 {
@@ -238,6 +287,8 @@ void q_paint_box(q_box_t *box)
     if (box->type == Q_BOX_BLOCK) {
         q_paint_fill_rect(box->tile, w, h, 0, 0, w, h, box->background_color);
         q_paint_borders(box);
+    } else if (box->type == Q_BOX_IMAGE) {
+        q_paint_image(box);
     } else if (box->type == Q_BOX_TEXT && box->run != NULL) {
         q_font_render_run(box->run, Q_TEXT_COLOR, box->tile, w, h, 0, 0);
     }

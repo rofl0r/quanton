@@ -52,6 +52,46 @@ static void q_layout_measure_text(q_box_t *box)
 
 }
 
+static void q_layout_measure_image(q_box_t *box)
+{
+    float intrinsic_w = 0.0f;
+    float intrinsic_h = 0.0f;
+
+    if (box->image != NULL) {
+        intrinsic_w = (float) q_image_width(box->image);
+        intrinsic_h = (float) q_image_height(box->image);
+    }
+
+    if (!isnan(box->style_width) && !isnan(box->style_height)) {
+        box->width = box->style_width;
+        box->height = box->style_height;
+        return;
+    }
+
+    if (!isnan(box->style_width)) {
+        box->width = box->style_width;
+        if (intrinsic_w > 0.0f && intrinsic_h > 0.0f) {
+            box->height = box->style_width * (intrinsic_h / intrinsic_w);
+        } else {
+            box->height = 0.0f;
+        }
+        return;
+    }
+
+    if (!isnan(box->style_height)) {
+        box->height = box->style_height;
+        if (intrinsic_w > 0.0f && intrinsic_h > 0.0f) {
+            box->width = box->style_height * (intrinsic_w / intrinsic_h);
+        } else {
+            box->width = 0.0f;
+        }
+        return;
+    }
+
+    box->width = intrinsic_w;
+    box->height = intrinsic_h;
+}
+
 /* Returns 1 if this box is taken out of normal flow */
 static int q_is_out_of_flow(const q_box_t *box)
 {
@@ -73,6 +113,11 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
 
     if (box->type == Q_BOX_TEXT) {
         q_layout_measure_text(box);
+        return;
+    }
+
+    if (box->type == Q_BOX_IMAGE) {
+        q_layout_measure_image(box);
         return;
     }
 
