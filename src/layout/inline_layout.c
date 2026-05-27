@@ -51,7 +51,9 @@ static q_box_t *make_line_box(q_box_t *parent)
 static q_box_t *make_word_box(q_box_t *line_parent,
                                lxb_dom_node_t *dom_node,
                                const char *text, size_t len,
-                               float w, float h)
+                               float w, float h,
+                               uint8_t text_decoration,
+                               q_vertical_align_type_t vertical_align)
 {
     q_box_t *word = (q_box_t *) calloc(1, sizeof(*word));
 
@@ -64,6 +66,8 @@ static q_box_t *make_word_box(q_box_t *line_parent,
     word->dom_node = dom_node;
     word->width = w;
     word->height = h;
+    word->text_decoration = text_decoration;
+    word->vertical_align = vertical_align;
     word->parent = line_parent;
     if (line_parent->last_child != NULL) {
         line_parent->last_child->next_sibling = word;
@@ -161,7 +165,9 @@ void q_layout_line_wrap(q_box_t *ic)
                     if (seg_len > 0u) {
                         seg_w = measure_word(text + seg_start, seg_len);
                         if (make_word_box(line, orig->dom_node, text + seg_start, seg_len,
-                                          seg_w, seg_h) == NULL) {
+                                          seg_w, seg_h,
+                                          orig->text_decoration,
+                                          orig->vertical_align) == NULL) {
                             goto cleanup;
                         }
                         cursor_x += seg_w + Q_LINE_WORD_SPACING;
@@ -233,7 +239,9 @@ void q_layout_line_wrap(q_box_t *ic)
 
                     if (pending_space && line->first_child != NULL) {
                         if (make_word_box(line, orig->dom_node, " ", 1u,
-                                          space_w, word_h) == NULL) {
+                                          space_w, word_h,
+                                          orig->text_decoration,
+                                          orig->vertical_align) == NULL) {
                             goto cleanup;
                         }
                         cursor_x += space_w + Q_LINE_WORD_SPACING;
@@ -243,7 +251,9 @@ void q_layout_line_wrap(q_box_t *ic)
                     }
 
                     if (make_word_box(line, orig->dom_node, text + word_start, word_len,
-                                      word_w, word_h) == NULL) {
+                                      word_w, word_h,
+                                      orig->text_decoration,
+                                      orig->vertical_align) == NULL) {
                         goto cleanup;
                     }
 

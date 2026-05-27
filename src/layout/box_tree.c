@@ -220,10 +220,198 @@ static int css_parse_color(const lxb_char_t *val, size_t vlen, uint32_t *out)
     return 0;
 }
 
+static size_t css_trim_start(const lxb_char_t *s, size_t len)
+{
+    size_t i = 0;
+    while (i < len && isspace((unsigned char) s[i])) {
+        ++i;
+    }
+    return i;
+}
+
+static size_t css_trim_end(const lxb_char_t *s, size_t len)
+{
+    while (len > 0 && isspace((unsigned char) s[len - 1])) {
+        --len;
+    }
+    return len;
+}
+
+static size_t css_split_tokens(const lxb_char_t *val, size_t vlen,
+                               const lxb_char_t **tokens, size_t *token_lens, size_t max_tokens)
+{
+    size_t i = 0;
+    size_t count = 0;
+
+    while (i < vlen && count < max_tokens) {
+        size_t start;
+        size_t end;
+        while (i < vlen && isspace((unsigned char) val[i])) {
+            ++i;
+        }
+        if (i >= vlen) {
+            break;
+        }
+        start = i;
+        while (i < vlen && !isspace((unsigned char) val[i])) {
+            ++i;
+        }
+        end = i;
+        tokens[count] = val + start;
+        token_lens[count] = end - start;
+        ++count;
+    }
+
+    return count;
+}
+
+static void css_apply_border_radius_shorthand(const lxb_char_t *val, size_t vlen, q_box_t *box)
+{
+    const lxb_char_t *tokens[4];
+    size_t token_lens[4];
+    float values[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    size_t count;
+    size_t i;
+
+    if (box == NULL) {
+        return;
+    }
+
+    count = css_split_tokens(val, vlen, tokens, token_lens, 4u);
+    if (count == 0u) {
+        return;
+    }
+    for (i = 0; i < count; ++i) {
+        values[i] = css_parse_length(tokens[i], token_lens[i]);
+        if (values[i] < 0.0f) {
+            values[i] = 0.0f;
+        }
+    }
+
+    if (count == 1u) {
+        box->border_radius[0] = values[0];
+        box->border_radius[1] = values[0];
+        box->border_radius[2] = values[0];
+        box->border_radius[3] = values[0];
+    } else if (count == 2u) {
+        box->border_radius[0] = values[0];
+        box->border_radius[1] = values[1];
+        box->border_radius[2] = values[0];
+        box->border_radius[3] = values[1];
+    } else if (count == 3u) {
+        box->border_radius[0] = values[0];
+        box->border_radius[1] = values[1];
+        box->border_radius[2] = values[2];
+        box->border_radius[3] = values[1];
+    } else {
+        box->border_radius[0] = values[0];
+        box->border_radius[1] = values[1];
+        box->border_radius[2] = values[2];
+        box->border_radius[3] = values[3];
+    }
+}
+
+static int css_extract_url(const lxb_char_t *val, size_t vlen, const lxb_char_t **out_url, size_t *out_len)
+{
+    size_t i = 0;
+    size_t start;
+    size_t end;
+    lxb_char_t quote = 0;
+
+    if (out_url == NULL || out_len == NULL) {
+        return 0;
+    }
+
+    while (i + 3u < vlen) {
+        if (tolower((unsigned char) val[i]) == 'u'
+            && tolower((unsigned char) val[i + 1u]) == 'r'
+            && tolower((unsigned char) val[i + 2u]) == 'l'
+            && val[i + 3u] == '(')
+        {
+            i += 4u;
+            break;
+        }
+        ++i;
+    }
+    if (i + 3u >= vlen) {
+        return 0;
+    }
+
+    while (i < vlen && isspace((unsigned char) val[i])) {
+        ++i;
+    }
+    if (i >= vlen) {
+        return 0;
+    }
+
+    if (val[i] == '\'' || val[i] == '"') {
+        quote = val[i];
+        ++i;
+    }
+    start = i;
+    if (quote != 0) {
+        while (i < vlen && val[i] != quote) {
+            ++i;
+        }
+        end = i;
+    } else {
+        while (i < vlen && val[i] != ')') {
+            ++i;
+        }
+        end = css_trim_end(val + start, i - start) + start;
+    }
+
+    if (end <= start) {
+        return 0;
+    }
+    *out_url = val + start;
+    *out_len = end - start;
+    return 1;
+}
+
+static void q_box_load_background_image(q_document_t *doc, q_box_t *box,
+                                        const lxb_char_t *val, size_t vlen)
+{
+    const lxb_char_t *url_span;
+    size_t url_len;
+    char *url = NULL;
+    char *resolved = NULL;
+
+    if (box == NULL || val == NULL || vlen == 0u) {
+        return;
+    }
+
+    q_image_release(box->background_image);
+    box->background_image = NULL;
+
+    if (css_value_is(val, vlen, "none")) {
+        return;
+    }
+    if (!css_extract_url(val, vlen, &url_span, &url_len) || url_len == 0u) {
+        return;
+    }
+
+    url = (char *) malloc(url_len + 1u);
+    if (url == NULL) {
+        return;
+    }
+    memcpy(url, url_span, url_len);
+    url[url_len] = '\0';
+
+    resolved = q_url_resolve(q_document_base_url(doc), url);
+    free(url);
+    if (resolved == NULL) {
+        return;
+    }
+
+    box->background_image = q_image_load_url(resolved);
+    free(resolved);
+}
+
 /* Parse relevant CSS properties from a style attribute string and apply them
  * to *box.  Handles: display, position, z-index, top/right/bottom/left, width, height. */
 static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
-                                  q_box_t *box)
+                                  q_box_t *box, q_document_t *doc)
 {
     size_t i = 0;
 
@@ -365,6 +553,32 @@ static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
             if (css_parse_color(val, val_len, &color)) {
                 box->background_color = color;
             }
+            if (doc != NULL) {
+                q_box_load_background_image(doc, box, val, val_len);
+            }
+            if (css_value_is(val, val_len, "repeat-x")) {
+                box->background_repeat = Q_BACKGROUND_REPEAT_REPEAT_X;
+            } else if (css_value_is(val, val_len, "repeat-y")) {
+                box->background_repeat = Q_BACKGROUND_REPEAT_REPEAT_Y;
+            } else if (css_value_is(val, val_len, "no-repeat")) {
+                box->background_repeat = Q_BACKGROUND_REPEAT_NO_REPEAT;
+            } else {
+                box->background_repeat = Q_BACKGROUND_REPEAT_REPEAT;
+            }
+        } else if (css_name_eq(prop, prop_len, "background-image")) {
+            if (doc != NULL) {
+                q_box_load_background_image(doc, box, val, val_len);
+            }
+        } else if (css_name_eq(prop, prop_len, "background-repeat")) {
+            if (css_value_is(val, val_len, "repeat-x")) {
+                box->background_repeat = Q_BACKGROUND_REPEAT_REPEAT_X;
+            } else if (css_value_is(val, val_len, "repeat-y")) {
+                box->background_repeat = Q_BACKGROUND_REPEAT_REPEAT_Y;
+            } else if (css_value_is(val, val_len, "no-repeat")) {
+                box->background_repeat = Q_BACKGROUND_REPEAT_NO_REPEAT;
+            } else {
+                box->background_repeat = Q_BACKGROUND_REPEAT_REPEAT;
+            }
         } else if (css_name_eq(prop, prop_len, "overflow-x")) {
             if (css_value_is(val, val_len, "hidden")) {
                 box->overflow_x = Q_OVERFLOW_HIDDEN;
@@ -430,6 +644,58 @@ static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
             } else {
                 box->white_space = Q_WHITE_SPACE_NORMAL;
             }
+        } else if (css_name_eq(prop, prop_len, "vertical-align")) {
+            if (css_value_is(val, val_len, "top")) {
+                box->vertical_align = Q_VERTICAL_ALIGN_TOP;
+            } else if (css_value_is(val, val_len, "middle")) {
+                box->vertical_align = Q_VERTICAL_ALIGN_MIDDLE;
+            } else if (css_value_is(val, val_len, "bottom")) {
+                box->vertical_align = Q_VERTICAL_ALIGN_BOTTOM;
+            } else if (css_value_is(val, val_len, "sub")) {
+                box->vertical_align = Q_VERTICAL_ALIGN_SUB;
+            } else if (css_value_is(val, val_len, "super")) {
+                box->vertical_align = Q_VERTICAL_ALIGN_SUPER;
+            } else {
+                box->vertical_align = Q_VERTICAL_ALIGN_BASELINE;
+            }
+        } else if (css_name_eq(prop, prop_len, "text-decoration")
+                   || css_name_eq(prop, prop_len, "text-decoration-line")) {
+            const lxb_char_t *tokens[8];
+            size_t token_lens[8];
+            size_t ti;
+            size_t count;
+            uint8_t deco = 0;
+            size_t trim_start = css_trim_start(val, val_len);
+            size_t trim_len = css_trim_end(val + trim_start, val_len - trim_start);
+
+            count = css_split_tokens(val + trim_start, trim_len, tokens, token_lens, 8u);
+            for (ti = 0; ti < count; ++ti) {
+                if (css_name_eq(tokens[ti], token_lens[ti], "none")) {
+                    deco = 0;
+                    break;
+                } else if (css_name_eq(tokens[ti], token_lens[ti], "underline")) {
+                    deco |= Q_TEXT_DECORATION_UNDERLINE;
+                } else if (css_name_eq(tokens[ti], token_lens[ti], "overline")) {
+                    deco |= Q_TEXT_DECORATION_OVERLINE;
+                } else if (css_name_eq(tokens[ti], token_lens[ti], "line-through")) {
+                    deco |= Q_TEXT_DECORATION_LINE_THROUGH;
+                }
+            }
+            box->text_decoration = deco;
+        } else if (css_name_eq(prop, prop_len, "border-radius")) {
+            css_apply_border_radius_shorthand(val, val_len, box);
+        } else if (css_name_eq(prop, prop_len, "border-top-left-radius")) {
+            float r = css_parse_length(val, val_len);
+            box->border_radius[0] = (r < 0.0f) ? 0.0f : r;
+        } else if (css_name_eq(prop, prop_len, "border-top-right-radius")) {
+            float r = css_parse_length(val, val_len);
+            box->border_radius[1] = (r < 0.0f) ? 0.0f : r;
+        } else if (css_name_eq(prop, prop_len, "border-bottom-right-radius")) {
+            float r = css_parse_length(val, val_len);
+            box->border_radius[2] = (r < 0.0f) ? 0.0f : r;
+        } else if (css_name_eq(prop, prop_len, "border-bottom-left-radius")) {
+            float r = css_parse_length(val, val_len);
+            box->border_radius[3] = (r < 0.0f) ? 0.0f : r;
         }
     }
 }
@@ -588,6 +854,7 @@ static q_box_t *q_ensure_inline_container(q_box_t *parent)
         && parent->last_child->type == Q_BOX_INLINE_CONTAINER)
     {
         parent->last_child->white_space = parent->white_space;
+        parent->last_child->text_decoration = parent->text_decoration;
         return parent->last_child;
     }
 
@@ -600,6 +867,7 @@ static q_box_t *q_ensure_inline_container(q_box_t *parent)
         return NULL;
     }
     ic->white_space = parent->white_space;
+    ic->text_decoration = parent->text_decoration;
     return ic;
 }
 
@@ -628,7 +896,7 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
                                               sizeof("style") - 1,
                                               &style_len);
             if (style != NULL && style_len > 0) {
-                parse_style_attribute(style, style_len, current);
+                parse_style_attribute(style, style_len, current, doc);
             }
             if (type == Q_BOX_IMAGE) {
                 q_box_load_image(doc, current, node);
@@ -656,6 +924,7 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
             if (text_box == NULL) {
                 return -1;
             }
+            text_box->text_decoration = ic->text_decoration;
             if (q_box_append_child(ic, text_box) != 0) {
                 free(text_box);
                 return -1;
@@ -749,6 +1018,7 @@ void q_layout_free_tree(q_box_t *root)
 
     q_shaped_run_free(root->run);
     q_image_release(root->image);
+    q_image_release(root->background_image);
     free(root->tile);
     if (root->table != NULL) {
         q_table_free(root->table);
