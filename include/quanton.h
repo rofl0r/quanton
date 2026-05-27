@@ -145,6 +145,26 @@ typedef enum q_white_space_type {
     Q_WHITE_SPACE_PRE    = 2,
 } q_white_space_type_t;
 
+typedef enum q_vertical_align_type {
+    Q_VERTICAL_ALIGN_BASELINE = 0,
+    Q_VERTICAL_ALIGN_TOP      = 1,
+    Q_VERTICAL_ALIGN_MIDDLE   = 2,
+    Q_VERTICAL_ALIGN_BOTTOM   = 3,
+    Q_VERTICAL_ALIGN_SUB      = 4,
+    Q_VERTICAL_ALIGN_SUPER    = 5,
+} q_vertical_align_type_t;
+
+typedef enum q_background_repeat_type {
+    Q_BACKGROUND_REPEAT_REPEAT   = 0,
+    Q_BACKGROUND_REPEAT_NO_REPEAT = 1,
+    Q_BACKGROUND_REPEAT_REPEAT_X = 2,
+    Q_BACKGROUND_REPEAT_REPEAT_Y = 3,
+} q_background_repeat_type_t;
+
+#define Q_TEXT_DECORATION_UNDERLINE    (1u << 0)
+#define Q_TEXT_DECORATION_OVERLINE     (1u << 1)
+#define Q_TEXT_DECORATION_LINE_THROUGH (1u << 2)
+
 typedef struct q_float_entry {
     struct q_box       *box;
     struct q_float_entry *next;
@@ -207,7 +227,10 @@ struct q_box {
     q_image_t *image;
     float border_width[4];
     uint32_t border_color[4];
+    float border_radius[4];
     uint32_t background_color;
+    q_image_t *background_image;
+    q_background_repeat_type_t background_repeat;
     uint8_t *tile;
     int tile_w;
     int tile_h;
@@ -226,6 +249,8 @@ struct q_box {
     q_float_type_t float_type;
     q_clear_type_t clear_type;
     q_white_space_type_t white_space;
+    q_vertical_align_type_t vertical_align;
+    uint8_t text_decoration;
     int is_inline_block;
     int table_border_collapse;  /* 1 when border-collapse: collapse */
     struct q_table *table;   /* non-NULL for Q_BOX_TABLE after measure */
