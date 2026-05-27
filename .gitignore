@@ -1,1 +1,8 @@
 *.o
+*.a
+test
+build/
+output*.png
+test_png
+test_sdl2
+test_x11
