@@ -4,7 +4,10 @@
 #include "lexbor/dom/interfaces/element.h"
 #include "lexbor/dom/interfaces/node.h"
 
+#include <math.h>
 #include <string.h>
+
+#define Q_EVENT_WHEEL_SCROLL_PX 40.0f
 
 static int q_event_is_mouse_event(q_event_type_t type)
 {
@@ -64,13 +67,23 @@ q_box_t *q_hit_test(q_box_t *root, int x, int y)
 
 void q_event_dispatch(quanton_view_t *view, q_event_t *event)
 {
+    int hit_x;
+    int hit_y;
+
     if (view == NULL || event == NULL) {
         return;
     }
 
     if (q_event_is_mouse_event(event->type)) {
-        event->target_box = q_hit_test(view->layout_root, event->mouse_x, event->mouse_y);
+        hit_x = event->mouse_x + (int) lroundf(view->scroll_x);
+        hit_y = event->mouse_y + (int) lroundf(view->scroll_y);
+        event->target_box = q_hit_test(view->layout_root, hit_x, hit_y);
         event->target = (event->target_box != NULL) ? event->target_box->dom_node : NULL;
+    }
+
+    if (event->type == Q_EVENT_MOUSE_WHEEL) {
+        q_view_scroll_by(view, 0.0f,
+                         (float) (-event->wheel_delta) * Q_EVENT_WHEEL_SCROLL_PX);
     }
 
     if (view->on_event != NULL) {

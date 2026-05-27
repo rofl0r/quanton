@@ -57,6 +57,11 @@ void q_view_update(quanton_view_t *view)
     if (view->dirty_flags & Q_DIRTY_PAINT) {
         if (view->layout_root != NULL) {
             q_paint_box(view->layout_root);
+        }
+    }
+
+    if (view->dirty_flags & (Q_DIRTY_PAINT | Q_DIRTY_SCROLL)) {
+        if (view->layout_root != NULL) {
             q_composite_frame(view);
             if (view->ctx != NULL && view->ctx->backend != NULL &&
                     view->ctx->backend->blit != NULL) {

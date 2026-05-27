@@ -128,6 +128,98 @@ static int css_parse_int(const lxb_char_t *val, size_t vlen, int *out)
     return 1;
 }
 
+static int css_parse_hex_nibble(lxb_char_t ch, uint8_t *out)
+{
+    if (ch >= '0' && ch <= '9') {
+        *out = (uint8_t) (ch - '0');
+        return 1;
+    }
+    if (ch >= 'a' && ch <= 'f') {
+        *out = (uint8_t) (10 + ch - 'a');
+        return 1;
+    }
+    if (ch >= 'A' && ch <= 'F') {
+        *out = (uint8_t) (10 + ch - 'A');
+        return 1;
+    }
+    return 0;
+}
+
+static int css_parse_color(const lxb_char_t *val, size_t vlen, uint32_t *out)
+{
+    size_t start = 0;
+    size_t end = vlen;
+
+    if (out == NULL) {
+        return 0;
+    }
+
+    while (start < end && isspace((unsigned char) val[start])) {
+        ++start;
+    }
+    while (end > start && isspace((unsigned char) val[end - 1])) {
+        --end;
+    }
+    if (start >= end) {
+        return 0;
+    }
+
+    if (css_name_eq(val + start, end - start, "transparent")) {
+        *out = 0x00000000u;
+        return 1;
+    }
+
+    if (val[start] == '#') {
+        uint8_t r0;
+        uint8_t g0;
+        uint8_t b0;
+        size_t len = end - start;
+
+        if (len == 4u &&
+            css_parse_hex_nibble(val[start + 1], &r0) &&
+            css_parse_hex_nibble(val[start + 2], &g0) &&
+            css_parse_hex_nibble(val[start + 3], &b0))
+        {
+            uint8_t r = (uint8_t) ((r0 << 4) | r0);
+            uint8_t g = (uint8_t) ((g0 << 4) | g0);
+            uint8_t b = (uint8_t) ((b0 << 4) | b0);
+            *out = ((uint32_t) r << 24) |
+                   ((uint32_t) g << 16) |
+                   ((uint32_t) b << 8)  |
+                   0xFFu;
+            return 1;
+        }
+
+        if (len == 7u) {
+            uint8_t rh;
+            uint8_t rl;
+            uint8_t gh;
+            uint8_t gl;
+            uint8_t bh;
+            uint8_t bl;
+
+            if (css_parse_hex_nibble(val[start + 1], &rh) &&
+                css_parse_hex_nibble(val[start + 2], &rl) &&
+                css_parse_hex_nibble(val[start + 3], &gh) &&
+                css_parse_hex_nibble(val[start + 4], &gl) &&
+                css_parse_hex_nibble(val[start + 5], &bh) &&
+                css_parse_hex_nibble(val[start + 6], &bl))
+            {
+                uint8_t r = (uint8_t) ((rh << 4) | rl);
+                uint8_t g = (uint8_t) ((gh << 4) | gl);
+                uint8_t b = (uint8_t) ((bh << 4) | bl);
+                *out = ((uint32_t) r << 24) |
+                       ((uint32_t) g << 16) |
+                       ((uint32_t) b << 8)  |
+                       0xFFu;
+                return 1;
+            }
+        }
+    }
+
+    return 0;
+}
+
 /* Parse relevant CSS properties from a style attribute string and apply them
  * to *box.  Handles: display, position, z-index, top/right/bottom/left, width, height. */
 static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
@@ -220,6 +312,16 @@ static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
             box->style_width = css_parse_length(val, val_len);
         } else if (css_name_eq(prop, prop_len, "height")) {
             box->style_height = css_parse_length(val, val_len);
+        } else if (css_name_eq(prop, prop_len, "background-color")) {
+            uint32_t color;
+            if (css_parse_color(val, val_len, &color)) {
+                box->background_color = color;
+            }
+        } else if (css_name_eq(prop, prop_len, "background")) {
+            uint32_t color;
+            if (css_parse_color(val, val_len, &color)) {
+                box->background_color = color;
+            }
         } else if (css_name_eq(prop, prop_len, "overflow-x")) {
             if (css_value_is(val, val_len, "hidden")) {
                 box->overflow_x = Q_OVERFLOW_HIDDEN;

@@ -162,6 +162,7 @@ typedef enum q_dirty_flags {
     Q_DIRTY_STYLE  = 1 << 0,  /* recompute computed styles */
     Q_DIRTY_LAYOUT = 1 << 1,  /* rebuild box tree + measure */
     Q_DIRTY_PAINT  = 1 << 2,  /* repaint tiles */
+    Q_DIRTY_SCROLL = 1 << 3,  /* composite-only redraw after scrolling */
 } q_dirty_flags_t;
 
 /* ── Application context (one per process) ── */
@@ -177,6 +178,8 @@ struct quanton_view {
     q_document_t       *document;
     q_box_t            *layout_root;
     int                 vp_width, vp_height;
+    float               scroll_x, scroll_y;
+    float               doc_width, doc_height;
     uint8_t            *framebuffer;        /* RGBA8, vp_width × vp_height */
     q_event_handler_fn  on_event;
     void               *on_event_userdata;
@@ -252,6 +255,9 @@ int q_image_height(const q_image_t *image);
  * Allocates view->framebuffer if it is NULL.
  */
 void q_composite_frame(quanton_view_t *view);
+void q_view_scroll_by(quanton_view_t *view, float dx, float dy);
+void q_view_scroll_to(quanton_view_t *view, float x, float y);
+void q_view_scroll_into_view(quanton_view_t *view, const q_box_t *box);
 
 /* ── View update (dirty-flag processing) ── */
 

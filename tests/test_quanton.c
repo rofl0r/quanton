@@ -501,13 +501,6 @@ int main(int argc, char **argv)
 
     /* ── overflow:hidden clipping ────────────────────────────────────────── */
     {
-        /* parent: 100×40 with overflow:hidden; child: 200×200 */
-        static const char ov_html[] =
-            "<html><body>"
-            "<div style='width:100px; height:40px; overflow:hidden;'>"
-            "<div style='width:200px; height:200px;'>overflow</div>"
-            "</div>"
-            "</body></html>";
         q_document_t *ov_doc;
         q_box_t      *ov_root;
         q_box_t      *ov_parent;
@@ -515,8 +508,7 @@ int main(int argc, char **argv)
 
         ov_doc = q_document_create();
         assert(ov_doc != NULL);
-        assert(q_document_load_html(ov_doc, ov_html, sizeof(ov_html) - 1,
-                                    "file://./tests/overflow.html") == 0);
+        assert(q_document_load_url(ov_doc, "file://./tests/html/overflow_hidden.html") == 0);
 
         ov_root = q_layout_build_tree(ov_doc);
         assert(ov_root != NULL);
@@ -538,10 +530,8 @@ int main(int argc, char **argv)
         assert(ov_child != NULL);
         assert(nearly_equal(ov_child->width,  200.0f));
         assert(nearly_equal(ov_child->height, 200.0f));
-
-        /* Set background colors directly (inline CSS background not yet parsed) */
-        ov_parent->background_color = 0x4080C0FFu;
-        ov_child->background_color  = 0xE04040FFu;
+        assert(ov_parent->background_color == 0x4080C0FFu);
+        assert(ov_child->background_color == 0xE04040FFu);
 
         q_paint_box(ov_root);
 
@@ -562,6 +552,101 @@ int main(int argc, char **argv)
 
         q_layout_free_tree(ov_root);
         q_document_destroy(ov_doc);
+    }
+
+    /* ── Root-level scrolling + Q_DIRTY_SCROLL ──────────────────────────── */
+    {
+        static const char scroll_html[] =
+            "<html><body>"
+            "<div style='height:20px;'>Top</div>"
+            "<div style='height:80px;'>Bottom</div>"
+            "</body></html>";
+        q_document_t *scroll_doc;
+        q_box_t *scroll_root;
+        q_box_t *scroll_top;
+        q_box_t *scroll_bottom;
+        q_box_t *scroll_top_text;
+        q_box_t *scroll_bottom_text;
+        quanton_view_t scroll_view;
+        q_event_t scroll_ev;
+
+        scroll_doc = q_document_create();
+        assert(scroll_doc != NULL);
+        assert(q_document_load_html(scroll_doc, scroll_html, sizeof(scroll_html) - 1,
+                                    "file://./tests/root_scroll.html") == 0);
+
+        scroll_root = q_layout_build_tree(scroll_doc);
+        assert(scroll_root != NULL);
+        q_layout_measure(scroll_root, 120.0f, 0.0f);
+        q_layout_position(scroll_root, 0.0f, 0.0f);
+        assert(scroll_root->height >= 100.0f);
+
+        scroll_top = scroll_root->first_child;
+        assert(scroll_top != NULL);
+        scroll_bottom = scroll_top->next_sibling;
+        assert(scroll_bottom != NULL);
+        assert(scroll_bottom->next_sibling == NULL);
+
+        scroll_top_text = scroll_top->first_child->first_child->first_child;
+        scroll_bottom_text = scroll_bottom->first_child->first_child->first_child;
+        assert(scroll_top_text != NULL);
+        assert(scroll_bottom_text != NULL);
+
+        scroll_top->background_color = 0xC02020FFu;
+        scroll_bottom->background_color = 0x2040C0FFu;
+
+        q_paint_box(scroll_root);
+
+        memset(&scroll_view, 0, sizeof(scroll_view));
+        scroll_view.layout_root = scroll_root;
+        scroll_view.vp_width = 120;
+        scroll_view.vp_height = 40;
+        scroll_view.on_event = capture_event_handler;
+
+        q_composite_frame(&scroll_view);
+        assert(nearly_equal(scroll_view.doc_width, 120.0f));
+        assert(nearly_equal(scroll_view.doc_height, 100.0f));
+        assert_pixel_rgba(scroll_view.framebuffer, scroll_view.vp_width, scroll_view.vp_height,
+                          80, 10, 0xC0, 0x20, 0x20, 0xFF);
+
+        q_view_scroll_to(&scroll_view, 0.0f, 60.0f);
+        assert(nearly_equal(scroll_view.scroll_y, 60.0f));
+        assert(scroll_view.dirty_flags == 0);
+        assert_pixel_rgba(scroll_view.framebuffer, scroll_view.vp_width, scroll_view.vp_height,
+                          80, 10, 0x20, 0x40, 0xC0, 0xFF);
+
+        g_event_called = 0;
+        g_event_target_box = NULL;
+        g_event_target = NULL;
+        memset(&scroll_ev, 0, sizeof(scroll_ev));
+        scroll_ev.type = Q_EVENT_MOUSE_MOVE;
+        scroll_ev.mouse_x = 10;
+        scroll_ev.mouse_y = 10;
+        q_event_dispatch(&scroll_view, &scroll_ev);
+        assert(g_event_called == 1);
+        assert(g_event_target_box == scroll_bottom_text);
+        assert(g_event_target == scroll_bottom_text->dom_node);
+
+        scroll_view.scroll_y = 0.0f;
+        q_composite_frame(&scroll_view);
+
+        g_event_called = 0;
+        memset(&scroll_ev, 0, sizeof(scroll_ev));
+        scroll_ev.type = Q_EVENT_MOUSE_WHEEL;
+        scroll_ev.mouse_x = 10;
+        scroll_ev.mouse_y = 10;
+        scroll_ev.wheel_delta = -2;
+        q_event_dispatch(&scroll_view, &scroll_ev);
+        assert(g_event_called == 1);
+        assert(nearly_equal(scroll_view.scroll_y, 60.0f));
+        assert(scroll_view.dirty_flags == 0);
+        assert_pixel_rgba(scroll_view.framebuffer, scroll_view.vp_width, scroll_view.vp_height,
+                          80, 10, 0x20, 0x40, 0xC0, 0xFF);
+
+        free(scroll_view.framebuffer);
+        scroll_view.framebuffer = NULL;
+        q_layout_free_tree(scroll_root);
+        q_document_destroy(scroll_doc);
     }
 
 #if defined(QUANTON_BACKEND_PNG) || defined(QUANTON_BACKEND_X11) || defined(QUANTON_BACKEND_SDL2)
@@ -747,6 +832,7 @@ int main(int argc, char **argv)
         render_html_case_to_png("file://./tests/html/nested_blocks.html", "output_nested_blocks.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/flex_row.html", "output_flex_row.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/absolute_pos.html", "output_absolute_pos.png", TEST_WIDTH, TEST_HEIGHT);
+        render_html_case_to_png("file://./tests/html/img_element.html", "output_img_element.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/z_index_stack.html", "output_z_index_stack.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/overflow_hidden.html", "output_overflow_hidden.png", TEST_WIDTH, TEST_HEIGHT);
 #else
