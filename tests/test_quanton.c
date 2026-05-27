@@ -11,6 +11,11 @@
 #define FLOAT_TOLERANCE 0.01f
 #define TEST_WIDTH 800
 #define TEST_HEIGHT 600
+#define Q_BORDER_RGB 48u
+#define Q_BACKGROUND_RGB 242u
+/* Sample a known non-text area inside the first block. */
+#define Q_NON_TEXT_SAMPLE_X 200
+#define Q_NON_TEXT_SAMPLE_Y 10
 
 static int g_event_called;
 static q_box_t *g_event_target_box;
@@ -40,6 +45,7 @@ static void assert_pixel_rgba(const uint8_t *pixels, int width, int height, int 
     assert(pixels[idx + 3] == a);
 }
 
+#if defined(QUANTON_BACKEND_PNG) || defined(QUANTON_BACKEND_X11) || defined(QUANTON_BACKEND_SDL2)
 static int framebuffer_has_ink(const uint8_t *pixels, int width, int height)
 {
     size_t i;
@@ -62,6 +68,7 @@ static int framebuffer_has_ink(const uint8_t *pixels, int width, int height)
 
         return 0;
     }
+    #endif
 
     #if defined(QUANTON_BACKEND_PNG)
     static int framebuffer_has_text_shades(const uint8_t *pixels, int width, int height)
@@ -80,7 +87,7 @@ static int framebuffer_has_ink(const uint8_t *pixels, int width, int height)
             uint8_t g = pixels[idx + 1];
             uint8_t b = pixels[idx + 2];
 
-            if (r == g && g == b && r > 48u && r < 242u) {
+            if (r == g && g == b && r > Q_BORDER_RGB && r < Q_BACKGROUND_RGB) {
                 return 1;
             }
         }
@@ -89,7 +96,8 @@ static int framebuffer_has_ink(const uint8_t *pixels, int width, int height)
     }
     #endif
 
-static void backend_event_handler(quanton_view_t *view, const q_event_t *event, void *userdata)
+    #if defined(QUANTON_BACKEND_PNG) || defined(QUANTON_BACKEND_X11) || defined(QUANTON_BACKEND_SDL2)
+    static void backend_event_handler(quanton_view_t *view, const q_event_t *event, void *userdata)
 {
     (void) userdata;
 
@@ -107,6 +115,7 @@ static void backend_event_handler(quanton_view_t *view, const q_event_t *event, 
         view->ctx->backend->blit(view);
     }
 }
+#endif
 
 static void capture_event_handler(quanton_view_t *view, const q_event_t *event, void *userdata)
 {
@@ -283,9 +292,11 @@ int main(void)
     assert_pixel_rgba(first_block->tile, first_block->tile_w, first_block->tile_h, first_block->tile_w - 1, 3, 0, 170, 0, 255);
     assert_pixel_rgba(first_block->tile, first_block->tile_w, first_block->tile_h, 3, first_block->tile_h - 1, 0, 0, 170, 255);
     assert_pixel_rgba(first_block->tile, first_block->tile_w, first_block->tile_h, 0, 3, 170, 170, 0, 255);
-    assert_pixel_rgba(first_block->tile, first_block->tile_w, first_block->tile_h, 200, 10, 16, 32, 48, 255);
+    assert_pixel_rgba(first_block->tile, first_block->tile_w, first_block->tile_h,
+                      Q_NON_TEXT_SAMPLE_X, Q_NON_TEXT_SAMPLE_Y, 16, 32, 48, 255);
 
-    assert_pixel_rgba(root->tile, root->tile_w, root->tile_h, 200, 10, 16, 32, 48, 255);
+    assert_pixel_rgba(root->tile, root->tile_w, root->tile_h,
+                      Q_NON_TEXT_SAMPLE_X, Q_NON_TEXT_SAMPLE_Y, 16, 32, 48, 255);
 
 #if defined(QUANTON_BACKEND_PNG) || defined(QUANTON_BACKEND_X11) || defined(QUANTON_BACKEND_SDL2)
     {

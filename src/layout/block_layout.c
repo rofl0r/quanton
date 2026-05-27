@@ -33,11 +33,12 @@ static void q_layout_measure_text(q_box_t *box)
         }
     }
     else {
-        /* Keep text boxes paintable even when font load fails */
+        /* Clear run explicitly when shaping is unavailable */
         box->run = NULL;
     }
 
     if (run != NULL) {
+        /* Keep a live font reference for paint-time glyph rasterization. */
         box->run = run;
         box->width = run->total_advance;
         box->height = run->ascender + fabsf(run->descender);

@@ -42,6 +42,7 @@ static q_box_t *q_hit_test_deepest(q_box_t *box, int x, int y)
         return NULL;
     }
 
+    /* Reverse order so the most recently painted (topmost) child wins. */
     for (child = box->last_child; child != NULL; child = child->prev_sibling) {
         q_box_t *hit = q_hit_test_deepest(child, x, y);
         if (hit != NULL) {
@@ -86,9 +87,6 @@ lxb_dom_node_t *q_event_find_delegate(lxb_dom_node_t *node, const char *attr_nam
     }
 
     name_len = strlen(attr_name);
-    if (name_len == 0) {
-        return NULL;
-    }
 
     while (node != NULL) {
         if (lxb_dom_node_type(node) == LXB_DOM_NODE_TYPE_ELEMENT
