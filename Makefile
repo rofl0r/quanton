@@ -90,13 +90,18 @@ test_sdl2: lexbor_all tests/test_quanton.c libquanton.a src/backend/sdl2/sdl2_ba
 	$(CC) $(CFLAGS) $(SDL2_CFLAGS) -DQUANTON_BACKEND_SDL2 -o $@ tests/test_quanton.c \
 	    libquanton.a src/backend/sdl2/sdl2_backend.o $(LDFLAGS) $(LDFLAGS_LEXBOR) $(SDL2_LDFLAGS)
 
+filebrowser_png: lexbor_all examples/filebrowser_png.c libquanton.a src/backend/png/png_backend.o include/quanton.h
+	$(CC) $(CFLAGS) -DQUANTON_BACKEND_PNG -o $@ examples/filebrowser_png.c \
+	    src/backend/png/png_backend.o libquanton.a $(LDFLAGS) $(LDFLAGS_LEXBOR) -lpng
+
 clean:
 	rm -f $(OBJ) libquanton.a \
-	    test test_x11 test_sdl2 test_png output.png
+	    test test_x11 test_sdl2 test_png filebrowser_png \
+	    output.png filebrowser_name.png filebrowser_size.png filebrowser_date.png
 	rm -f src/backend/x11/x11_backend.o src/backend/sdl2/sdl2_backend.o \
 	    src/backend/png/png_backend.o
 
 clean_lexbor:
 	rm -rf build lexbor/build
 
-.PHONY: all test test_x11 test_sdl2 test_png clean clean_lexbor lexbor_all
+.PHONY: all test test_x11 test_sdl2 test_png filebrowser_png clean clean_lexbor lexbor_all
