@@ -37,10 +37,13 @@ static char *make_url_from_filename(const char *filename)
 
     len = strlen(filename);
     /* Relative paths that don't start with "./" need it inserted so that
-     * q_resource_parse_file_url() accepts them (it requires "./" or "/"). */
+     * q_resource_parse_file_url() accepts them (it requires "./" or "/").
+     * Note: len > 0 is guaranteed by the empty-string check above, so
+     * reading filename[1] is safe (it may be '\0' but never out of bounds). */
     {
-        int need_dot_slash = (filename[0] != '/'
-                              && !(filename[0] == '.' && filename[1] == '/'));
+        int is_absolute      = (filename[0] == '/');
+        int has_dot_slash    = (filename[0] == '.' && filename[1] == '/');
+        int need_dot_slash   = (!is_absolute && !has_dot_slash);
         size_t extra = need_dot_slash ? 2u : 0u; /* "./" is 2 chars */
         url = (char *) malloc(sizeof("file://") + extra + len);
         if (url == NULL) {
