@@ -437,6 +437,56 @@ int main(int argc, char **argv)
         q_document_destroy(abs_doc);
     }
 
+    /* ── z-index stacking order ────────────────────────────────────────── */
+    {
+        static const char z_html[] =
+            "<html><body>"
+            "<div style='position:relative; width:120px; height:120px;'>"
+            "<div style='position:absolute; left:10px; top:10px; width:80px; height:80px; z-index:1;'>A</div>"
+            "<div style='position:absolute; left:30px; top:30px; width:80px; height:80px; z-index:5;'>B</div>"
+            "</div>"
+            "</body></html>";
+        q_document_t *z_doc;
+        q_box_t *z_root;
+        q_box_t *z_container;
+        q_box_t *z_low;
+        q_box_t *z_high;
+
+        z_doc = q_document_create();
+        assert(z_doc != NULL);
+        assert(q_document_load_html(z_doc, z_html, sizeof(z_html) - 1,
+                                    "file://./tests/zindex.html") == 0);
+
+        z_root = q_layout_build_tree(z_doc);
+        assert(z_root != NULL);
+        q_layout_measure(z_root, 200.0f, 0.0f);
+        q_layout_position(z_root, 0.0f, 0.0f);
+        q_layout_position_absolute(z_root);
+
+        z_container = z_root->first_child;
+        assert(z_container != NULL);
+        z_low = z_container->first_child;
+        assert(z_low != NULL);
+        z_high = z_low->next_sibling;
+        assert(z_high != NULL);
+        assert(z_high->next_sibling == NULL);
+        assert(z_low->has_z_index == 1);
+        assert(z_high->has_z_index == 1);
+        assert(z_low->z_index == 1);
+        assert(z_high->z_index == 5);
+
+        z_low->background_color = 0xFF0000FFu;
+        z_high->background_color = 0x0000FFFFu;
+
+        q_paint_box(z_root);
+        assert(z_root->tile != NULL);
+        /* overlap point at (40,40) should be blue from higher z-index box */
+        assert_pixel_rgba(z_root->tile, z_root->tile_w, z_root->tile_h, 40, 40, 0, 0, 255, 255);
+
+        q_layout_free_tree(z_root);
+        q_document_destroy(z_doc);
+    }
+
     {
         quanton_ctx_t bctx;
         quanton_view_t bview;
@@ -478,6 +528,7 @@ int main(int argc, char **argv)
         render_html_case_to_png("file://./tests/html/nested_blocks.html", "output_nested_blocks.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/flex_row.html", "output_flex_row.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/absolute_pos.html", "output_absolute_pos.png", TEST_WIDTH, TEST_HEIGHT);
+        render_html_case_to_png("file://./tests/html/z_index_stack.html", "output_z_index_stack.png", TEST_WIDTH, TEST_HEIGHT);
 #else
         q_document_t *interactive_doc = NULL;
         q_box_t *interactive_root = root;

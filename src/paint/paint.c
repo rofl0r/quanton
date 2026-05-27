@@ -23,6 +23,38 @@ static int q_paint_box_height(const q_box_t *box)
     return (h > 0) ? h : 1;
 }
 
+typedef struct q_paint_child_entry {
+    q_box_t *box;
+    int dom_order;
+    int category;
+    int z_index;
+} q_paint_child_entry_t;
+
+static int q_paint_z_category(const q_box_t *box)
+{
+    if (box->position != Q_POSITION_STATIC && box->has_z_index) {
+        return (box->z_index < 0) ? 0 : 2;
+    }
+
+    return 1;
+}
+
+static int q_paint_child_cmp(const void *a, const void *b)
+{
+    const q_paint_child_entry_t *ea = (const q_paint_child_entry_t *) a;
+    const q_paint_child_entry_t *eb = (const q_paint_child_entry_t *) b;
+
+    if (ea->category != eb->category) {
+        return ea->category - eb->category;
+    }
+
+    if ((ea->category == 0 || ea->category == 2) && ea->z_index != eb->z_index) {
+        return (ea->z_index < eb->z_index) ? -1 : 1;
+    }
+
+    return ea->dom_order - eb->dom_order;
+}
+
 void q_paint_fill_rect(uint8_t *pixels, int buf_w, int buf_h,
                        int x, int y, int w, int h, uint32_t color)
 {
@@ -153,6 +185,9 @@ void q_paint_composite(uint8_t *dst, int dst_w, int dst_h,
 void q_paint_box(q_box_t *box)
 {
     q_box_t *child;
+    q_paint_child_entry_t *entries = NULL;
+    size_t child_count = 0;
+    size_t i = 0;
     int w;
     int h;
 
@@ -191,18 +226,43 @@ void q_paint_box(q_box_t *box)
     }
 
     for (child = box->first_child; child != NULL; child = child->next_sibling) {
+        ++child_count;
+    }
+
+    if (child_count != 0) {
+        int order = 0;
+        entries = (q_paint_child_entry_t *) malloc(child_count * sizeof(*entries));
+        if (entries == NULL) {
+            return;
+        }
+
+        for (child = box->first_child; child != NULL; child = child->next_sibling) {
+            entries[i].box = child;
+            entries[i].dom_order = order++;
+            entries[i].category = q_paint_z_category(child);
+            entries[i].z_index = child->z_index;
+            ++i;
+        }
+
+        qsort(entries, child_count, sizeof(*entries), q_paint_child_cmp);
+    }
+
+    for (i = 0; i < child_count; ++i) {
         int dx;
         int dy;
+        q_box_t *child_box = entries[i].box;
 
-        q_paint_box(child);
-        if (child->tile == NULL) {
+        q_paint_box(child_box);
+        if (child_box->tile == NULL) {
             continue;
         }
 
-        dx = (int) lroundf(child->x - box->x);
-        dy = (int) lroundf(child->y - box->y);
+        dx = (int) lroundf(child_box->x - box->x);
+        dy = (int) lroundf(child_box->y - box->y);
         q_paint_composite(box->tile, box->tile_w, box->tile_h,
-                          child->tile, child->tile_w, child->tile_h,
+                          child_box->tile, child_box->tile_w, child_box->tile_h,
                           dx, dy);
     }
+
+    free(entries);
 }
