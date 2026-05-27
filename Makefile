@@ -33,6 +33,7 @@ src/resource/resource.c \
 src/integration/lexbor_shim.c \
 src/layout/box_tree.c \
 src/layout/block_layout.c \
+src/layout/inline_layout.c \
 src/paint/paint.c \
 src/paint/composite.c \
 src/font/font.c \
@@ -57,6 +58,7 @@ libquanton.a: $(OBJ)
 
 SRC_X11  = src/backend/x11/x11_backend.c
 SRC_SDL2 = src/backend/sdl2/sdl2_backend.c
+SRC_PNG  = src/backend/png/png_backend.c
 
 libquanton-x11.a: $(OBJ) src/backend/x11/x11_backend.o
 	ar rcs $@ $(OBJ) src/backend/x11/x11_backend.o
@@ -64,11 +66,17 @@ libquanton-x11.a: $(OBJ) src/backend/x11/x11_backend.o
 libquanton-sdl2.a: $(OBJ) src/backend/sdl2/sdl2_backend.o
 	ar rcs $@ $(OBJ) src/backend/sdl2/sdl2_backend.o
 
+libquanton-png.a: $(OBJ) src/backend/png/png_backend.o
+	ar rcs $@ $(OBJ) src/backend/png/png_backend.o
+
 src/backend/x11/x11_backend.o: $(SRC_X11) include/quanton.h
 	$(CC) $(CFLAGS) -c -o $@ $(SRC_X11)
 
 src/backend/sdl2/sdl2_backend.o: $(SRC_SDL2) include/quanton.h
 	$(CC) $(CFLAGS) $(SDL2_CFLAGS) -c -o $@ $(SRC_SDL2)
+
+src/backend/png/png_backend.o: $(SRC_PNG) include/quanton.h
+	$(CC) $(CFLAGS) -c -o $@ $(SRC_PNG)
 
 # ─────────────────────────────────────────────────────────────────────────
 
@@ -76,9 +84,27 @@ test: lexbor_all tests/test_quanton.c libquanton.a include/quanton.h
 	$(CC) $(CFLAGS) -o $@ tests/test_quanton.c libquanton.a $(LDFLAGS) $(LDFLAGS_LEXBOR)
 	./test
 
+# Backend-specific test binaries.
+# test_png runs headlessly and auto-executes.
+# test_x11 and test_sdl2 are compiled only (require a live display to run).
+test_png: lexbor_all tests/test_quanton.c libquanton.a src/backend/png/png_backend.o include/quanton.h
+	$(CC) $(CFLAGS) -DQUANTON_BACKEND_PNG -o $@ tests/test_quanton.c \
+	    libquanton.a src/backend/png/png_backend.o $(LDFLAGS) $(LDFLAGS_LEXBOR) -lpng
+	./$@
+
+test_x11: lexbor_all tests/test_quanton.c libquanton.a src/backend/x11/x11_backend.o include/quanton.h
+	$(CC) $(CFLAGS) -DQUANTON_BACKEND_X11 -o $@ tests/test_quanton.c \
+	    libquanton.a src/backend/x11/x11_backend.o $(LDFLAGS) $(LDFLAGS_LEXBOR) -lX11
+
+test_sdl2: lexbor_all tests/test_quanton.c libquanton.a src/backend/sdl2/sdl2_backend.o include/quanton.h
+	$(CC) $(CFLAGS) $(SDL2_CFLAGS) -DQUANTON_BACKEND_SDL2 -o $@ tests/test_quanton.c \
+	    libquanton.a src/backend/sdl2/sdl2_backend.o $(LDFLAGS) $(LDFLAGS_LEXBOR) $(SDL2_LDFLAGS)
+
 clean:
-	rm -f $(OBJ) libquanton.a libquanton-x11.a libquanton-sdl2.a test output.png
-	rm -f src/backend/x11/x11_backend.o src/backend/sdl2/sdl2_backend.o
+	rm -f $(OBJ) libquanton.a libquanton-x11.a libquanton-sdl2.a libquanton-png.a \
+	    test test_x11 test_sdl2 test_png output.png
+	rm -f src/backend/x11/x11_backend.o src/backend/sdl2/sdl2_backend.o \
+	    src/backend/png/png_backend.o
 	rm -rf build lexbor/build
 
-.PHONY: all test clean lexbor_all
+.PHONY: all test test_x11 test_sdl2 test_png clean lexbor_all

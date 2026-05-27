@@ -4,6 +4,7 @@
 
 #define Q_LAYOUT_DEFAULT_FONT_SIZE 16.0f
 #define Q_LAYOUT_DEFAULT_FONT_WEIGHT 400
+#define Q_LAYOUT_WORD_SPACING 4.0f
 
 static void q_layout_measure_text(q_box_t *box)
 {
@@ -57,8 +58,29 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
         return;
     }
 
+    if (box->type == Q_BOX_LINE) {
+        /* Line width spans the container; height = tallest child */
+        float max_h = 0.0f;
+
+        box->width = (containing_w > 0.0f) ? containing_w : 0.0f;
+        box->height = 0.0f;
+        for (child = box->first_child; child != NULL; child = child->next_sibling) {
+            q_layout_measure(child, box->width, containing_h);
+            if (child->height > max_h) {
+                max_h = child->height;
+            }
+        }
+        box->height = max_h;
+        return;
+    }
+
     box->width = (containing_w > 0.0f) ? containing_w : 0.0f;
     box->height = 0.0f;
+
+    if (box->type == Q_BOX_INLINE_CONTAINER) {
+        /* Split text children into word-level line boxes first */
+        q_layout_line_wrap(box);
+    }
 
     for (child = box->first_child; child != NULL; child = child->next_sibling) {
         q_layout_measure(child, box->width, containing_h);
@@ -78,6 +100,7 @@ void q_layout_position(q_box_t *box, float origin_x, float origin_y)
 {
     q_box_t *child;
     float child_y;
+    float cursor_x;
 
     if (box == NULL) {
         return;
@@ -85,6 +108,17 @@ void q_layout_position(q_box_t *box, float origin_x, float origin_y)
 
     box->x = origin_x;
     box->y = origin_y;
+
+    if (box->type == Q_BOX_LINE) {
+        /* Position word children left-to-right */
+        cursor_x = origin_x;
+        for (child = box->first_child; child != NULL; child = child->next_sibling) {
+            child->x = cursor_x;
+            child->y = origin_y;
+            cursor_x += child->width + Q_LAYOUT_WORD_SPACING;
+        }
+        return;
+    }
 
     child_y = origin_y;
     for (child = box->first_child; child != NULL; child = child->next_sibling) {
