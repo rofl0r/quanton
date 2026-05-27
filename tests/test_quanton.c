@@ -480,8 +480,8 @@ int main(int argc, char **argv)
 
         q_paint_box(z_root);
         assert(z_root->tile != NULL);
-        /* overlap point at (40,40) should be blue from higher z-index box */
-        assert_pixel_rgba(z_root->tile, z_root->tile_w, z_root->tile_h, 40, 40, 0, 0, 255, 255);
+        /* overlap point at (80,80) should be blue from higher z-index box */
+        assert_pixel_rgba(z_root->tile, z_root->tile_w, z_root->tile_h, 80, 80, 0, 0, 255, 255);
 
         q_layout_free_tree(z_root);
         q_document_destroy(z_doc);
