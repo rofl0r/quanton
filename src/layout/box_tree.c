@@ -93,6 +93,7 @@ static int q_layout_walk_node(lxb_dom_node_t *node, q_box_t *parent)
 q_box_t *q_layout_build_tree(q_document_t *doc)
 {
     lxb_html_document_t *document;
+    lxb_html_body_element_t *body;
     lxb_dom_node_t *root_node;
     q_box_t *root;
 
@@ -105,8 +106,9 @@ q_box_t *q_layout_build_tree(q_document_t *doc)
         return NULL;
     }
 
-    if (lxb_html_document_body_element(document) != NULL) {
-        root_node = lxb_dom_interface_node(lxb_html_document_body_element(document));
+    body = lxb_html_document_body_element(document);
+    if (body != NULL) {
+        root_node = lxb_dom_interface_node(body);
     } else {
         root_node = lxb_dom_interface_node(document);
     }

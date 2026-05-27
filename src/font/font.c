@@ -184,9 +184,9 @@ q_font_t *q_font_load(q_font_cache_t *cache,
                       float size_px,
                       int weight)
 {
-    q_font_t *font;
     const char *path;
     const char *family;
+    q_font_t *font;
 
     if (cache == NULL) {
         return NULL;
