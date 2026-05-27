@@ -88,6 +88,22 @@ static void assert_pixel_rgba(const uint8_t *pixels, int width, int height, int 
     assert(pixels[idx + 3] == a);
 }
 
+static void assert_pixel_alpha_at_least(const uint8_t *pixels, int width, int height,
+                                        int x, int y, uint8_t min_alpha)
+{
+    size_t idx;
+
+    assert(pixels != NULL);
+    assert(width > 0);
+    assert(x >= 0);
+    assert(y >= 0);
+    assert(x < width);
+    assert(y < height);
+
+    idx = (size_t) (y * width + x) * 4u;
+    assert(pixels[idx + 3] >= min_alpha);
+}
+
 static void write_test_png_file(const char *path)
 {
     static const uint8_t png_bytes[] = {
@@ -711,6 +727,207 @@ int main(int argc, char **argv)
 
         q_layout_free_tree(ib_root);
         q_document_destroy(ib_doc);
+    }
+
+    /* ── vertical-align on inline-level boxes ─────────────────────────────── */
+    {
+        static const char va_html[] =
+            "<html><body><div>"
+            "<span style='display:inline-block;width:8px;height:10px;'></span>"
+            "<span style='display:inline-block;width:8px;height:20px;vertical-align:top;'></span>"
+            "<span style='display:inline-block;width:8px;height:6px;vertical-align:bottom;'></span>"
+            "<span style='display:inline-block;width:8px;height:10px;vertical-align:super;'></span>"
+            "<span style='display:inline-block;width:8px;height:10px;vertical-align:sub;'></span>"
+            "</div></body></html>";
+        q_document_t *va_doc;
+        q_box_t *va_root;
+        q_box_t *va_div;
+        q_box_t *va_ic;
+        q_box_t *va_line;
+        q_box_t *va_base;
+        q_box_t *va_top;
+        q_box_t *va_bottom;
+        q_box_t *va_super;
+        q_box_t *va_sub;
+
+        va_doc = q_document_create();
+        assert(va_doc != NULL);
+        assert(q_document_load_html(va_doc, va_html, sizeof(va_html) - 1,
+                                    "file://./tests/vertical_align.html") == 0);
+
+        va_root = q_layout_build_tree(va_doc);
+        assert(va_root != NULL);
+        q_layout_measure(va_root, 320.0f, 0.0f);
+        q_layout_position(va_root, 0.0f, 0.0f);
+
+        va_div = va_root->first_child;
+        assert(va_div != NULL);
+        va_ic = va_div->first_child;
+        assert(va_ic != NULL);
+        va_line = va_ic->first_child;
+        assert(va_line != NULL);
+
+        va_base = va_line->first_child;
+        assert(va_base != NULL);
+        va_top = va_base->next_sibling;
+        assert(va_top != NULL);
+        va_bottom = va_top->next_sibling;
+        assert(va_bottom != NULL);
+        va_super = va_bottom->next_sibling;
+        assert(va_super != NULL);
+        va_sub = va_super->next_sibling;
+        assert(va_sub != NULL);
+        assert(va_sub->next_sibling == NULL);
+
+        assert(va_top->vertical_align == Q_VERTICAL_ALIGN_TOP);
+        assert(va_bottom->vertical_align == Q_VERTICAL_ALIGN_BOTTOM);
+        assert(va_super->vertical_align == Q_VERTICAL_ALIGN_SUPER);
+        assert(va_sub->vertical_align == Q_VERTICAL_ALIGN_SUB);
+
+        assert(nearly_equal(va_top->y, va_base->y));
+        assert(va_bottom->y > va_base->y);
+        assert(va_super->y < va_base->y);
+        assert(va_sub->y > va_base->y);
+
+        q_layout_free_tree(va_root);
+        q_document_destroy(va_doc);
+    }
+
+    /* ── text-decoration painting and inheritance to text runs ───────────── */
+    {
+        static const char td_html[] =
+            "<html><body><div style='text-decoration:underline overline line-through;'>Decor</div></body></html>";
+        q_document_t *td_doc;
+        q_box_t *td_root;
+        q_box_t *td_div;
+        q_box_t *td_ic;
+        q_box_t *td_line;
+        q_box_t *td_text;
+        int sample_x;
+        int baseline_y;
+        int underline_y;
+        int strike_y;
+
+        td_doc = q_document_create();
+        assert(td_doc != NULL);
+        assert(q_document_load_html(td_doc, td_html, sizeof(td_html) - 1,
+                                    "file://./tests/text_decoration.html") == 0);
+
+        td_root = q_layout_build_tree(td_doc);
+        assert(td_root != NULL);
+        q_layout_measure(td_root, 320.0f, 0.0f);
+        q_layout_position(td_root, 0.0f, 0.0f);
+
+        td_div = td_root->first_child;
+        assert(td_div != NULL);
+        td_ic = td_div->first_child;
+        assert(td_ic != NULL);
+        td_line = td_ic->first_child;
+        assert(td_line != NULL);
+        td_text = td_line->first_child;
+        assert(td_text != NULL);
+        assert((td_text->text_decoration & Q_TEXT_DECORATION_UNDERLINE) != 0u);
+        assert((td_text->text_decoration & Q_TEXT_DECORATION_OVERLINE) != 0u);
+        assert((td_text->text_decoration & Q_TEXT_DECORATION_LINE_THROUGH) != 0u);
+
+        q_paint_box(td_root);
+        assert(td_text->tile != NULL);
+        sample_x = (td_text->tile_w > 2) ? 1 : 0;
+        baseline_y = (td_text->run != NULL) ? (int) lroundf(td_text->run->ascender)
+                                            : (int) lroundf(td_text->height * 0.8f);
+        underline_y = baseline_y + 1;
+        strike_y = (td_text->run != NULL)
+                 ? (int) lroundf((float) baseline_y - (td_text->run->ascender * 0.5f))
+                 : (int) lroundf(td_text->height * 0.5f);
+        if (underline_y < 0) {
+            underline_y = 0;
+        }
+        if (underline_y >= td_text->tile_h) {
+            underline_y = td_text->tile_h - 1;
+        }
+        if (strike_y < 0) {
+            strike_y = 0;
+        }
+        if (strike_y >= td_text->tile_h) {
+            strike_y = td_text->tile_h - 1;
+        }
+        assert_pixel_alpha_at_least(td_text->tile, td_text->tile_w, td_text->tile_h,
+                                    sample_x, 0, 1);
+        assert_pixel_alpha_at_least(td_text->tile, td_text->tile_w, td_text->tile_h,
+                                    sample_x, underline_y, 1);
+        assert_pixel_alpha_at_least(td_text->tile, td_text->tile_w, td_text->tile_h,
+                                    sample_x, strike_y, 1);
+
+        q_layout_free_tree(td_root);
+        q_document_destroy(td_doc);
+    }
+
+    /* ── border-radius clipping and background-image tiling ───────────────── */
+    {
+        static const char brad_html[] =
+            "<html><body><div style='width:20px;height:20px;background:#ff0000;border-radius:8px;'></div></body></html>";
+        q_document_t *brad_doc;
+        q_box_t *brad_root;
+        q_box_t *brad_div;
+
+        brad_doc = q_document_create();
+        assert(brad_doc != NULL);
+        assert(q_document_load_html(brad_doc, brad_html, sizeof(brad_html) - 1,
+                                    "file://./tests/border_radius.html") == 0);
+
+        brad_root = q_layout_build_tree(brad_doc);
+        assert(brad_root != NULL);
+        q_layout_measure(brad_root, 320.0f, 0.0f);
+        q_layout_position(brad_root, 0.0f, 0.0f);
+        brad_div = brad_root->first_child;
+        assert(brad_div != NULL);
+        brad_div->border_width[0] = 0.0f;
+        brad_div->border_width[1] = 0.0f;
+        brad_div->border_width[2] = 0.0f;
+        brad_div->border_width[3] = 0.0f;
+
+        q_paint_box(brad_root);
+        assert(brad_div->tile != NULL);
+        assert_pixel_rgba(brad_div->tile, brad_div->tile_w, brad_div->tile_h, 0, 0, 0, 0, 0, 0);
+        assert_pixel_rgba(brad_div->tile, brad_div->tile_w, brad_div->tile_h, 10, 10, 255, 0, 0, 255);
+
+        q_layout_free_tree(brad_root);
+        q_document_destroy(brad_doc);
+    }
+
+    {
+        static const char bg_html[] =
+            "<html><body><div style='width:32px;height:24px;background-image:url(../images/icon_red.png);background-repeat:repeat;'></div></body></html>";
+        q_document_t *bg_doc;
+        q_box_t *bg_root;
+        q_box_t *bg_div;
+
+        bg_doc = q_document_create();
+        assert(bg_doc != NULL);
+        assert(q_document_load_html(bg_doc, bg_html, sizeof(bg_html) - 1,
+                                    "file://./tests/html/background_image.html") == 0);
+
+        bg_root = q_layout_build_tree(bg_doc);
+        assert(bg_root != NULL);
+        q_layout_measure(bg_root, 320.0f, 0.0f);
+        q_layout_position(bg_root, 0.0f, 0.0f);
+        bg_div = bg_root->first_child;
+        assert(bg_div != NULL);
+        assert(bg_div->background_image != NULL);
+        assert(bg_div->background_repeat == Q_BACKGROUND_REPEAT_REPEAT);
+        bg_div->border_width[0] = 0.0f;
+        bg_div->border_width[1] = 0.0f;
+        bg_div->border_width[2] = 0.0f;
+        bg_div->border_width[3] = 0.0f;
+
+        q_paint_box(bg_root);
+        assert(bg_div->tile != NULL);
+        assert_pixel_rgba(bg_div->tile, bg_div->tile_w, bg_div->tile_h, 0, 0, 220, 50, 50, 255);
+        assert_pixel_rgba(bg_div->tile, bg_div->tile_w, bg_div->tile_h, 16, 0, 220, 50, 50, 255);
+        assert_pixel_rgba(bg_div->tile, bg_div->tile_w, bg_div->tile_h, 0, 16, 220, 50, 50, 255);
+
+        q_layout_free_tree(bg_root);
+        q_document_destroy(bg_doc);
     }
 
     /* ── overflow:hidden clipping ────────────────────────────────────────── */
