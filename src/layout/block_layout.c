@@ -178,6 +178,15 @@ static float q_layout_maxf(float a, float b)
     return (a > b) ? a : b;
 }
 
+static float q_layout_resolve_clear_y(const q_float_ctx_t *ctx, float base_y, q_clear_type_t clear_type)
+{
+    if (clear_type == Q_CLEAR_NONE) {
+        return base_y;
+    }
+
+    return q_layout_maxf(base_y, q_float_ctx_clear_y(ctx, clear_type));
+}
+
 static float q_layout_block_place_float(q_float_ctx_t *ctx, q_box_t *child,
                                         float containing_w, float start_y)
 {
@@ -319,10 +328,8 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
                 float float_start_y = flow_y;
                 float placed_bottom;
 
-                if (child->clear_type != Q_CLEAR_NONE) {
-                    float_start_y = q_layout_maxf(float_start_y,
-                                                  q_float_ctx_clear_y(&float_ctx, child->clear_type));
-                }
+                float_start_y = q_layout_resolve_clear_y(&float_ctx, float_start_y,
+                                                         child->clear_type);
 
                 q_layout_measure(child, box->width, containing_h);
                 placed_bottom = q_layout_block_place_float(&float_ctx, child, box->width, float_start_y);
@@ -345,10 +352,7 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
                 float right;
                 float avail_w;
 
-                if (child->clear_type != Q_CLEAR_NONE) {
-                    child_y = q_layout_maxf(child_y,
-                                            q_float_ctx_clear_y(&float_ctx, child->clear_type));
-                }
+                child_y = q_layout_resolve_clear_y(&float_ctx, child_y, child->clear_type);
 
                 left = q_float_ctx_left_edge(&float_ctx, child_y, probe_h);
                 right = q_float_ctx_right_edge(&float_ctx, child_y, probe_h, box->width);

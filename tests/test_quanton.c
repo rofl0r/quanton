@@ -628,6 +628,38 @@ int main(int argc, char **argv)
         q_document_destroy(flt_doc);
     }
 
+    /* ── clear property support (phase 8) ────────────────────────────────── */
+    {
+        q_document_t *clr_doc;
+        q_box_t *clr_root;
+        q_box_t *clr_container;
+        q_box_t *clr_float;
+        q_box_t *clr_clear;
+
+        clr_doc = q_document_create();
+        assert(clr_doc != NULL);
+        assert(q_document_load_url(clr_doc, "file://./tests/html/clear_property.html") == 0);
+
+        clr_root = q_layout_build_tree(clr_doc);
+        assert(clr_root != NULL);
+        q_layout_measure(clr_root, 240.0f, 0.0f);
+        q_layout_position(clr_root, 0.0f, 0.0f);
+
+        clr_container = clr_root->first_child;
+        assert(clr_container != NULL);
+        clr_float = clr_container->first_child;
+        assert(clr_float != NULL);
+        assert(clr_float->float_type == Q_FLOAT_LEFT);
+
+        clr_clear = clr_float->next_sibling;
+        assert(clr_clear != NULL);
+        assert(clr_clear->clear_type == Q_CLEAR_LEFT);
+        assert(clr_clear->y >= clr_float->y + clr_float->height);
+
+        q_layout_free_tree(clr_root);
+        q_document_destroy(clr_doc);
+    }
+
     /* ── Root-level scrolling + Q_DIRTY_SCROLL ──────────────────────────── */
     {
         static const char scroll_html[] =
