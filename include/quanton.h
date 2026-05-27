@@ -161,6 +161,12 @@ typedef enum q_background_repeat_type {
     Q_BACKGROUND_REPEAT_REPEAT_Y = 3,
 } q_background_repeat_type_t;
 
+typedef enum q_list_style_type {
+    Q_LIST_STYLE_NONE = 0,
+    Q_LIST_STYLE_DISC = 1,
+    Q_LIST_STYLE_DECIMAL = 2,
+} q_list_style_type_t;
+
 #define Q_TEXT_DECORATION_UNDERLINE    (1u << 0)
 #define Q_TEXT_DECORATION_OVERLINE     (1u << 1)
 #define Q_TEXT_DECORATION_LINE_THROUGH (1u << 2)
@@ -250,10 +256,16 @@ struct q_box {
     float style_width_pct;   /* percentage width (NaN = not set) */
     float style_height;
     /* CSS box model spacing */
+    float margin_top;
+    float margin_right;
+    float margin_bottom;
+    float margin_left;
     float padding_top;
     float padding_right;
     float padding_bottom;
     float padding_left;
+    q_list_style_type_t list_style_type;
+    int list_item_index;
     q_float_type_t float_type;
     q_clear_type_t clear_type;
     q_white_space_type_t white_space;

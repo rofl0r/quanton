@@ -498,6 +498,15 @@ static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
                 if (box->type != Q_BOX_IMAGE) {
                     box->type = Q_BOX_BLOCK;
                 }
+            } else if (css_value_is(val, val_len, "list-item")) {
+                box->is_flex_container = 0;
+                box->is_inline_block = 0;
+                if (box->type != Q_BOX_IMAGE) {
+                    box->type = Q_BOX_BLOCK;
+                }
+                if (box->list_style_type == Q_LIST_STYLE_NONE) {
+                    box->list_style_type = Q_LIST_STYLE_DISC;
+                }
             } else if (css_value_is(val, val_len, "table")
                        || css_value_is(val, val_len, "inline-table")) {
                 box->is_flex_container = 0;
@@ -568,6 +577,20 @@ static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
             }
         } else if (css_name_eq(prop, prop_len, "height")) {
             box->style_height = css_parse_length_pct(val, val_len, NULL);
+        } else if (css_name_eq(prop, prop_len, "margin")) {
+            float v = css_parse_length_pct(val, val_len, NULL);
+            box->margin_top    = v;
+            box->margin_right  = v;
+            box->margin_bottom = v;
+            box->margin_left   = v;
+        } else if (css_name_eq(prop, prop_len, "margin-top")) {
+            box->margin_top    = css_parse_length_pct(val, val_len, NULL);
+        } else if (css_name_eq(prop, prop_len, "margin-right")) {
+            box->margin_right  = css_parse_length_pct(val, val_len, NULL);
+        } else if (css_name_eq(prop, prop_len, "margin-bottom")) {
+            box->margin_bottom = css_parse_length_pct(val, val_len, NULL);
+        } else if (css_name_eq(prop, prop_len, "margin-left")) {
+            box->margin_left   = css_parse_length_pct(val, val_len, NULL);
         } else if (css_name_eq(prop, prop_len, "padding")) {
             float v = css_parse_length_pct(val, val_len, NULL);
             box->padding_top    = v;
@@ -703,6 +726,22 @@ static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
                 box->background_repeat = Q_BACKGROUND_REPEAT_NO_REPEAT;
             } else {
                 box->background_repeat = Q_BACKGROUND_REPEAT_REPEAT;
+            }
+        } else if (css_name_eq(prop, prop_len, "list-style-type")) {
+            if (css_value_is(val, val_len, "none")) {
+                box->list_style_type = Q_LIST_STYLE_NONE;
+            } else if (css_value_is(val, val_len, "decimal")) {
+                box->list_style_type = Q_LIST_STYLE_DECIMAL;
+            } else {
+                box->list_style_type = Q_LIST_STYLE_DISC;
+            }
+        } else if (css_name_eq(prop, prop_len, "list-style")) {
+            if (css_value_is(val, val_len, "none")) {
+                box->list_style_type = Q_LIST_STYLE_NONE;
+            } else if (css_value_is(val, val_len, "decimal")) {
+                box->list_style_type = Q_LIST_STYLE_DECIMAL;
+            } else if (css_value_is(val, val_len, "disc")) {
+                box->list_style_type = Q_LIST_STYLE_DISC;
             }
         } else if (css_name_eq(prop, prop_len, "overflow-x")) {
             if (css_value_is(val, val_len, "hidden")) {
@@ -1007,6 +1046,26 @@ static q_box_t *q_ensure_inline_container(q_box_t *parent)
     return ic;
 }
 
+static int q_count_preceding_list_items(lxb_dom_node_t *node)
+{
+    int index = 1;
+    lxb_dom_node_t *prev;
+
+    if (node == NULL) {
+        return 1;
+    }
+
+    for (prev = node->prev; prev != NULL; prev = prev->prev) {
+        if (prev->type == LXB_DOM_NODE_TYPE_ELEMENT
+            && lxb_dom_node_tag_id(prev) == LXB_TAG_LI)
+        {
+            ++index;
+        }
+    }
+
+    return index;
+}
+
 static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *parent)
 {
     q_box_t *current = NULL;
@@ -1034,6 +1093,35 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
                                               &style_len);
 
             /* UA stylesheet defaults applied before author styles */
+            if (tag_id == LXB_TAG_BODY) {
+                /* WHATWG UA: body { margin: 8px } */
+                current->margin_top    = 8.0f;
+                current->margin_right  = 8.0f;
+                current->margin_bottom = 8.0f;
+                current->margin_left   = 8.0f;
+            } else if (tag_id == LXB_TAG_UL) {
+                /* WHATWG UA: ul { margin-block: 1em; padding-inline-start: 40px; list-style-type: disc } */
+                current->margin_top = 16.0f;
+                current->margin_bottom = 16.0f;
+                current->padding_left = 40.0f;
+                current->list_style_type = Q_LIST_STYLE_DISC;
+            } else if (tag_id == LXB_TAG_OL) {
+                /* WHATWG UA: ol { margin-block: 1em; padding-inline-start: 40px; list-style-type: decimal } */
+                current->margin_top = 16.0f;
+                current->margin_bottom = 16.0f;
+                current->padding_left = 40.0f;
+                current->list_style_type = Q_LIST_STYLE_DECIMAL;
+            } else if (tag_id == LXB_TAG_LI) {
+                /* list-item markers are rendered in paint.c */
+                current->padding_left = 20.0f;
+                if (parent != NULL && parent->list_style_type != Q_LIST_STYLE_NONE) {
+                    current->list_style_type = parent->list_style_type;
+                } else {
+                    current->list_style_type = Q_LIST_STYLE_DISC;
+                }
+                current->list_item_index = q_count_preceding_list_items(node);
+            }
+
             if (tag_id == LXB_TAG_TD || tag_id == LXB_TAG_TH) {
                 /* WHATWG UA: td, th { padding: 1px } */
                 current->padding_top    = 1.0f;
@@ -1136,14 +1224,13 @@ q_box_t *q_layout_build_tree(q_document_t *doc)
     }
 
     if (body != NULL) {
-        /* WHATWG UA stylesheet: body { margin: 8px }
-         * Implemented as padding since we lack full margin support. */
-        root->padding_top    = 8.0f;
-        root->padding_right  = 8.0f;
-        root->padding_bottom = 8.0f;
-        root->padding_left   = 8.0f;
+        /* WHATWG UA stylesheet: body { margin: 8px } */
+        root->margin_top    = 8.0f;
+        root->margin_right  = 8.0f;
+        root->margin_bottom = 8.0f;
+        root->margin_left   = 8.0f;
 
-        /* Apply any inline style on <body> itself (may override the above) */
+        /* Apply any inline style on <body> itself (may override UA defaults) */
         {
             lxb_dom_element_t *body_el = lxb_dom_interface_element(
                 lxb_dom_interface_node(body));

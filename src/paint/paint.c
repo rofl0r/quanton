@@ -1,10 +1,12 @@
 #include "quanton.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define Q_TEXT_COLOR 0x000000FFu
+#define Q_MARKER_GUTTER_X 4
 #define Q_SCROLLBAR_THICKNESS 12
 #define Q_SCROLLBAR_MIN_THUMB 16
 #define Q_SCROLLBAR_TRACK_COLOR 0xA0A0A0FFu
@@ -495,6 +497,62 @@ static void q_paint_text_decoration(q_box_t *box)
     }
 }
 
+static void q_paint_list_marker(q_box_t *box)
+{
+    static q_font_cache_t *cache;
+    q_font_t *font;
+    int marker_y;
+
+    if (box == NULL
+        || box->tile == NULL
+        || box->list_style_type == Q_LIST_STYLE_NONE
+        || box->list_item_index <= 0)
+    {
+        return;
+    }
+
+    marker_y = box->tile_h / 2;
+    if (box->list_style_type == Q_LIST_STYLE_DISC) {
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                          Q_MARKER_GUTTER_X, marker_y - 2, 5, 5, Q_TEXT_COLOR);
+        return;
+    }
+
+    if (box->list_style_type != Q_LIST_STYLE_DECIMAL) {
+        return;
+    }
+
+    if (cache == NULL) {
+        cache = q_font_cache_create();
+    }
+    if (cache == NULL) {
+        return;
+    }
+
+    font = q_font_match(cache, "sans-serif", 16.0f, 400);
+    if (font != NULL) {
+        char marker[24];
+        q_shaped_run_t *run;
+        int marker_x = Q_MARKER_GUTTER_X;
+        int marker_run_y;
+        int n = snprintf(marker, sizeof(marker), "%d.", box->list_item_index);
+        if (n <= 0) {
+            return;
+        }
+        run = q_font_shape_run(font, marker, (size_t) n);
+        if (run == NULL) {
+            return;
+        }
+        marker_run_y = marker_y - (int) lroundf(run->ascender * 0.5f);
+        if (marker_run_y < 0) {
+            marker_run_y = 0;
+        }
+        q_font_render_run(run, Q_TEXT_COLOR, box->tile, box->tile_w, box->tile_h,
+                          marker_x, marker_run_y);
+        q_shaped_run_free(run);
+    }
+}
+
 static int q_paint_box_has_radius(const q_box_t *box)
 {
     return box != NULL
@@ -836,6 +894,7 @@ void q_paint_box(q_box_t *box)
         q_paint_fill_rect(box->tile, w, h, 0, 0, w, h, box->background_color);
         q_paint_background_image(box);
         q_paint_borders(box);
+        q_paint_list_marker(box);
     } else if (box->type == Q_BOX_IMAGE) {
         q_paint_image(box);
     } else if (box->type == Q_BOX_TEXT && box->run != NULL) {

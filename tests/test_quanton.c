@@ -311,8 +311,12 @@ int main(int argc, char **argv)
     second_block = first_block->next_sibling;
     assert(first_block != NULL);
     assert(second_block != NULL);
-    /* body has 8px UA padding; origin was (10,20), so children start at (18,28)
+    /* body has 8px UA margin; origin was (10,20), so children start at (18,28)
      * and their width is reduced to 320 - 2*8 = 304. */
+    assert(nearly_equal(root->margin_top, 8.0f));
+    assert(nearly_equal(root->margin_right, 8.0f));
+    assert(nearly_equal(root->margin_bottom, 8.0f));
+    assert(nearly_equal(root->margin_left, 8.0f));
     assert(nearly_equal(first_block->x, 18.0f));
     assert(nearly_equal(first_block->y, 28.0f));
     assert(nearly_equal(first_block->width, 304.0f));
@@ -337,7 +341,7 @@ int main(int argc, char **argv)
     if (first_text->run != NULL) {
         assert(first_text->run->count > 0);
     }
-    /* first_text starts at (18,28) = origin(10,20) + body-padding(8,8) */
+    /* first_text starts at (18,28) = origin(10,20) + body-margin(8,8) */
     assert(q_hit_test(root, 19, 29) == first_text);
     assert(q_event_find_delegate(first_text->dom_node, "data-hit") == first_block->dom_node);
 
@@ -1062,6 +1066,41 @@ int main(int argc, char **argv)
         q_document_destroy(clr_doc);
     }
 
+    /* ── Margin support in block flow ───────────────────────────────────── */
+    {
+        static const char margin_html[] =
+            "<html><body style='margin:0'>"
+            "<div style='height:10px; margin-bottom:12px;'>A</div>"
+            "<div style='height:10px; margin-top:4px;'>B</div>"
+            "</body></html>";
+        q_document_t *margin_doc;
+        q_box_t *margin_root;
+        q_box_t *margin_a;
+        q_box_t *margin_b;
+
+        margin_doc = q_document_create();
+        assert(margin_doc != NULL);
+        assert(q_document_load_html(margin_doc, margin_html, sizeof(margin_html) - 1,
+                                    "file://./tests/margins.html") == 0);
+
+        margin_root = q_layout_build_tree(margin_doc);
+        assert(margin_root != NULL);
+        q_layout_measure(margin_root, 200.0f, 0.0f);
+        q_layout_position(margin_root, 0.0f, 0.0f);
+
+        margin_a = margin_root->first_child;
+        assert(margin_a != NULL);
+        margin_b = margin_a->next_sibling;
+        assert(margin_b != NULL);
+
+        assert(nearly_equal(margin_a->margin_bottom, 12.0f));
+        assert(nearly_equal(margin_b->margin_top, 4.0f));
+        assert(nearly_equal(margin_b->y, margin_a->y + margin_a->height + 12.0f + 4.0f));
+
+        q_layout_free_tree(margin_root);
+        q_document_destroy(margin_doc);
+    }
+
     /* ── Table anonymous box fixup (phase 9) ─────────────────────────────── */
     {
         q_document_t *tbl_doc;
@@ -1169,7 +1208,7 @@ int main(int argc, char **argv)
 
         q_composite_frame(&scroll_view);
         assert(nearly_equal(scroll_view.doc_width, 120.0f));
-        assert(nearly_equal(scroll_view.doc_height, 116.0f)); /* 8px body pad top+bottom + 20+80 */
+        assert(nearly_equal(scroll_view.doc_height, 116.0f)); /* 8px body margin top+bottom + 20+80 */
         assert_pixel_rgba(scroll_view.framebuffer, scroll_view.vp_width, scroll_view.vp_height,
                           80, 10, 0xC0, 0x20, 0x20, 0xFF);
 
@@ -1260,6 +1299,57 @@ int main(int argc, char **argv)
 
         q_layout_free_tree(flex_root);
         q_document_destroy(flex_doc);
+    }
+
+    /* ── List items + markers (phase 19) ───────────────────────────────── */
+    {
+        q_document_t *list_doc;
+        q_box_t *list_root;
+        q_box_t *list_ul;
+        q_box_t *list_ol;
+        q_box_t *list_ul_li;
+        q_box_t *list_ol_li1;
+        q_box_t *list_ol_li2;
+        int marker_x;
+        int marker_y;
+
+        list_doc = q_document_create();
+        assert(list_doc != NULL);
+        assert(q_document_load_url(list_doc, "file://./tests/html/list_ol_ul.html") == 0);
+
+        list_root = q_layout_build_tree(list_doc);
+        assert(list_root != NULL);
+        q_layout_measure(list_root, 320.0f, 0.0f);
+        q_layout_position(list_root, 0.0f, 0.0f);
+        q_paint_box(list_root);
+
+        list_ul = list_root->first_child;
+        assert(list_ul != NULL);
+        list_ol = list_ul->next_sibling;
+        assert(list_ol != NULL);
+        assert(nearly_equal(list_ul->padding_left, 40.0f));
+        assert(nearly_equal(list_ol->padding_left, 40.0f));
+
+        list_ul_li = list_ul->first_child;
+        assert(list_ul_li != NULL);
+        assert(list_ul_li->list_style_type == Q_LIST_STYLE_DISC);
+        assert(list_ul_li->list_item_index == 1);
+
+        list_ol_li1 = list_ol->first_child;
+        assert(list_ol_li1 != NULL);
+        list_ol_li2 = list_ol_li1->next_sibling;
+        assert(list_ol_li2 != NULL);
+        assert(list_ol_li1->list_style_type == Q_LIST_STYLE_DECIMAL);
+        assert(list_ol_li1->list_item_index == 1);
+        assert(list_ol_li2->list_item_index == 2);
+
+        marker_x = (int) lroundf(list_ul_li->x + 4.0f);
+        marker_y = (int) lroundf(list_ul_li->y + (list_ul_li->height * 0.5f));
+        assert_pixel_rgba(list_root->tile, list_root->tile_w, list_root->tile_h,
+                          marker_x, marker_y, 0, 0, 0, 255);
+
+        q_layout_free_tree(list_root);
+        q_document_destroy(list_doc);
     }
 
     /* ── Absolute / fixed positioning ──────────────────────────────────── */
@@ -1402,6 +1492,7 @@ int main(int argc, char **argv)
         render_html_case_to_png("file://./tests/html/overflow_hidden.html", "output_overflow_hidden.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/table_border_collapse.html", "output_table_border_collapse.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/table_header_cells.html", "output_table_header_cells.png", TEST_WIDTH, TEST_HEIGHT);
+        render_html_case_to_png("file://./tests/html/list_ol_ul.html", "output_list_ol_ul.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/bg_image.html", "output_bg_image.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/percent_width_table.html", "output_percent_width_table.png", TEST_WIDTH, TEST_HEIGHT);
 #else
