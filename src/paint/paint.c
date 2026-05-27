@@ -85,12 +85,13 @@ static void q_paint_box_child(q_box_t *parent, q_box_t *child)
         clip_w = parent->tile_w - bleft - bright;
         clip_h = parent->tile_h - btop  - bbottom;
 
+        /* If one axis allows overflow (VISIBLE), expand the clip region to
+         * cover the full tile on that axis so only the other axis is clipped. */
         if (parent->overflow_x == Q_OVERFLOW_VISIBLE) {
-            /* only y is clipped */
             clip_x = 0;
             clip_w = parent->tile_w;
-        } else if (parent->overflow_y == Q_OVERFLOW_VISIBLE) {
-            /* only x is clipped */
+        }
+        if (parent->overflow_y == Q_OVERFLOW_VISIBLE) {
             clip_y = 0;
             clip_h = parent->tile_h;
         }
