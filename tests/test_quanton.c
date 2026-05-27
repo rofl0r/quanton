@@ -449,6 +449,121 @@ int main(int argc, char **argv)
         assert(unlink(img_path) == 0);
     }
 
+    /* ── Multi-format image loading (PNG / JPEG / GIF) ──────────────────── */
+    {
+        q_image_t *img;
+
+        /* PNG: load tests/images/icon_red.png (16×16, lossless) */
+        img = q_image_load_url("file://./tests/images/icon_red.png");
+        assert(img != NULL);
+        assert(q_image_width(img)  == 16);
+        assert(q_image_height(img) == 16);
+        assert(q_image_pixels(img) != NULL);
+        /* corner pixel: R=220 G=50 B=50 A=255 */
+        assert(q_image_pixels(img)[0] == 220u);
+        assert(q_image_pixels(img)[1] ==  50u);
+        assert(q_image_pixels(img)[2] ==  50u);
+        assert(q_image_pixels(img)[3] == 255u);
+        /* inner pixel at (8,8): R=200 G=30 B=30 A=255 */
+        assert(q_image_pixels(img)[(8 * 16 + 8) * 4 + 0] == 200u);
+        assert(q_image_pixels(img)[(8 * 16 + 8) * 4 + 1] ==  30u);
+        assert(q_image_pixels(img)[(8 * 16 + 8) * 4 + 2] ==  30u);
+        assert(q_image_pixels(img)[(8 * 16 + 8) * 4 + 3] == 255u);
+        q_image_release(img);
+
+        /* JPEG: load tests/images/icon_green.jpg (16×16, lossy — check dims only) */
+        img = q_image_load_url("file://./tests/images/icon_green.jpg");
+        assert(img != NULL);
+        assert(q_image_width(img)  == 16);
+        assert(q_image_height(img) == 16);
+        assert(q_image_pixels(img) != NULL);
+        /* JPEG is lossy; just verify the dominant channel is green */
+        assert(q_image_pixels(img)[1] > q_image_pixels(img)[0]);
+        assert(q_image_pixels(img)[1] > q_image_pixels(img)[2]);
+        q_image_release(img);
+
+        /* GIF: load tests/images/icon_blue.gif (16×16, lossless palette) */
+        img = q_image_load_url("file://./tests/images/icon_blue.gif");
+        assert(img != NULL);
+        assert(q_image_width(img)  == 16);
+        assert(q_image_height(img) == 16);
+        assert(q_image_pixels(img) != NULL);
+        /* corner (0,0): light gray background R=200 G=200 B=200 */
+        assert(q_image_pixels(img)[0] == 200u);
+        assert(q_image_pixels(img)[1] == 200u);
+        assert(q_image_pixels(img)[2] == 200u);
+        assert(q_image_pixels(img)[3] == 255u);
+        /* center (8,8): blue — dominant channel is blue */
+        assert(q_image_pixels(img)[(8 * 16 + 8) * 4 + 2] > q_image_pixels(img)[(8 * 16 + 8) * 4 + 0]);
+        assert(q_image_pixels(img)[(8 * 16 + 8) * 4 + 2] > q_image_pixels(img)[(8 * 16 + 8) * 4 + 1]);
+        q_image_release(img);
+    }
+
+    /* ── overflow:hidden clipping ────────────────────────────────────────── */
+    {
+        /* parent: 100×40 with overflow:hidden; child: 200×200 */
+        static const char ov_html[] =
+            "<html><body>"
+            "<div style='width:100px; height:40px; overflow:hidden;'>"
+            "<div style='width:200px; height:200px;'>overflow</div>"
+            "</div>"
+            "</body></html>";
+        q_document_t *ov_doc;
+        q_box_t      *ov_root;
+        q_box_t      *ov_parent;
+        q_box_t      *ov_child;
+
+        ov_doc = q_document_create();
+        assert(ov_doc != NULL);
+        assert(q_document_load_html(ov_doc, ov_html, sizeof(ov_html) - 1,
+                                    "file://./tests/overflow.html") == 0);
+
+        ov_root = q_layout_build_tree(ov_doc);
+        assert(ov_root != NULL);
+
+        ov_parent = ov_root->first_child;
+        assert(ov_parent != NULL);
+        /* Verify overflow fields are parsed from CSS */
+        assert(ov_parent->overflow_x == Q_OVERFLOW_HIDDEN);
+        assert(ov_parent->overflow_y == Q_OVERFLOW_HIDDEN);
+
+        q_layout_measure(ov_root, 400.0f, 0.0f);
+        q_layout_position(ov_root, 0.0f, 0.0f);
+
+        /* Parent is clamped to the explicit CSS dimensions */
+        assert(nearly_equal(ov_parent->width,  100.0f));
+        assert(nearly_equal(ov_parent->height,  40.0f));
+
+        ov_child = ov_parent->first_child;
+        assert(ov_child != NULL);
+        assert(nearly_equal(ov_child->width,  200.0f));
+        assert(nearly_equal(ov_child->height, 200.0f));
+
+        /* Set background colors directly (inline CSS background not yet parsed) */
+        ov_parent->background_color = 0x4080C0FFu;
+        ov_child->background_color  = 0xE04040FFu;
+
+        q_paint_box(ov_root);
+
+        /* Parent tile is exactly 100×40 */
+        assert(ov_parent->tile != NULL);
+        assert(ov_parent->tile_w == 100);
+        assert(ov_parent->tile_h == 40);
+
+        /* A pixel well inside the parent bounds (50,20) should be the child's
+         * red color #e04040, since the child covers the whole content area. */
+        assert_pixel_rgba(ov_parent->tile, ov_parent->tile_w, ov_parent->tile_h,
+                          50, 20, 0xe0, 0x40, 0x40, 0xff);
+
+        /* y=38 is the last row inside the clipped content area (the parent has
+         * a 1-pixel default border, so the content region is y=1..38). */
+        assert_pixel_rgba(ov_parent->tile, ov_parent->tile_w, ov_parent->tile_h,
+                          50, 38, 0xe0, 0x40, 0x40, 0xff);
+
+        q_layout_free_tree(ov_root);
+        q_document_destroy(ov_doc);
+    }
+
 #if defined(QUANTON_BACKEND_PNG) || defined(QUANTON_BACKEND_X11) || defined(QUANTON_BACKEND_SDL2)
     {
         static const char flex_html[] =
@@ -633,6 +748,7 @@ int main(int argc, char **argv)
         render_html_case_to_png("file://./tests/html/flex_row.html", "output_flex_row.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/absolute_pos.html", "output_absolute_pos.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/z_index_stack.html", "output_z_index_stack.png", TEST_WIDTH, TEST_HEIGHT);
+        render_html_case_to_png("file://./tests/html/overflow_hidden.html", "output_overflow_hidden.png", TEST_WIDTH, TEST_HEIGHT);
 #else
         q_document_t *interactive_doc = NULL;
         q_box_t *interactive_root = root;

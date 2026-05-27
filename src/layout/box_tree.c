@@ -220,6 +220,43 @@ static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
             box->style_width = css_parse_length(val, val_len);
         } else if (css_name_eq(prop, prop_len, "height")) {
             box->style_height = css_parse_length(val, val_len);
+        } else if (css_name_eq(prop, prop_len, "overflow-x")) {
+            if (css_value_is(val, val_len, "hidden")) {
+                box->overflow_x = Q_OVERFLOW_HIDDEN;
+            } else if (css_value_is(val, val_len, "clip")) {
+                box->overflow_x = Q_OVERFLOW_CLIP;
+            } else if (css_value_is(val, val_len, "scroll")) {
+                box->overflow_x = Q_OVERFLOW_SCROLL;
+            } else if (css_value_is(val, val_len, "auto")) {
+                box->overflow_x = Q_OVERFLOW_AUTO;
+            } else {
+                box->overflow_x = Q_OVERFLOW_VISIBLE;
+            }
+        } else if (css_name_eq(prop, prop_len, "overflow-y")) {
+            if (css_value_is(val, val_len, "hidden")) {
+                box->overflow_y = Q_OVERFLOW_HIDDEN;
+            } else if (css_value_is(val, val_len, "clip")) {
+                box->overflow_y = Q_OVERFLOW_CLIP;
+            } else if (css_value_is(val, val_len, "scroll")) {
+                box->overflow_y = Q_OVERFLOW_SCROLL;
+            } else if (css_value_is(val, val_len, "auto")) {
+                box->overflow_y = Q_OVERFLOW_AUTO;
+            } else {
+                box->overflow_y = Q_OVERFLOW_VISIBLE;
+            }
+        } else if (css_name_eq(prop, prop_len, "overflow")) {
+            q_overflow_type_t ov = Q_OVERFLOW_VISIBLE;
+            if (css_value_is(val, val_len, "hidden")) {
+                ov = Q_OVERFLOW_HIDDEN;
+            } else if (css_value_is(val, val_len, "clip")) {
+                ov = Q_OVERFLOW_CLIP;
+            } else if (css_value_is(val, val_len, "scroll")) {
+                ov = Q_OVERFLOW_SCROLL;
+            } else if (css_value_is(val, val_len, "auto")) {
+                ov = Q_OVERFLOW_AUTO;
+            }
+            box->overflow_x = ov;
+            box->overflow_y = ov;
         }
     }
 }

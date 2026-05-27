@@ -59,6 +59,10 @@ static void q_paint_box_child(q_box_t *parent, q_box_t *child)
 {
     int dx;
     int dy;
+    int clip_x;
+    int clip_y;
+    int clip_w;
+    int clip_h;
 
     q_paint_box(child);
     if (child->tile == NULL) {
@@ -67,9 +71,39 @@ static void q_paint_box_child(q_box_t *parent, q_box_t *child)
 
     dx = (int) lroundf(child->x - parent->x);
     dy = (int) lroundf(child->y - parent->y);
-    q_paint_composite(parent->tile, parent->tile_w, parent->tile_h,
-                      child->tile, child->tile_w, child->tile_h,
-                      dx, dy);
+
+    if (parent->overflow_x == Q_OVERFLOW_HIDDEN || parent->overflow_x == Q_OVERFLOW_CLIP ||
+        parent->overflow_y == Q_OVERFLOW_HIDDEN || parent->overflow_y == Q_OVERFLOW_CLIP) {
+        /* Clip to the parent's content area (inside its borders). */
+        int bleft  = (int) ceilf(parent->border_width[3]);
+        int btop   = (int) ceilf(parent->border_width[0]);
+        int bright = (int) ceilf(parent->border_width[1]);
+        int bbottom = (int) ceilf(parent->border_width[2]);
+
+        clip_x = bleft;
+        clip_y = btop;
+        clip_w = parent->tile_w - bleft - bright;
+        clip_h = parent->tile_h - btop  - bbottom;
+
+        if (parent->overflow_x == Q_OVERFLOW_VISIBLE) {
+            /* only y is clipped */
+            clip_x = 0;
+            clip_w = parent->tile_w;
+        } else if (parent->overflow_y == Q_OVERFLOW_VISIBLE) {
+            /* only x is clipped */
+            clip_y = 0;
+            clip_h = parent->tile_h;
+        }
+
+        q_paint_composite_clipped(parent->tile, parent->tile_w, parent->tile_h,
+                                  child->tile, child->tile_w, child->tile_h,
+                                  dx, dy,
+                                  clip_x, clip_y, clip_w, clip_h);
+    } else {
+        q_paint_composite(parent->tile, parent->tile_w, parent->tile_h,
+                          child->tile, child->tile_w, child->tile_h,
+                          dx, dy);
+    }
 }
 
 static void q_paint_image(q_box_t *box)
@@ -228,6 +262,66 @@ void q_paint_composite(uint8_t *dst, int dst_w, int dst_h,
             unsigned int inv_sa;
 
             if (dx_pos < 0 || dx_pos >= dst_w) {
+                continue;
+            }
+
+            sidx = (size_t) (sy * src_w + sx) * 4u;
+            didx = (size_t) (dy_pos * dst_w + dx_pos) * 4u;
+
+            sa = src[sidx + 3];
+            if (sa == 0u) {
+                continue;
+            }
+
+            inv_sa = 255u - sa;
+            dst[didx + 0] = (uint8_t) ((src[sidx + 0] * sa + dst[didx + 0] * inv_sa) / 255u);
+            dst[didx + 1] = (uint8_t) ((src[sidx + 1] * sa + dst[didx + 1] * inv_sa) / 255u);
+            dst[didx + 2] = (uint8_t) ((src[sidx + 2] * sa + dst[didx + 2] * inv_sa) / 255u);
+            dst[didx + 3] = (uint8_t) (sa + (dst[didx + 3] * inv_sa) / 255u);
+        }
+    }
+}
+
+void q_paint_composite_clipped(uint8_t *dst, int dst_w, int dst_h,
+                                const uint8_t *src, int src_w, int src_h,
+                                int dx, int dy,
+                                int clip_x, int clip_y, int clip_w, int clip_h)
+{
+    int sy;
+    int sx;
+    int cx1;
+    int cy1;
+
+    if (dst == NULL || src == NULL || dst_w <= 0 || dst_h <= 0 || src_w <= 0 || src_h <= 0) {
+        return;
+    }
+    if (clip_w <= 0 || clip_h <= 0) {
+        return;
+    }
+
+    cx1 = clip_x + clip_w;
+    cy1 = clip_y + clip_h;
+
+    for (sy = 0; sy < src_h; ++sy) {
+        int dy_pos = dy + sy;
+        if (dy_pos < 0 || dy_pos >= dst_h) {
+            continue;
+        }
+        if (dy_pos < clip_y || dy_pos >= cy1) {
+            continue;
+        }
+
+        for (sx = 0; sx < src_w; ++sx) {
+            int dx_pos = dx + sx;
+            size_t sidx;
+            size_t didx;
+            unsigned int sa;
+            unsigned int inv_sa;
+
+            if (dx_pos < 0 || dx_pos >= dst_w) {
+                continue;
+            }
+            if (dx_pos < clip_x || dx_pos >= cx1) {
                 continue;
             }
 

@@ -110,6 +110,15 @@ typedef enum q_position_type {
     Q_POSITION_FIXED    = 3
 } q_position_type_t;
 
+/* CSS overflow property values (Q_OVERFLOW_VISIBLE == 0 matches calloc zero) */
+typedef enum q_overflow_type {
+    Q_OVERFLOW_VISIBLE = 0,
+    Q_OVERFLOW_HIDDEN  = 1,
+    Q_OVERFLOW_SCROLL  = 2,
+    Q_OVERFLOW_AUTO    = 3,
+    Q_OVERFLOW_CLIP    = 4,
+} q_overflow_type_t;
+
 struct q_box {
     q_box_type_t     type;
     int              is_flex_container;
@@ -136,6 +145,9 @@ struct q_box {
     uint8_t *tile;
     int tile_w;
     int tile_h;
+    /* CSS overflow clipping */
+    q_overflow_type_t overflow_x;   /* Q_OVERFLOW_VISIBLE = default (calloc zero) */
+    q_overflow_type_t overflow_y;
     /* Explicit CSS dimensions / offsets (NaN = not set, use normal flow) */
     float style_top;
     float style_right;
@@ -186,6 +198,13 @@ void q_paint_borders(q_box_t *box);
 void q_paint_composite(uint8_t *dst, int dst_w, int dst_h,
                        const uint8_t *src, int src_w, int src_h,
                        int dx, int dy);
+/* Like q_paint_composite but additionally clips painted pixels to the
+ * rectangle [clip_x, clip_x+clip_w) × [clip_y, clip_y+clip_h) on dst.
+ * Used to implement overflow:hidden / overflow:clip. */
+void q_paint_composite_clipped(uint8_t *dst, int dst_w, int dst_h,
+                                const uint8_t *src, int src_w, int src_h,
+                                int dx, int dy,
+                                int clip_x, int clip_y, int clip_w, int clip_h);
 
 q_box_t *q_hit_test(q_box_t *root, int x, int y);
 void q_event_dispatch(quanton_view_t *view, q_event_t *event);
