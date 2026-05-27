@@ -88,6 +88,35 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
     box->width = (containing_w > 0.0f) ? containing_w : 0.0f;
     box->height = 0.0f;
 
+    if (box->is_flex_container) {
+        size_t child_count = 0;
+        float item_w = 0.0f;
+        float max_h = 0.0f;
+        float used_w = 0.0f;
+
+        for (child = box->first_child; child != NULL; child = child->next_sibling) {
+            ++child_count;
+        }
+
+        if (child_count > 0 && box->width > 0.0f) {
+            item_w = box->width / (float) child_count;
+        }
+
+        for (child = box->first_child; child != NULL; child = child->next_sibling) {
+            q_layout_measure(child, item_w, containing_h);
+            used_w += child->width;
+            if (child->height > max_h) {
+                max_h = child->height;
+            }
+        }
+
+        if (box->width <= 0.0f) {
+            box->width = used_w;
+        }
+        box->height = max_h;
+        return;
+    }
+
     if (box->type == Q_BOX_INLINE_CONTAINER) {
         /* Split text children into word-level line boxes first */
         q_layout_line_wrap(box);
@@ -127,6 +156,15 @@ void q_layout_position(q_box_t *box, float origin_x, float origin_y)
             child->x = cursor_x;
             child->y = origin_y;
             cursor_x += child->width + Q_LAYOUT_WORD_SPACING;
+        }
+        return;
+    }
+
+    if (box->is_flex_container) {
+        cursor_x = origin_x;
+        for (child = box->first_child; child != NULL; child = child->next_sibling) {
+            q_layout_position(child, cursor_x, origin_y);
+            cursor_x += child->width;
         }
         return;
     }

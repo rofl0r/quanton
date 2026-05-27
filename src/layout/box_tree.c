@@ -1,6 +1,7 @@
 #include "quanton.h"
 
 #include "lexbor/dom/interface.h"
+#include "lexbor/dom/interfaces/element.h"
 #include "lexbor/dom/interfaces/character_data.h"
 #include "lexbor/html/interfaces/document.h"
 
@@ -74,6 +75,36 @@ static int q_layout_walk_node(lxb_dom_node_t *node, q_box_t *parent)
         || node->type == LXB_DOM_NODE_TYPE_DOCUMENT)
     {
         current = q_box_create(Q_BOX_BLOCK, node, NULL, 0);
+        if (current != NULL && lxb_dom_node_type(node) == LXB_DOM_NODE_TYPE_ELEMENT) {
+            const lxb_char_t *style;
+            size_t style_len = 0;
+            size_t i;
+
+            style = lxb_dom_element_get_attribute(lxb_dom_interface_element(node),
+                                                  (const lxb_char_t *) "style",
+                                                  sizeof("style") - 1,
+                                                  &style_len);
+            if (style != NULL && style_len >= sizeof("display:flex") - 1) {
+                for (i = 0; i + (sizeof("display:flex") - 1) <= style_len; ++i) {
+                    if (tolower((unsigned char) style[i + 0]) == 'd'
+                        && tolower((unsigned char) style[i + 1]) == 'i'
+                        && tolower((unsigned char) style[i + 2]) == 's'
+                        && tolower((unsigned char) style[i + 3]) == 'p'
+                        && tolower((unsigned char) style[i + 4]) == 'l'
+                        && tolower((unsigned char) style[i + 5]) == 'a'
+                        && tolower((unsigned char) style[i + 6]) == 'y'
+                        && style[i + 7] == ':'
+                        && tolower((unsigned char) style[i + 8]) == 'f'
+                        && tolower((unsigned char) style[i + 9]) == 'l'
+                        && tolower((unsigned char) style[i + 10]) == 'e'
+                        && tolower((unsigned char) style[i + 11]) == 'x')
+                    {
+                        current->is_flex_container = 1;
+                        break;
+                    }
+                }
+            }
+        }
     }
     else if (node->type == LXB_DOM_NODE_TYPE_TEXT) {
         lxb_dom_character_data_t *ch_data = (lxb_dom_character_data_t *) node;
