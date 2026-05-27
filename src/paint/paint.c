@@ -55,6 +55,23 @@ static int q_paint_child_cmp(const void *a, const void *b)
     return ea->dom_order - eb->dom_order;
 }
 
+static void q_paint_box_child(q_box_t *parent, q_box_t *child)
+{
+    int dx;
+    int dy;
+
+    q_paint_box(child);
+    if (child->tile == NULL) {
+        return;
+    }
+
+    dx = (int) lroundf(child->x - parent->x);
+    dy = (int) lroundf(child->y - parent->y);
+    q_paint_composite(parent->tile, parent->tile_w, parent->tile_h,
+                      child->tile, child->tile_w, child->tile_h,
+                      dx, dy);
+}
+
 void q_paint_fill_rect(uint8_t *pixels, int buf_w, int buf_h,
                        int x, int y, int w, int h, uint32_t color)
 {
@@ -232,36 +249,27 @@ void q_paint_box(q_box_t *box)
     if (child_count != 0) {
         int order = 0;
         entries = (q_paint_child_entry_t *) malloc(child_count * sizeof(*entries));
-        if (entries == NULL) {
-            return;
-        }
+        if (entries != NULL) {
+            for (child = box->first_child; child != NULL; child = child->next_sibling) {
+                entries[i].box = child;
+                entries[i].dom_order = order++;
+                entries[i].category = q_paint_z_category(child);
+                entries[i].z_index = child->z_index;
+                ++i;
+            }
 
-        for (child = box->first_child; child != NULL; child = child->next_sibling) {
-            entries[i].box = child;
-            entries[i].dom_order = order++;
-            entries[i].category = q_paint_z_category(child);
-            entries[i].z_index = child->z_index;
-            ++i;
+            qsort(entries, child_count, sizeof(*entries), q_paint_child_cmp);
         }
-
-        qsort(entries, child_count, sizeof(*entries), q_paint_child_cmp);
     }
 
-    for (i = 0; i < child_count; ++i) {
-        int dx;
-        int dy;
-        q_box_t *child_box = entries[i].box;
-
-        q_paint_box(child_box);
-        if (child_box->tile == NULL) {
-            continue;
+    if (entries != NULL) {
+        for (i = 0; i < child_count; ++i) {
+            q_paint_box_child(box, entries[i].box);
         }
-
-        dx = (int) lroundf(child_box->x - box->x);
-        dy = (int) lroundf(child_box->y - box->y);
-        q_paint_composite(box->tile, box->tile_w, box->tile_h,
-                          child_box->tile, child_box->tile_w, child_box->tile_h,
-                          dx, dy);
+    } else {
+        for (child = box->first_child; child != NULL; child = child->next_sibling) {
+            q_paint_box_child(box, child);
+        }
     }
 
     free(entries);

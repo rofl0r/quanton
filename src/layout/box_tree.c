@@ -6,6 +6,7 @@
 #include "lexbor/html/interfaces/document.h"
 
 #include <ctype.h>
+#include <limits.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,6 +14,7 @@
 #define Q_DEFAULT_BACKGROUND 0xF2F2F2FFu
 #define Q_DEFAULT_BORDER 0x303030FFu
 #define Q_DEFAULT_BORDER_WIDTH 1.0f
+#define Q_CSS_INT_PARSE_BUF_SIZE 64u
 
 /* ─── Inline CSS style attribute parser ─────────────────────────────────── */
 
@@ -85,7 +87,7 @@ static float css_parse_length(const lxb_char_t *val, size_t vlen)
 
 static int css_parse_int(const lxb_char_t *val, size_t vlen, int *out)
 {
-    char buf[32];
+    char buf[Q_CSS_INT_PARSE_BUF_SIZE];
     size_t i = 0;
     size_t n;
     char *endp;
@@ -99,7 +101,7 @@ static int css_parse_int(const lxb_char_t *val, size_t vlen, int *out)
         ++i;
     }
     n = vlen - i;
-    if (n == 0 || n > sizeof(buf) - 1) {
+    if (n == 0 || n > sizeof(buf) - 1u) {
         return 0;
     }
 
@@ -115,6 +117,9 @@ static int css_parse_int(const lxb_char_t *val, size_t vlen, int *out)
             return 0;
         }
         ++endp;
+    }
+    if (z < INT_MIN || z > INT_MAX) {
+        return 0;
     }
 
     *out = (int) z;
