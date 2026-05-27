@@ -439,23 +439,15 @@ int main(int argc, char **argv)
 
     /* ── z-index stacking order ────────────────────────────────────────── */
     {
-        static const char z_html[] =
-            "<html><body>"
-            "<div style='position:relative; width:120px; height:120px;'>"
-            "<div style='position:absolute; left:10px; top:10px; width:80px; height:80px; z-index:1;'>A</div>"
-            "<div style='position:absolute; left:30px; top:30px; width:80px; height:80px; z-index:5;'>B</div>"
-            "</div>"
-            "</body></html>";
         q_document_t *z_doc;
         q_box_t *z_root;
         q_box_t *z_container;
         q_box_t *z_low;
         q_box_t *z_high;
-
         z_doc = q_document_create();
         assert(z_doc != NULL);
-        assert(q_document_load_html(z_doc, z_html, sizeof(z_html) - 1,
-                                    "file://./tests/zindex.html") == 0);
+        assert(z_doc != NULL);
+        assert(q_document_load_url(z_doc, "file://./tests/html/z_index_stack.html") == 0);
 
         z_root = q_layout_build_tree(z_doc);
         assert(z_root != NULL);
