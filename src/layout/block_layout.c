@@ -422,10 +422,25 @@ void q_layout_position(q_box_t *box, float origin_x, float origin_y)
 
     if (box->type == Q_BOX_LINE) {
         /* Position word children left-to-right */
+        float line_h = (box->height > 0.0f) ? box->height : 0.0f;
         cursor_x = origin_x;
         for (child = box->first_child; child != NULL; child = child->next_sibling) {
+            float y = origin_y;
+
+            if (child->vertical_align == Q_VERTICAL_ALIGN_TOP) {
+                y = origin_y;
+            } else if (child->vertical_align == Q_VERTICAL_ALIGN_MIDDLE) {
+                y = origin_y + ((line_h - child->height) * 0.5f);
+            } else if (child->vertical_align == Q_VERTICAL_ALIGN_BOTTOM) {
+                y = origin_y + (line_h - child->height);
+            } else if (child->vertical_align == Q_VERTICAL_ALIGN_SUB) {
+                y += line_h * 0.2f;
+            } else if (child->vertical_align == Q_VERTICAL_ALIGN_SUPER) {
+                y -= line_h * 0.2f;
+            }
+
             child->x = cursor_x;
-            child->y = origin_y;
+            child->y = y;
             cursor_x += child->width + Q_LAYOUT_WORD_SPACING;
         }
         return;
