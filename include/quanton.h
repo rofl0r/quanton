@@ -98,6 +98,7 @@ typedef enum q_box_type {
 
 struct q_box {
     q_box_type_t type;
+    int is_flex_container;
     float x;
     float y;
     float width;

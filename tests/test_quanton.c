@@ -17,6 +17,30 @@
 #define Q_NON_TEXT_SAMPLE_X 200
 #define Q_NON_TEXT_SAMPLE_Y 10
 
+static char *make_url_from_filename(const char *filename)
+{
+    size_t len;
+    char *url;
+
+    if (filename == NULL || filename[0] == '\0') {
+        return NULL;
+    }
+
+    if (strstr(filename, "://") != NULL) {
+        return strdup(filename);
+    }
+
+    len = strlen(filename);
+    url = (char *) malloc(sizeof("file://") + len);
+    if (url == NULL) {
+        return NULL;
+    }
+
+    memcpy(url, "file://", sizeof("file://") - 1);
+    memcpy(url + sizeof("file://") - 1, filename, len + 1);
+    return url;
+}
+
 static int g_event_called;
 static q_box_t *g_event_target_box;
 static lxb_dom_node_t *g_event_target;
@@ -175,7 +199,7 @@ static void render_html_case_to_png(const char *html_url, const char *output_png
 }
 #endif
 
-int main(void)
+int main(int argc, char **argv)
 {
     static const char html[] =
         "<html><body><div data-hit='1'>Hello</div><div><p>world</p></div></body></html>";
@@ -191,6 +215,18 @@ int main(void)
     q_shaped_run_t *run;
     uint8_t *buf;
     size_t len = 0;
+#if defined(QUANTON_BACKEND_X11) || defined(QUANTON_BACKEND_SDL2)
+    const char *interactive_html_file = NULL;
+#else
+    (void) argc;
+    (void) argv;
+#endif
+
+#if defined(QUANTON_BACKEND_X11) || defined(QUANTON_BACKEND_SDL2)
+    if (argc > 1) {
+        interactive_html_file = argv[1];
+    }
+#endif
 
     buf = q_resource_load("file://./IMPLEMENTATION_PLAN.md", &len);
     assert(buf != NULL);
@@ -300,6 +336,54 @@ int main(void)
 
 #if defined(QUANTON_BACKEND_PNG) || defined(QUANTON_BACKEND_X11) || defined(QUANTON_BACKEND_SDL2)
     {
+        static const char flex_html[] =
+            "<html><body><div style='display:flex'><div>one</div><div>two</div><div>three</div></div></body></html>";
+        q_document_t *flex_doc;
+        q_box_t *flex_root;
+        q_box_t *flex_container;
+        q_box_t *flex_a;
+        q_box_t *flex_b;
+        q_box_t *flex_c;
+
+        flex_doc = q_document_create();
+        assert(flex_doc != NULL);
+        assert(q_document_load_html(flex_doc, flex_html, sizeof(flex_html) - 1,
+                                    "file://./tests/flex.html") == 0);
+
+        flex_root = q_layout_build_tree(flex_doc);
+        assert(flex_root != NULL);
+        q_layout_measure(flex_root, 300.0f, 0.0f);
+        q_layout_position(flex_root, 0.0f, 0.0f);
+
+        flex_container = flex_root->first_child;
+        assert(flex_container != NULL);
+        assert(flex_container->is_flex_container == 1);
+
+        flex_a = flex_container->first_child;
+        assert(flex_a != NULL);
+        flex_b = flex_a->next_sibling;
+        assert(flex_b != NULL);
+        flex_c = flex_b->next_sibling;
+        assert(flex_c != NULL);
+        assert(flex_c->next_sibling == NULL);
+
+        assert(nearly_equal(flex_a->width, 100.0f));
+        assert(nearly_equal(flex_b->width, 100.0f));
+        assert(nearly_equal(flex_c->width, 100.0f));
+        assert(nearly_equal(flex_b->x, flex_a->x + flex_a->width));
+        assert(nearly_equal(flex_c->x, flex_b->x + flex_b->width));
+        assert(nearly_equal(flex_a->y, flex_container->y));
+        assert(nearly_equal(flex_b->y, flex_container->y));
+        assert(nearly_equal(flex_c->y, flex_container->y));
+        assert(nearly_equal(flex_container->height, flex_a->height));
+        assert(nearly_equal(flex_container->height, flex_b->height));
+        assert(nearly_equal(flex_container->height, flex_c->height));
+
+        q_layout_free_tree(flex_root);
+        q_document_destroy(flex_doc);
+    }
+
+    {
         quanton_ctx_t bctx;
         quanton_view_t bview;
 
@@ -338,7 +422,28 @@ int main(void)
         render_html_case_to_png("file://./tests/html/basic_blocks.html", "output_basic_blocks.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/inline_wrap.html", "output_inline_wrap.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/nested_blocks.html", "output_nested_blocks.png", TEST_WIDTH, TEST_HEIGHT);
+        render_html_case_to_png("file://./tests/html/flex_row.html", "output_flex_row.png", TEST_WIDTH, TEST_HEIGHT);
 #else
+        q_document_t *interactive_doc = NULL;
+        q_box_t *interactive_root = root;
+        char *interactive_url = NULL;
+
+        if (interactive_html_file != NULL) {
+            interactive_url = make_url_from_filename(interactive_html_file);
+            assert(interactive_url != NULL);
+
+            interactive_doc = q_document_create();
+            assert(interactive_doc != NULL);
+            assert(q_document_load_url(interactive_doc, interactive_url) == 0);
+
+            interactive_root = q_layout_build_tree(interactive_doc);
+            assert(interactive_root != NULL);
+            q_layout_measure(interactive_root, (float) TEST_WIDTH, 0.0f);
+            q_layout_position(interactive_root, 0.0f, 0.0f);
+            q_paint_box(interactive_root);
+        }
+
+        bview.layout_root = interactive_root;
         if (bctx.backend->create_window(&bview, TEST_WIDTH, TEST_HEIGHT, "quanton-test") == 0) {
             q_composite_frame(&bview);
             bctx.backend->blit(&bview);
@@ -351,6 +456,11 @@ int main(void)
             }
             bctx.backend->destroy_window(&bview);
         }
+        if (interactive_root != root) {
+            q_layout_free_tree(interactive_root);
+        }
+        q_document_destroy(interactive_doc);
+        free(interactive_url);
 #endif
     }
 #endif
