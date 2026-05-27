@@ -446,7 +446,7 @@ int main(int argc, char **argv)
 
         q_layout_free_tree(img_root);
         q_document_destroy(img_doc);
-        unlink(img_path);
+        assert(unlink(img_path) == 0);
     }
 
 #if defined(QUANTON_BACKEND_PNG) || defined(QUANTON_BACKEND_X11) || defined(QUANTON_BACKEND_SDL2)

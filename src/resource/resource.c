@@ -102,7 +102,13 @@ static char *q_path_dirname_dup(const char *path)
 
     slash = strrchr(path, '/');
     if (slash == NULL) {
-        return strdup("./");
+        dir = (char *) malloc(3u);
+        if (dir == NULL) {
+            return NULL;
+        }
+
+        memcpy(dir, "./", 3u);
+        return dir;
     }
 
     len = (size_t) (slash - path) + 1u;
