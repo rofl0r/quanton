@@ -4,9 +4,11 @@
 #include <math.h>
 #include <stdio.h>
 
+#define FLOAT_TOLERANCE 0.01f
+
 static int nearly_equal(float a, float b)
 {
-    return fabsf(a - b) < 0.01f;
+    return fabsf(a - b) < FLOAT_TOLERANCE;
 }
 
 int main(void)

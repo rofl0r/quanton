@@ -5,46 +5,39 @@
 #define Q_LAYOUT_DEFAULT_FONT_SIZE 16.0f
 #define Q_LAYOUT_DEFAULT_FONT_WEIGHT 400
 
-static q_font_t *q_layout_default_font(void)
-{
-    static q_font_cache_t *cache;
-
-    if (cache == NULL) {
-        cache = q_font_cache_create();
-        if (cache == NULL) {
-            return NULL;
-        }
-    }
-
-    return q_font_match(cache,
-                        "sans-serif",
-                        Q_LAYOUT_DEFAULT_FONT_SIZE,
-                        Q_LAYOUT_DEFAULT_FONT_WEIGHT);
-}
-
 static void q_layout_measure_text(q_box_t *box)
 {
-    q_font_t *font;
+    q_font_cache_t *cache;
+    q_font_t *font = NULL;
+    q_shaped_run_t *run = NULL;
 
     q_shaped_run_free(box->run);
     box->run = NULL;
 
-    font = q_layout_default_font();
-    if (font != NULL) {
-        box->run = q_font_shape_run(font, box->text, box->text_len);
-    }
-
-    if (box->run != NULL) {
-        box->width = box->run->total_advance;
-        box->height = box->run->ascender + fabsf(box->run->descender);
-        if (box->run->line_gap > 0.0f) {
-            box->height += box->run->line_gap;
+    cache = q_font_cache_create();
+    if (cache != NULL) {
+        font = q_font_match(cache,
+                            "sans-serif",
+                            Q_LAYOUT_DEFAULT_FONT_SIZE,
+                            Q_LAYOUT_DEFAULT_FONT_WEIGHT);
+        if (font != NULL) {
+            run = q_font_shape_run(font, box->text, box->text_len);
         }
-        return;
     }
 
-    box->width = (float) box->text_len * (Q_LAYOUT_DEFAULT_FONT_SIZE * 0.6f);
-    box->height = Q_LAYOUT_DEFAULT_FONT_SIZE;
+    if (run != NULL) {
+        box->width = run->total_advance;
+        box->height = run->ascender + fabsf(run->descender);
+        if (run->line_gap > 0.0f) {
+            box->height += run->line_gap;
+        }
+    } else {
+        box->width = (float) box->text_len * (Q_LAYOUT_DEFAULT_FONT_SIZE * 0.6f);
+        box->height = Q_LAYOUT_DEFAULT_FONT_SIZE;
+    }
+
+    q_shaped_run_free(run);
+    q_font_cache_destroy(cache);
 }
 
 void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
