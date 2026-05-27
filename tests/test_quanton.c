@@ -1186,6 +1186,230 @@ int main(int argc, char **argv)
         q_document_destroy(mut_doc);
     }
 
+    /* ── Table layout: measure and position ──────────────────────────────── */
+
+    /* Test 1: simple 2x2 table fills full width, two equal columns */
+    {
+        static const char tbl_html[] =
+            "<html><body><table id='t' style='width:200px;'>"
+            "<tr><td>A</td><td>B</td></tr>"
+            "<tr><td>C</td><td>D</td></tr>"
+            "</table></body></html>";
+
+        q_document_t *tdoc  = q_document_create();
+        q_box_t      *troot = NULL;
+        q_box_t      *table, *section, *row1, *row2;
+        q_box_t      *cell00, *cell01, *cell10, *cell11;
+
+        assert(tdoc != NULL);
+        assert(q_document_load_html(tdoc, tbl_html,
+                                    sizeof(tbl_html) - 1, NULL) == 0);
+        troot = q_layout_build_tree(tdoc);
+        assert(troot != NULL);
+
+        q_layout_measure(troot, 800.0f, 600.0f);
+        q_layout_position(troot, 0.0f, 0.0f);
+
+        table   = troot->first_child;
+        assert(table != NULL);
+        assert(table->type == Q_BOX_TABLE);
+        assert(table->table != NULL);
+        assert(table->table->col_count == 2);
+        assert(table->table->row_count == 2);
+        /* table was given explicit style width 200 px */
+        assert(fabsf(table->width - 200.0f) < 1.0f);
+
+        section = table->first_child;
+        assert(section != NULL);
+        assert(section->type == Q_BOX_TABLE_SECTION);
+
+        row1    = section->first_child;
+        assert(row1 != NULL);
+        assert(row1->type == Q_BOX_TABLE_ROW);
+        assert(fabsf(row1->x - 0.0f) < 1.0f);
+
+        row2    = row1->next_sibling;
+        assert(row2 != NULL);
+
+        cell00  = row1->first_child;
+        cell01  = cell00->next_sibling;
+        assert(cell00 != NULL && cell01 != NULL);
+        assert(cell00->type == Q_BOX_TABLE_CELL);
+
+        /* Both columns should share the 200px width */
+        assert(cell00->width > 0.0f);
+        assert(cell01->width > 0.0f);
+        assert(fabsf(cell00->width + cell01->width - 200.0f) < 2.0f);
+
+        /* cell01 starts after cell00 */
+        assert(cell01->x > cell00->x);
+
+        /* Row 2 cells start below row 1 */
+        cell10  = row2->first_child;
+        cell11  = (cell10 != NULL) ? cell10->next_sibling : NULL;
+        assert(cell10 != NULL && cell11 != NULL);
+        assert(cell10->y > cell00->y);
+        assert(fabsf(cell10->y - row2->y) < 1.0f);
+
+        q_layout_free_tree(troot);
+        q_document_destroy(tdoc);
+    }
+
+    /* Test 2: colspan spanning 2 of 3 columns */
+    {
+        static const char cs_html[] =
+            "<html><body><table style='width:300px;'>"
+            "<tr><td colspan='2'>Wide</td><td>Right</td></tr>"
+            "<tr><td>A</td><td>B</td><td>C</td></tr>"
+            "</table></body></html>";
+
+        q_document_t *csdoc  = q_document_create();
+        q_box_t      *csroot = NULL;
+        q_box_t      *table, *section, *row1, *row2;
+        q_box_t      *wide_cell, *right_cell, *a_cell, *b_cell, *c_cell;
+
+        assert(csdoc != NULL);
+        assert(q_document_load_html(csdoc, cs_html,
+                                    sizeof(cs_html) - 1, NULL) == 0);
+        csroot = q_layout_build_tree(csdoc);
+        assert(csroot != NULL);
+
+        q_layout_measure(csroot, 800.0f, 600.0f);
+        q_layout_position(csroot, 0.0f, 0.0f);
+
+        table   = csroot->first_child;
+        assert(table != NULL && table->type == Q_BOX_TABLE);
+        assert(table->table != NULL);
+        assert(table->table->col_count == 3);
+        assert(table->table->row_count == 2);
+
+        section    = table->first_child;
+        row1       = section->first_child;
+        row2       = row1->next_sibling;
+        wide_cell  = row1->first_child;
+        right_cell = (wide_cell != NULL) ? wide_cell->next_sibling : NULL;
+        a_cell     = (row2 != NULL)      ? row2->first_child       : NULL;
+        b_cell     = (a_cell != NULL)    ? a_cell->next_sibling    : NULL;
+        c_cell     = (b_cell != NULL)    ? b_cell->next_sibling    : NULL;
+
+        assert(wide_cell != NULL && right_cell != NULL);
+        assert(a_cell != NULL && b_cell != NULL && c_cell != NULL);
+
+        /* Wide cell spans columns 0+1, occupies 2/3 of total width */
+        assert(wide_cell->width > 0.0f);
+        assert(right_cell->width > 0.0f);
+        /* Combined: wide_cell + right_cell should total the table width */
+        assert(fabsf(wide_cell->width + right_cell->width - 300.0f) < 2.0f);
+        /* Wide cell starts at x=0, right_cell starts after it */
+        assert(fabsf(wide_cell->x - 0.0f) < 1.0f);
+        assert(right_cell->x > wide_cell->x);
+
+        /* Second row: three cells side by side */
+        assert(a_cell->x < b_cell->x);
+        assert(b_cell->x < c_cell->x);
+        /* Row 2 starts below row 1 */
+        assert(a_cell->y > wide_cell->y);
+
+        q_layout_free_tree(csroot);
+        q_document_destroy(csdoc);
+    }
+
+    /* Test 3: rowspan spanning 2 rows */
+    {
+        static const char rs_html[] =
+            "<html><body><table style='width:200px;'>"
+            "<tr><td rowspan='2'>Tall</td><td>Top right</td></tr>"
+            "<tr><td>Bottom right</td></tr>"
+            "</table></body></html>";
+
+        q_document_t *rsdoc  = q_document_create();
+        q_box_t      *rsroot = NULL;
+        q_box_t      *table, *section, *row1, *row2;
+        q_box_t      *tall_cell, *topright_cell, *botright_cell;
+
+        assert(rsdoc != NULL);
+        assert(q_document_load_html(rsdoc, rs_html,
+                                    sizeof(rs_html) - 1, NULL) == 0);
+        rsroot = q_layout_build_tree(rsdoc);
+        assert(rsroot != NULL);
+
+        q_layout_measure(rsroot, 800.0f, 600.0f);
+        q_layout_position(rsroot, 0.0f, 0.0f);
+
+        table       = rsroot->first_child;
+        assert(table != NULL && table->type == Q_BOX_TABLE);
+        assert(table->table != NULL);
+        assert(table->table->col_count == 2);
+        assert(table->table->row_count == 2);
+
+        section       = table->first_child;
+        row1          = section->first_child;
+        row2          = row1->next_sibling;
+        tall_cell     = row1->first_child;
+        topright_cell = (tall_cell != NULL) ? tall_cell->next_sibling : NULL;
+        botright_cell = (row2 != NULL)      ? row2->first_child       : NULL;
+
+        assert(tall_cell != NULL && topright_cell != NULL && botright_cell != NULL);
+
+        /* Tall cell's height >= sum of the two rows */
+        assert(tall_cell->height >= table->table->rows[0].height
+                                   + table->table->rows[1].height - 1.0f);
+        /* Tall cell starts at x=0, top-right starts after it */
+        assert(fabsf(tall_cell->x - 0.0f) < 1.0f);
+        assert(topright_cell->x > tall_cell->x);
+        /* Bottom-right cell is below top-right */
+        assert(botright_cell->y > topright_cell->y);
+
+        q_layout_free_tree(rsroot);
+        q_document_destroy(rsdoc);
+    }
+
+    /* Test 4: getElementById and setInnerHTML DOM helpers */
+    {
+        static const char id_html[] =
+            "<html><body>"
+            "<div id='target'>original</div>"
+            "</body></html>";
+
+        q_document_t    *id_doc  = q_document_create();
+        quanton_view_t   id_view;
+        lxb_dom_element_t *target_el;
+
+        assert(id_doc != NULL);
+        assert(q_document_load_html(id_doc, id_html,
+                                    sizeof(id_html) - 1, NULL) == 0);
+
+        memset(&id_view, 0, sizeof(id_view));
+        id_view.document   = id_doc;
+        id_view.vp_width   = 800;
+        id_view.vp_height  = 600;
+        id_view.layout_root = q_layout_build_tree(id_doc);
+        assert(id_view.layout_root != NULL);
+        q_layout_measure(id_view.layout_root, 800.0f, 600.0f);
+        q_layout_position(id_view.layout_root, 0.0f, 0.0f);
+
+        /* getElementById */
+        target_el = q_dom_get_element_by_id(&id_view, "target");
+        assert(target_el != NULL);
+
+        /* setInnerHTML replaces children and marks dirty */
+        {
+            static const char new_html[] = "<span>replaced</span>";
+            assert(q_dom_set_inner_html(&id_view, target_el,
+                                        new_html,
+                                        sizeof(new_html) - 1) == 0);
+            assert((id_view.dirty_flags & Q_DIRTY_LAYOUT) != 0);
+        }
+
+        /* After q_view_update, layout must be rebuilt successfully */
+        q_view_update(&id_view);
+        assert(id_view.dirty_flags == 0);
+        assert(id_view.layout_root != NULL);
+
+        q_layout_free_tree(id_view.layout_root);
+        q_document_destroy(id_doc);
+    }
+
     cache = q_font_cache_create();
     assert(cache != NULL);
 
