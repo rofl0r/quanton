@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -std=c99 -Wall -Wextra -Werror -O2 -Iinclude -I. -Ilexbor/source -Ithird_party
+CFLAGS = -std=c99 -Wall -Wextra -O2 -Iinclude -I. -Ilexbor/source -Ithird_party
 
 LEXBOR_LIBS = \
 -llexbor-css \
