@@ -91,7 +91,9 @@ const lxb_css_rule_declaration_t *q_document_get_computed_style(const q_document
 /* task 4: layout pass 1 box tree builder */
 typedef enum q_box_type {
     Q_BOX_BLOCK,
-    Q_BOX_TEXT
+    Q_BOX_TEXT,
+    Q_BOX_INLINE_CONTAINER, /* anonymous block wrapping consecutive inline content */
+    Q_BOX_LINE              /* one wrapped line inside an inline container */
 } q_box_type_t;
 
 struct q_box {
@@ -141,6 +143,7 @@ q_box_t *q_layout_build_tree(q_document_t *doc);
 void q_layout_free_tree(q_box_t *root);
 void q_layout_measure(q_box_t *box, float containing_w, float containing_h);
 void q_layout_position(q_box_t *box, float origin_x, float origin_y);
+void q_layout_line_wrap(q_box_t *inline_container);
 void q_paint_box(q_box_t *box);
 void q_paint_fill_rect(uint8_t *pixels, int buf_w, int buf_h,
                        int x, int y, int w, int h, uint32_t color);
@@ -183,5 +186,6 @@ void q_composite_frame(quanton_view_t *view);
 /* ── Backend vtable instances ── */
 extern const q_backend_vt_t q_backend_x11;
 extern const q_backend_vt_t q_backend_sdl2;
+extern const q_backend_vt_t q_backend_png;
 
 #endif

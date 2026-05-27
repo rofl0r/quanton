@@ -81,10 +81,38 @@ static int q_layout_walk_node(lxb_dom_node_t *node, q_box_t *parent)
         if (ch_data->data.length != 0
             && !q_text_is_whitespace(ch_data->data.data, ch_data->data.length))
         {
-            current = q_box_create(Q_BOX_TEXT, node,
-                                   (const char *) ch_data->data.data,
-                                   ch_data->data.length);
+            q_box_t *ic;
+            q_box_t *text_box;
+
+            /* Reuse or create anonymous inline container */
+            if (parent != NULL && parent->last_child != NULL
+                && parent->last_child->type == Q_BOX_INLINE_CONTAINER)
+            {
+                ic = parent->last_child;
+            } else {
+                ic = q_box_create(Q_BOX_INLINE_CONTAINER, node->parent, NULL, 0);
+                if (ic == NULL) {
+                    return -1;
+                }
+                if (parent != NULL && q_box_append_child(parent, ic) != 0) {
+                    free(ic);
+                    return -1;
+                }
+            }
+
+            text_box = q_box_create(Q_BOX_TEXT, node,
+                                    (const char *) ch_data->data.data,
+                                    ch_data->data.length);
+            if (text_box == NULL) {
+                return -1;
+            }
+            if (q_box_append_child(ic, text_box) != 0) {
+                free(text_box);
+                return -1;
+            }
         }
+        /* Text nodes have no DOM children; nothing more to do */
+        return 0;
     }
 
     if (current != NULL && parent != NULL && q_box_append_child(parent, current) != 0) {

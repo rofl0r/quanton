@@ -3,6 +3,8 @@
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #define FLOAT_TOLERANCE 0.01f
 
@@ -35,6 +37,8 @@ int main(void)
     q_box_t *root;
     q_box_t *first_block;
     q_box_t *second_block;
+    q_box_t *first_ic;
+    q_box_t *first_line;
     q_box_t *first_text;
     q_font_cache_t *cache;
     q_font_t *font;
@@ -75,7 +79,18 @@ int main(void)
     assert(first_block->height > 0.0f);
     assert(nearly_equal(second_block->y, first_block->y + first_block->height));
 
-    first_text = first_block->first_child;
+    /* After measure, text nodes are inside anonymous inline containers / line boxes */
+    first_ic = first_block->first_child;
+    assert(first_ic != NULL);
+    assert(first_ic->type == Q_BOX_INLINE_CONTAINER);
+    assert(first_ic->height > 0.0f);
+
+    first_line = first_ic->first_child;
+    assert(first_line != NULL);
+    assert(first_line->type == Q_BOX_LINE);
+    assert(first_line->height > 0.0f);
+
+    first_text = first_line->first_child;
     assert(first_text != NULL);
     assert(first_text->type == Q_BOX_TEXT);
     assert(first_text->width > 0.0f);
@@ -110,6 +125,54 @@ int main(void)
     assert_pixel_rgba(first_block->tile, first_block->tile_w, first_block->tile_h, 3, 3, 16, 32, 48, 255);
 
     assert_pixel_rgba(root->tile, root->tile_w, root->tile_h, 3, 3, 16, 32, 48, 255);
+
+#if defined(QUANTON_BACKEND_PNG) || defined(QUANTON_BACKEND_X11) || defined(QUANTON_BACKEND_SDL2)
+    {
+        quanton_ctx_t bctx;
+        quanton_view_t bview;
+
+        memset(&bctx, 0, sizeof(bctx));
+        memset(&bview, 0, sizeof(bview));
+
+#if defined(QUANTON_BACKEND_PNG)
+        bctx.backend = &q_backend_png;
+#elif defined(QUANTON_BACKEND_X11)
+        bctx.backend = &q_backend_x11;
+#elif defined(QUANTON_BACKEND_SDL2)
+        bctx.backend = &q_backend_sdl2;
+#endif
+
+        bview.ctx = &bctx;
+        bview.layout_root = root;
+        bview.vp_width = 320;
+        bview.vp_height = 240;
+
+#if defined(QUANTON_BACKEND_PNG)
+        assert(bctx.backend->create_window(&bview, 320, 240, "output.png") == 0);
+        q_composite_frame(&bview);
+        assert(bview.framebuffer != NULL);
+        bctx.backend->blit(&bview);
+        {
+            FILE *fp = fopen("output.png", "rb");
+            assert(fp != NULL);
+            fclose(fp);
+        }
+        free(bview.framebuffer);
+        bctx.backend->destroy_window(&bview);
+#else
+        /* X11/SDL2: attempt backend test; may skip gracefully if no display */
+        if (bctx.backend->create_window(&bview, 320, 240, "quanton-test") == 0) {
+            q_composite_frame(&bview);
+            if (bview.framebuffer != NULL) {
+                bctx.backend->blit(&bview);
+                free(bview.framebuffer);
+                bview.framebuffer = NULL;
+            }
+            bctx.backend->destroy_window(&bview);
+        }
+#endif
+    }
+#endif
 
     q_layout_free_tree(root);
 
