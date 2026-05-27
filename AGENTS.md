@@ -9,3 +9,4 @@
 - Keep warnings non-fatal: do not add `-Werror`.
 - For ASAN validation, pass `-fsanitize=address` in both `CFLAGS` and `LDFLAGS`.
 - After running `make test_png`, visually inspect the `output*.png` files it writes to verify correct rendering (boxes, text, colors, layout look reasonable).
+- Before committing, make sure you didn't check in binaries.
