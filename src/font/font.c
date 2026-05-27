@@ -5,9 +5,9 @@
 #include "third_party/libschrift/schrift.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 #define Q_DEFAULT_FONT_PATH "/usr/share/fonts/dejavu/DejaVuSans.ttf"
 
@@ -21,7 +21,9 @@ static const char *q_default_font_path(void)
     size_t i;
 
     for (i = 0; i < sizeof(paths) / sizeof(paths[0]); ++i) {
-        if (access(paths[i], R_OK) == 0) {
+        FILE *fp = fopen(paths[i], "rb");
+        if (fp != NULL) {
+            fclose(fp);
             return paths[i];
         }
     }
