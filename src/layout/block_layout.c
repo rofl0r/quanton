@@ -391,7 +391,9 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
         q_float_ctx_reset(&float_ctx);
     }
 
-    if (isnan(box->style_width) && box->width <= 0.0f) {
+    if (box->is_inline_block && isnan(box->style_width)) {
+        box->width = max_w;
+    } else if (isnan(box->style_width) && box->width <= 0.0f) {
         box->width = max_w;
     }
     box->height = used_h;

@@ -532,6 +532,187 @@ int main(int argc, char **argv)
         q_document_destroy(img_doc);
     }
 
+    /* ── white-space: pre / nowrap, <br>, and inline-block ───────────────── */
+    {
+        static const char pre_html[] =
+            "<html><body><div style='white-space:pre'>a  b\nc</div></body></html>";
+        q_document_t *pre_doc;
+        q_box_t *pre_root;
+        q_box_t *pre_div;
+        q_box_t *pre_ic;
+        q_box_t *pre_line1;
+        q_box_t *pre_line2;
+        q_box_t *pre_text1;
+        q_box_t *pre_text2;
+
+        pre_doc = q_document_create();
+        assert(pre_doc != NULL);
+        assert(q_document_load_html(pre_doc, pre_html, sizeof(pre_html) - 1,
+                                    "file://./tests/white_space_pre.html") == 0);
+
+        pre_root = q_layout_build_tree(pre_doc);
+        assert(pre_root != NULL);
+        q_layout_measure(pre_root, 60.0f, 0.0f);
+        q_layout_position(pre_root, 0.0f, 0.0f);
+
+        pre_div = pre_root->first_child;
+        assert(pre_div != NULL);
+        pre_ic = pre_div->first_child;
+        assert(pre_ic != NULL);
+        assert(pre_ic->type == Q_BOX_INLINE_CONTAINER);
+        assert(pre_ic->white_space == Q_WHITE_SPACE_PRE);
+
+        pre_line1 = pre_ic->first_child;
+        assert(pre_line1 != NULL);
+        pre_line2 = pre_line1->next_sibling;
+        assert(pre_line2 != NULL);
+        assert(pre_line2->next_sibling == NULL);
+
+        pre_text1 = pre_line1->first_child;
+        pre_text2 = pre_line2->first_child;
+        assert(pre_text1 != NULL && pre_text2 != NULL);
+        assert(pre_text1->text_len == 4u);
+        assert(strncmp(pre_text1->text, "a  b", 4u) == 0);
+        assert(pre_text2->text_len == 1u);
+        assert(strncmp(pre_text2->text, "c", 1u) == 0);
+
+        q_layout_free_tree(pre_root);
+        q_document_destroy(pre_doc);
+    }
+
+    {
+        static const char br_html[] =
+            "<html><body><div>one<br>two<br/>three</div></body></html>";
+        q_document_t *br_doc;
+        q_box_t *br_root;
+        q_box_t *br_div;
+        q_box_t *br_ic;
+        q_box_t *br_line1;
+        q_box_t *br_line2;
+        q_box_t *br_line3;
+        q_box_t *br_text1;
+        q_box_t *br_text2;
+        q_box_t *br_text3;
+
+        br_doc = q_document_create();
+        assert(br_doc != NULL);
+        assert(q_document_load_html(br_doc, br_html, sizeof(br_html) - 1,
+                                    "file://./tests/br.html") == 0);
+
+        br_root = q_layout_build_tree(br_doc);
+        assert(br_root != NULL);
+        q_layout_measure(br_root, 240.0f, 0.0f);
+        q_layout_position(br_root, 0.0f, 0.0f);
+
+        br_div = br_root->first_child;
+        assert(br_div != NULL);
+        br_ic = br_div->first_child;
+        assert(br_ic != NULL);
+        assert(br_ic->type == Q_BOX_INLINE_CONTAINER);
+
+        br_line1 = br_ic->first_child;
+        assert(br_line1 != NULL);
+        br_line2 = br_line1->next_sibling;
+        assert(br_line2 != NULL);
+        br_line3 = br_line2->next_sibling;
+        assert(br_line3 != NULL);
+        assert(br_line3->next_sibling == NULL);
+
+        br_text1 = br_line1->first_child;
+        br_text2 = br_line2->first_child;
+        br_text3 = br_line3->first_child;
+        assert(br_text1 != NULL && br_text2 != NULL && br_text3 != NULL);
+        assert(br_text1->text_len == 3u && strncmp(br_text1->text, "one", 3u) == 0);
+        assert(br_text2->text_len == 3u && strncmp(br_text2->text, "two", 3u) == 0);
+        assert(br_text3->text_len == 5u && strncmp(br_text3->text, "three", 5u) == 0);
+
+        q_layout_free_tree(br_root);
+        q_document_destroy(br_doc);
+    }
+
+    {
+        static const char nowrap_html[] =
+            "<html><body><div style='white-space:nowrap'>one two three four five six</div></body></html>";
+        q_document_t *nowrap_doc;
+        q_box_t *nowrap_root;
+        q_box_t *nowrap_div;
+        q_box_t *nowrap_ic;
+        q_box_t *nowrap_line;
+
+        nowrap_doc = q_document_create();
+        assert(nowrap_doc != NULL);
+        assert(q_document_load_html(nowrap_doc, nowrap_html, sizeof(nowrap_html) - 1,
+                                    "file://./tests/white_space_nowrap.html") == 0);
+
+        nowrap_root = q_layout_build_tree(nowrap_doc);
+        assert(nowrap_root != NULL);
+        q_layout_measure(nowrap_root, 40.0f, 0.0f);
+        q_layout_position(nowrap_root, 0.0f, 0.0f);
+
+        nowrap_div = nowrap_root->first_child;
+        assert(nowrap_div != NULL);
+        nowrap_ic = nowrap_div->first_child;
+        assert(nowrap_ic != NULL);
+        assert(nowrap_ic->white_space == Q_WHITE_SPACE_NOWRAP);
+        nowrap_line = nowrap_ic->first_child;
+        assert(nowrap_line != NULL);
+        assert(nowrap_line->next_sibling == NULL);
+
+        q_layout_free_tree(nowrap_root);
+        q_document_destroy(nowrap_doc);
+    }
+
+    {
+        static const char ib_html[] =
+            "<html><body><div>aa<span style='display:inline-block;width:30px;height:12px;'></span>bb</div></body></html>";
+        q_document_t *ib_doc;
+        q_box_t *ib_root;
+        q_box_t *ib_div;
+        q_box_t *ib_ic;
+        q_box_t *ib_line;
+        q_box_t *ib_a;
+        q_box_t *ib_mid;
+        q_box_t *ib_b;
+
+        ib_doc = q_document_create();
+        assert(ib_doc != NULL);
+        assert(q_document_load_html(ib_doc, ib_html, sizeof(ib_html) - 1,
+                                    "file://./tests/inline_block.html") == 0);
+
+        ib_root = q_layout_build_tree(ib_doc);
+        assert(ib_root != NULL);
+        q_layout_measure(ib_root, 240.0f, 0.0f);
+        q_layout_position(ib_root, 0.0f, 0.0f);
+
+        ib_div = ib_root->first_child;
+        assert(ib_div != NULL);
+        ib_ic = ib_div->first_child;
+        assert(ib_ic != NULL);
+        assert(ib_ic->type == Q_BOX_INLINE_CONTAINER);
+
+        ib_line = ib_ic->first_child;
+        assert(ib_line != NULL);
+        ib_a = ib_line->first_child;
+        assert(ib_a != NULL);
+        ib_mid = ib_a->next_sibling;
+        assert(ib_mid != NULL);
+        ib_b = ib_mid->next_sibling;
+        assert(ib_b != NULL);
+        assert(ib_b->next_sibling == NULL);
+
+        assert(ib_mid->type == Q_BOX_BLOCK);
+        assert(ib_mid->is_inline_block == 1);
+        assert(nearly_equal(ib_mid->width, 30.0f));
+        assert(nearly_equal(ib_mid->height, 12.0f));
+        assert(ib_mid->x > ib_a->x);
+        assert(ib_b->x > ib_mid->x);
+        assert(nearly_equal(ib_a->y, ib_mid->y));
+        assert(nearly_equal(ib_mid->y, ib_b->y));
+
+        q_layout_free_tree(ib_root);
+        q_document_destroy(ib_doc);
+    }
+
     /* ── overflow:hidden clipping ────────────────────────────────────────── */
     {
         q_document_t *ov_doc;

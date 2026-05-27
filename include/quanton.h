@@ -99,6 +99,7 @@ typedef enum q_box_type {
     Q_BOX_BLOCK,
     Q_BOX_IMAGE,
     Q_BOX_TEXT,
+    Q_BOX_LINE_BREAK,
     Q_BOX_INLINE_CONTAINER, /* anonymous block wrapping consecutive inline content */
     Q_BOX_LINE,             /* one wrapped line inside an inline container */
     Q_BOX_TABLE,
@@ -137,6 +138,12 @@ typedef enum q_clear_type {
     Q_CLEAR_RIGHT = 2,
     Q_CLEAR_BOTH  = 3,
 } q_clear_type_t;
+
+typedef enum q_white_space_type {
+    Q_WHITE_SPACE_NORMAL = 0,
+    Q_WHITE_SPACE_NOWRAP = 1,
+    Q_WHITE_SPACE_PRE    = 2,
+} q_white_space_type_t;
 
 typedef struct q_float_entry {
     struct q_box       *box;
@@ -218,6 +225,8 @@ struct q_box {
     float style_height;
     q_float_type_t float_type;
     q_clear_type_t clear_type;
+    q_white_space_type_t white_space;
+    int is_inline_block;
     int table_border_collapse;  /* 1 when border-collapse: collapse */
     struct q_table *table;   /* non-NULL for Q_BOX_TABLE after measure */
 };
