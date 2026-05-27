@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define Q_TEXT_COLOR 0x000000FFu
+
 static uint8_t q_color_r(uint32_t color) { return (uint8_t) ((color >> 24) & 0xFFu); }
 static uint8_t q_color_g(uint32_t color) { return (uint8_t) ((color >> 16) & 0xFFu); }
 static uint8_t q_color_b(uint32_t color) { return (uint8_t) ((color >> 8) & 0xFFu); }
@@ -184,6 +186,8 @@ void q_paint_box(q_box_t *box)
     if (box->type == Q_BOX_BLOCK) {
         q_paint_fill_rect(box->tile, w, h, 0, 0, w, h, box->background_color);
         q_paint_borders(box);
+    } else if (box->type == Q_BOX_TEXT && box->run != NULL) {
+        q_font_render_run(box->run, Q_TEXT_COLOR, box->tile, w, h, 0, 0);
     }
 
     for (child = box->first_child; child != NULL; child = child->next_sibling) {

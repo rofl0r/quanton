@@ -5,8 +5,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define FLOAT_TOLERANCE 0.01f
+#define TEST_WIDTH 800
+#define TEST_HEIGHT 600
 
 static int nearly_equal(float a, float b)
 {
@@ -16,18 +19,106 @@ static int nearly_equal(float a, float b)
 static void assert_pixel_rgba(const uint8_t *pixels, int width, int height, int x, int y,
                               uint8_t r, uint8_t g, uint8_t b, uint8_t a)
 {
+    size_t idx;
+
     assert(pixels != NULL);
     assert(width > 0);
     assert(x >= 0);
     assert(y >= 0);
     assert(x < width);
     assert(y < height);
-    size_t idx = (size_t) (y * width + x) * 4u;
+
+    idx = (size_t) (y * width + x) * 4u;
     assert(pixels[idx + 0] == r);
     assert(pixels[idx + 1] == g);
     assert(pixels[idx + 2] == b);
     assert(pixels[idx + 3] == a);
 }
+
+static int framebuffer_has_ink(const uint8_t *pixels, int width, int height)
+{
+    size_t i;
+    size_t n;
+
+    if (pixels == NULL || width <= 0 || height <= 0) {
+        return 0;
+    }
+
+    n = (size_t) width * (size_t) height;
+    for (i = 0; i < n; ++i) {
+        size_t idx = i * 4u;
+        if (pixels[idx + 0] != 255u
+            || pixels[idx + 1] != 255u
+            || pixels[idx + 2] != 255u)
+        {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static void backend_event_handler(quanton_view_t *view, const q_event_t *event, void *userdata)
+{
+    (void) userdata;
+
+    if (view == NULL || event == NULL || view->ctx == NULL || view->ctx->backend == NULL) {
+        return;
+    }
+
+    if (event->type == Q_EVENT_CLOSE) {
+        view->should_close = 1;
+        return;
+    }
+
+    if (event->type == Q_EVENT_RESIZE) {
+        q_composite_frame(view);
+        view->ctx->backend->blit(view);
+    }
+}
+
+#if defined(QUANTON_BACKEND_PNG)
+static void render_html_case_to_png(const char *html_url, const char *output_png, int width, int height)
+{
+    q_document_t *doc;
+    q_box_t *root;
+    quanton_ctx_t ctx;
+    quanton_view_t view;
+    FILE *fp;
+
+    doc = q_document_create();
+    assert(doc != NULL);
+    assert(q_document_load_url(doc, html_url) == 0);
+
+    root = q_layout_build_tree(doc);
+    assert(root != NULL);
+
+    q_layout_measure(root, (float) width, 0.0f);
+    q_layout_position(root, 0.0f, 0.0f);
+    q_paint_box(root);
+
+    memset(&ctx, 0, sizeof(ctx));
+    memset(&view, 0, sizeof(view));
+    ctx.backend = &q_backend_png;
+    view.ctx = &ctx;
+    view.layout_root = root;
+
+    assert(ctx.backend->create_window(&view, width, height, output_png) == 0);
+    q_composite_frame(&view);
+    assert(framebuffer_has_ink(view.framebuffer, view.vp_width, view.vp_height));
+    ctx.backend->blit(&view);
+
+    fp = fopen(output_png, "rb");
+    assert(fp != NULL);
+    fclose(fp);
+
+    free(view.framebuffer);
+    view.framebuffer = NULL;
+    ctx.backend->destroy_window(&view);
+    q_layout_free_tree(root);
+    q_document_destroy(doc);
+}
+#endif
 
 int main(void)
 {
@@ -79,7 +170,6 @@ int main(void)
     assert(first_block->height > 0.0f);
     assert(nearly_equal(second_block->y, first_block->y + first_block->height));
 
-    /* After measure, text nodes are inside anonymous inline containers / line boxes */
     first_ic = first_block->first_child;
     assert(first_ic != NULL);
     assert(first_ic->type == Q_BOX_INLINE_CONTAINER);
@@ -144,13 +234,15 @@ int main(void)
 
         bview.ctx = &bctx;
         bview.layout_root = root;
-        bview.vp_width = 320;
-        bview.vp_height = 240;
+        bview.vp_width = TEST_WIDTH;
+        bview.vp_height = TEST_HEIGHT;
+        bview.on_event = backend_event_handler;
 
 #if defined(QUANTON_BACKEND_PNG)
-        assert(bctx.backend->create_window(&bview, 320, 240, "output.png") == 0);
+        assert(bctx.backend->create_window(&bview, TEST_WIDTH, TEST_HEIGHT, "output.png") == 0);
         q_composite_frame(&bview);
         assert(bview.framebuffer != NULL);
+        assert(framebuffer_has_ink(bview.framebuffer, bview.vp_width, bview.vp_height));
         bctx.backend->blit(&bview);
         {
             FILE *fp = fopen("output.png", "rb");
@@ -158,15 +250,22 @@ int main(void)
             fclose(fp);
         }
         free(bview.framebuffer);
+        bview.framebuffer = NULL;
         bctx.backend->destroy_window(&bview);
+
+        render_html_case_to_png("file://./tests/html/basic_blocks.html", "output_basic_blocks.png", TEST_WIDTH, TEST_HEIGHT);
+        render_html_case_to_png("file://./tests/html/inline_wrap.html", "output_inline_wrap.png", TEST_WIDTH, TEST_HEIGHT);
+        render_html_case_to_png("file://./tests/html/nested_blocks.html", "output_nested_blocks.png", TEST_WIDTH, TEST_HEIGHT);
 #else
-        /* X11/SDL2: attempt backend test; may skip gracefully if no display */
-        if (bctx.backend->create_window(&bview, 320, 240, "quanton-test") == 0) {
+        if (bctx.backend->create_window(&bview, TEST_WIDTH, TEST_HEIGHT, "quanton-test") == 0) {
             q_composite_frame(&bview);
-            if (bview.framebuffer != NULL) {
-                bctx.backend->blit(&bview);
-                free(bview.framebuffer);
-                bview.framebuffer = NULL;
+            bctx.backend->blit(&bview);
+            while (!bview.should_close) {
+                struct timespec ts;
+                ts.tv_sec = 0;
+                ts.tv_nsec = 16L * 1000L * 1000L;
+                bctx.backend->poll_events(&bview);
+                nanosleep(&ts, NULL);
             }
             bctx.backend->destroy_window(&bview);
         }

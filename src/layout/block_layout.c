@@ -27,6 +27,7 @@ static void q_layout_measure_text(q_box_t *box)
     }
 
     if (run != NULL) {
+        box->run = run;
         box->width = run->total_advance;
         box->height = run->ascender + fabsf(run->descender);
         if (run->line_gap > 0.0f) {
@@ -37,7 +38,6 @@ static void q_layout_measure_text(q_box_t *box)
         box->height = Q_LAYOUT_DEFAULT_FONT_SIZE;
     }
 
-    q_shaped_run_free(run);
     q_font_cache_destroy(cache);
 }
 

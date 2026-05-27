@@ -172,6 +172,11 @@ q_font_t *q_font_match(q_font_cache_t *cache,
                        int weight);
 float q_font_measure(q_font_t *font, const char *text, size_t len);
 q_shaped_run_t *q_font_shape_run(q_font_t *font, const char *text, size_t len);
+void q_font_render_run(const q_shaped_run_t *run,
+                       uint32_t color,
+                       uint8_t *pixels,
+                       int tile_w, int tile_h,
+                       int dest_x, int dest_y);
 void q_shaped_run_free(q_shaped_run_t *run);
 
 /* ── Compositor ── */

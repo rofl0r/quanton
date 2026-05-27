@@ -437,6 +437,119 @@ q_shaped_run_t *q_font_shape_run(q_font_t *font, const char *text, size_t len)
     return run;
 }
 
+static uint8_t q_color_r(uint32_t color) { return (uint8_t) ((color >> 24) & 0xFFu); }
+static uint8_t q_color_g(uint32_t color) { return (uint8_t) ((color >> 16) & 0xFFu); }
+static uint8_t q_color_b(uint32_t color) { return (uint8_t) ((color >> 8) & 0xFFu); }
+static uint8_t q_color_a(uint32_t color) { return (uint8_t) (color & 0xFFu); }
+
+void q_font_render_run(const q_shaped_run_t *run,
+                       uint32_t color,
+                       uint8_t *pixels,
+                       int tile_w, int tile_h,
+                       int dest_x, int dest_y)
+{
+    size_t i;
+    float pen_x = 0.0f;
+    float baseline_y;
+    q_font_t *font;
+    uint8_t cr;
+    uint8_t cg;
+    uint8_t cb;
+    uint8_t ca;
+
+    if (run == NULL || run->font == NULL || run->glyphs == NULL
+        || pixels == NULL || tile_w <= 0 || tile_h <= 0)
+    {
+        return;
+    }
+
+    font = run->font;
+    baseline_y = run->ascender;
+    cr = q_color_r(color);
+    cg = q_color_g(color);
+    cb = q_color_b(color);
+    ca = q_color_a(color);
+
+    for (i = 0; i < run->count; ++i) {
+        const q_glyph_t *g = &run->glyphs[i];
+        SFT_Glyph glyph;
+        SFT_GMetrics metrics;
+        SFT_Image image;
+        uint8_t *glyph_pixels;
+        int gx;
+        int gy;
+        int y;
+        int x;
+
+        pen_x += g->x_offset;
+        if (sft_lookup(&font->sft, (SFT_UChar) g->codepoint, &glyph) < 0
+            || sft_gmetrics(&font->sft, glyph, &metrics) < 0)
+        {
+            pen_x += g->x_advance;
+            continue;
+        }
+
+        if (metrics.minWidth <= 0 || metrics.minHeight <= 0) {
+            pen_x += g->x_advance;
+            continue;
+        }
+
+        glyph_pixels = (uint8_t *) calloc((size_t) metrics.minWidth
+                                          * (size_t) metrics.minHeight, 1u);
+        if (glyph_pixels == NULL) {
+            pen_x += g->x_advance;
+            continue;
+        }
+
+        image.pixels = glyph_pixels;
+        image.width = metrics.minWidth;
+        image.height = metrics.minHeight;
+
+        if (sft_render(&font->sft, glyph, image) == 0) {
+            gx = dest_x + (int) lroundf(pen_x + (float) metrics.leftSideBearing);
+            gy = dest_y + (int) lroundf(baseline_y + (float) metrics.yOffset);
+
+            for (y = 0; y < metrics.minHeight; ++y) {
+                int dy = gy + y;
+                if (dy < 0 || dy >= tile_h) {
+                    continue;
+                }
+                for (x = 0; x < metrics.minWidth; ++x) {
+                    int dx = gx + x;
+                    uint8_t coverage;
+                    unsigned int src_a;
+                    size_t dst_idx;
+                    unsigned int inv_a;
+
+                    if (dx < 0 || dx >= tile_w) {
+                        continue;
+                    }
+
+                    coverage = glyph_pixels[y * metrics.minWidth + x];
+                    if (coverage == 0u) {
+                        continue;
+                    }
+
+                    src_a = ((unsigned int) coverage * (unsigned int) ca) / 255u;
+                    if (src_a == 0u) {
+                        continue;
+                    }
+
+                    dst_idx = (size_t) (dy * tile_w + dx) * 4u;
+                    inv_a = 255u - src_a;
+                    pixels[dst_idx + 0] = (uint8_t) ((cr * src_a + pixels[dst_idx + 0] * inv_a) / 255u);
+                    pixels[dst_idx + 1] = (uint8_t) ((cg * src_a + pixels[dst_idx + 1] * inv_a) / 255u);
+                    pixels[dst_idx + 2] = (uint8_t) ((cb * src_a + pixels[dst_idx + 2] * inv_a) / 255u);
+                    pixels[dst_idx + 3] = (uint8_t) (src_a + (pixels[dst_idx + 3] * inv_a) / 255u);
+                }
+            }
+        }
+
+        free(glyph_pixels);
+        pen_x += g->x_advance;
+    }
+}
+
 void q_shaped_run_free(q_shaped_run_t *run)
 {
     if (run == NULL) {
