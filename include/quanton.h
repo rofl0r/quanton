@@ -9,10 +9,12 @@ typedef struct lxb_html_document lxb_html_document_t;
 typedef struct lxb_dom_node lxb_dom_node_t;
 typedef struct lxb_css_rule_declaration lxb_css_rule_declaration_t;
 
-typedef struct q_document q_document_t;
-typedef struct q_box q_box_t;
-typedef struct q_font q_font_t;
-typedef struct q_font_cache q_font_cache_t;
+typedef struct q_document    q_document_t;
+typedef struct q_box         q_box_t;
+typedef struct q_font        q_font_t;
+typedef struct q_font_cache  q_font_cache_t;
+typedef struct quanton_ctx   quanton_ctx_t;
+typedef struct quanton_view  quanton_view_t;
 
 typedef struct q_glyph {
     uint32_t codepoint;
@@ -30,6 +32,48 @@ typedef struct q_shaped_run {
     float line_gap;
     q_font_t *font;
 } q_shaped_run_t;
+
+/* ── Event system ── */
+typedef enum q_event_type {
+    Q_EVENT_MOUSE_MOVE,
+    Q_EVENT_MOUSE_DOWN,
+    Q_EVENT_MOUSE_UP,
+    Q_EVENT_MOUSE_CLICK,
+    Q_EVENT_MOUSE_WHEEL,
+    Q_EVENT_KEY_DOWN,
+    Q_EVENT_KEY_UP,
+    Q_EVENT_RESIZE,
+    Q_EVENT_CLOSE,
+    Q_EVENT_REDRAW,
+} q_event_type_t;
+
+typedef struct q_event {
+    q_event_type_t  type;
+    int             mouse_x, mouse_y;
+    int             mouse_button;   /* 0=left 1=mid 2=right */
+    int             wheel_delta;
+    uint32_t        key_sym;
+    uint32_t        key_mod;        /* shift=1 ctrl=2 alt=4 */
+    int             new_width, new_height;
+    lxb_dom_node_t *target;         /* deepest DOM node at mouse pos */
+    q_box_t        *target_box;
+} q_event_t;
+
+typedef void (*q_event_handler_fn)(quanton_view_t *view,
+                                   const q_event_t *event,
+                                   void *userdata);
+
+/* ── Backend vtable ── */
+typedef struct q_backend_vt {
+    /* create native window; fills view->window_handle */
+    int  (*create_window)(quanton_view_t *view, int w, int h, const char *title);
+    /* blit view->framebuffer to screen */
+    void (*blit)(quanton_view_t *view);
+    /* non-blocking event poll; calls view->on_event for each event */
+    void (*poll_events)(quanton_view_t *view);
+    /* destroy window */
+    void (*destroy_window)(quanton_view_t *view);
+} q_backend_vt_t;
 
 /* task 1: resource loader */
 uint8_t *q_resource_load(const char *url, size_t *out_len);
@@ -73,6 +117,26 @@ struct q_box {
     int tile_h;
 };
 
+/* ── Application context (one per process) ── */
+struct quanton_ctx {
+    q_font_cache_t       *font_cache;
+    const q_backend_vt_t *backend;
+    void                 *backend_ctx;  /* opaque, owned by backend */
+};
+
+/* ── View (≈ Electron BrowserWindow) ── */
+struct quanton_view {
+    quanton_ctx_t      *ctx;
+    q_document_t       *document;
+    q_box_t            *layout_root;
+    int                 vp_width, vp_height;
+    uint8_t            *framebuffer;        /* RGBA8, vp_width × vp_height */
+    q_event_handler_fn  on_event;
+    void               *on_event_userdata;
+    void               *window_handle;     /* opaque backend-specific handle */
+    int                 should_close;
+};
+
 q_box_t *q_layout_build_tree(q_document_t *doc);
 void q_layout_free_tree(q_box_t *root);
 void q_layout_measure(q_box_t *box, float containing_w, float containing_h);
@@ -106,5 +170,18 @@ q_font_t *q_font_match(q_font_cache_t *cache,
 float q_font_measure(q_font_t *font, const char *text, size_t len);
 q_shaped_run_t *q_font_shape_run(q_font_t *font, const char *text, size_t len);
 void q_shaped_run_free(q_shaped_run_t *run);
+
+/* ── Compositor ── */
+
+/*
+ * Walk the layout tree in paint order, blit all box tiles into
+ * view->framebuffer.  Must be called after q_paint_box(view->layout_root).
+ * Allocates view->framebuffer if it is NULL.
+ */
+void q_composite_frame(quanton_view_t *view);
+
+/* ── Backend vtable instances ── */
+extern const q_backend_vt_t q_backend_x11;
+extern const q_backend_vt_t q_backend_sdl2;
 
 #endif
