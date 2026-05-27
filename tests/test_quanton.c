@@ -36,13 +36,22 @@ static char *make_url_from_filename(const char *filename)
     }
 
     len = strlen(filename);
-    url = (char *) malloc(sizeof("file://") + len);
-    if (url == NULL) {
-        return NULL;
+    /* Relative paths that don't start with "./" need it inserted so that
+     * q_resource_parse_file_url() accepts them (it requires "./" or "/"). */
+    {
+        int need_dot_slash = (filename[0] != '/'
+                              && !(filename[0] == '.' && filename[1] == '/'));
+        size_t extra = need_dot_slash ? 2u : 0u; /* "./" is 2 chars */
+        url = (char *) malloc(sizeof("file://") + extra + len);
+        if (url == NULL) {
+            return NULL;
+        }
+        memcpy(url, "file://", sizeof("file://") - 1);
+        if (need_dot_slash) {
+            memcpy(url + sizeof("file://") - 1, "./", 2);
+        }
+        memcpy(url + sizeof("file://") - 1 + extra, filename, len + 1);
     }
-
-    memcpy(url, "file://", sizeof("file://") - 1);
-    memcpy(url + sizeof("file://") - 1, filename, len + 1);
     return url;
 }
 #endif
@@ -235,7 +244,7 @@ int main(int argc, char **argv)
     }
 #endif
 
-    buf = q_resource_load("file://./IMPLEMENTATION_PLAN.md", &len);
+    buf = q_resource_load("file://./IMPLEMENTATION_PLAN_STAGE1_DONE.md", &len);
     assert(buf != NULL);
     assert(len > 0);
     q_resource_free(buf);
