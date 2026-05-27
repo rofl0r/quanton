@@ -676,7 +676,6 @@ int main(int argc, char **argv)
         {
             lxb_dom_element_t *body_el;
             lxb_dom_element_t *new_el;
-            q_box_t           *old_root = mut_view.layout_root;
 
             body_el = q_dom_query_selector(&mut_view, "body");
             assert(body_el != NULL);
@@ -686,14 +685,11 @@ int main(int argc, char **argv)
             q_view_update(&mut_view);
             assert(mut_view.dirty_flags == 0);
             assert(mut_view.layout_root != NULL);
-            (void) old_root; /* pointer may be reused; check observables only */
         }
 
         /* ── q_dom_remove_node + relayout ── */
         {
             lxb_dom_element_t *div_el;
-            q_box_t           *old_root2 = mut_view.layout_root;
-            (void) old_root2;
 
             div_el = q_dom_query_selector(&mut_view, "div");
             assert(div_el != NULL);
@@ -707,8 +703,6 @@ int main(int argc, char **argv)
 
         /* ── q_view_refresh forces full relayout even when clean ── */
         {
-            q_box_t *old_root3 = mut_view.layout_root;
-            (void) old_root3;
             assert(mut_view.dirty_flags == 0);
             q_view_refresh(&mut_view);
             assert(mut_view.dirty_flags == 0);
