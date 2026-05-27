@@ -254,10 +254,11 @@ static void q_position_abs_walk(q_box_t *box)
                 float ch = cb->height;
 
                 /* Measure the positioned box itself now that CB dimensions
-                 * are finalised.  Use explicit style_width when set; fall
-                 * back to the containing-block width so the box fills it. */
-                float mw = !isnan(child->style_width)  ? child->style_width  : cw;
-                float mh = !isnan(child->style_height) ? child->style_height : ch;
+                 * are finalised.  When width/height are not explicitly set,
+                 * pass 0 so q_layout_measure shrinks to content size rather
+                 * than stretching to fill the containing block. */
+                float mw = !isnan(child->style_width)  ? child->style_width  : 0.0f;
+                float mh = !isnan(child->style_height) ? child->style_height : 0.0f;
 
                 q_layout_measure(child, mw, mh);
 
