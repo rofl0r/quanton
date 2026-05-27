@@ -49,6 +49,7 @@ static q_box_t *make_line_box(q_box_t *parent)
 }
 
 static q_box_t *make_word_box(q_box_t *line_parent,
+                               lxb_dom_node_t *dom_node,
                                const char *text, size_t len,
                                float w, float h)
 {
@@ -60,6 +61,7 @@ static q_box_t *make_word_box(q_box_t *line_parent,
     word->type = Q_BOX_TEXT;
     word->text = text;
     word->text_len = len;
+    word->dom_node = dom_node;
     word->width = w;
     word->height = h;
     word->parent = line_parent;
@@ -163,7 +165,7 @@ void q_layout_line_wrap(q_box_t *ic)
                 line_h = 0.0f;
             }
 
-            if (make_word_box(line, text + word_start, word_len,
+            if (make_word_box(line, orig->dom_node, text + word_start, word_len,
                               word_w, word_h) == NULL) {
                 goto cleanup;
             }

@@ -152,6 +152,10 @@ void q_paint_composite(uint8_t *dst, int dst_w, int dst_h,
                        const uint8_t *src, int src_w, int src_h,
                        int dx, int dy);
 
+q_box_t *q_hit_test(q_box_t *root, int x, int y);
+void q_event_dispatch(quanton_view_t *view, q_event_t *event);
+lxb_dom_node_t *q_event_find_delegate(lxb_dom_node_t *node, const char *attr_name);
+
 /* task 3: font cache + libschrift wrapper surface */
 q_font_cache_t *q_font_cache_create(void);
 void q_font_cache_destroy(q_font_cache_t *cache);

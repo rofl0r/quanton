@@ -37,9 +37,7 @@ typedef struct {
 
 static void sdl2_dispatch(quanton_view_t *view, q_event_t *ev)
 {
-    if (view->on_event != NULL) {
-        view->on_event(view, ev, view->on_event_userdata);
-    }
+    q_event_dispatch(view, ev);
 }
 
 /* ── Helper: build key modifier flags from SDL modifier mask ────────────── */

@@ -12,6 +12,10 @@
 #define TEST_WIDTH 800
 #define TEST_HEIGHT 600
 
+static int g_event_called;
+static q_box_t *g_event_target_box;
+static lxb_dom_node_t *g_event_target;
+
 static int nearly_equal(float a, float b)
 {
     return fabsf(a - b) < FLOAT_TOLERANCE;
@@ -45,19 +49,45 @@ static int framebuffer_has_ink(const uint8_t *pixels, int width, int height)
         return 0;
     }
 
-    n = (size_t) width * (size_t) height;
-    for (i = 0; i < n; ++i) {
-        size_t idx = i * 4u;
-        if (pixels[idx + 0] != 255u
-            || pixels[idx + 1] != 255u
-            || pixels[idx + 2] != 255u)
-        {
-            return 1;
+        n = (size_t) width * (size_t) height;
+        for (i = 0; i < n; ++i) {
+            size_t idx = i * 4u;
+            if (pixels[idx + 0] != 255u
+                || pixels[idx + 1] != 255u
+                || pixels[idx + 2] != 255u)
+            {
+                return 1;
+            }
         }
+
+        return 0;
     }
 
-    return 0;
-}
+    #if defined(QUANTON_BACKEND_PNG)
+    static int framebuffer_has_text_shades(const uint8_t *pixels, int width, int height)
+    {
+        size_t i;
+        size_t n;
+
+        if (pixels == NULL || width <= 0 || height <= 0) {
+            return 0;
+        }
+
+        n = (size_t) width * (size_t) height;
+        for (i = 0; i < n; ++i) {
+            size_t idx = i * 4u;
+            uint8_t r = pixels[idx + 0];
+            uint8_t g = pixels[idx + 1];
+            uint8_t b = pixels[idx + 2];
+
+            if (r == g && g == b && r > 48u && r < 242u) {
+                return 1;
+            }
+        }
+
+        return 0;
+    }
+    #endif
 
 static void backend_event_handler(quanton_view_t *view, const q_event_t *event, void *userdata)
 {
@@ -76,6 +106,20 @@ static void backend_event_handler(quanton_view_t *view, const q_event_t *event, 
         q_composite_frame(view);
         view->ctx->backend->blit(view);
     }
+}
+
+static void capture_event_handler(quanton_view_t *view, const q_event_t *event, void *userdata)
+{
+    (void) view;
+    (void) userdata;
+
+    if (event == NULL) {
+        return;
+    }
+
+    g_event_called = 1;
+    g_event_target_box = event->target_box;
+    g_event_target = event->target;
 }
 
 #if defined(QUANTON_BACKEND_PNG)
@@ -107,6 +151,7 @@ static void render_html_case_to_png(const char *html_url, const char *output_png
     assert(ctx.backend->create_window(&view, width, height, output_png) == 0);
     q_composite_frame(&view);
     assert(framebuffer_has_ink(view.framebuffer, view.vp_width, view.vp_height));
+    assert(framebuffer_has_text_shades(view.framebuffer, view.vp_width, view.vp_height));
     ctx.backend->blit(&view);
 
     fp = fopen(output_png, "rb");
@@ -124,7 +169,7 @@ static void render_html_case_to_png(const char *html_url, const char *output_png
 int main(void)
 {
     static const char html[] =
-        "<html><body><div>Hello</div><div><p>world</p></div></body></html>";
+        "<html><body><div data-hit='1'>Hello</div><div><p>world</p></div></body></html>";
     q_document_t *doc;
     q_box_t *root;
     q_box_t *first_block;
@@ -189,6 +234,31 @@ int main(void)
     if (first_text->run != NULL) {
         assert(first_text->run->count > 0);
     }
+    assert(q_hit_test(root, 11, 21) == first_text);
+    assert(q_event_find_delegate(first_text->dom_node, "data-hit") == first_block->dom_node);
+
+    {
+        quanton_view_t ev_view;
+        q_event_t ev;
+
+        memset(&ev_view, 0, sizeof(ev_view));
+        memset(&ev, 0, sizeof(ev));
+        ev_view.layout_root = root;
+        ev_view.on_event = capture_event_handler;
+
+        g_event_called = 0;
+        g_event_target_box = NULL;
+        g_event_target = NULL;
+
+        ev.type = Q_EVENT_MOUSE_MOVE;
+        ev.mouse_x = 11;
+        ev.mouse_y = 21;
+        q_event_dispatch(&ev_view, &ev);
+
+        assert(g_event_called == 1);
+        assert(g_event_target_box == first_text);
+        assert(g_event_target == first_text->dom_node);
+    }
 
     first_block->background_color = 0x102030FFu;
     first_block->border_width[0] = 2.0f;
@@ -213,9 +283,9 @@ int main(void)
     assert_pixel_rgba(first_block->tile, first_block->tile_w, first_block->tile_h, first_block->tile_w - 1, 3, 0, 170, 0, 255);
     assert_pixel_rgba(first_block->tile, first_block->tile_w, first_block->tile_h, 3, first_block->tile_h - 1, 0, 0, 170, 255);
     assert_pixel_rgba(first_block->tile, first_block->tile_w, first_block->tile_h, 0, 3, 170, 170, 0, 255);
-    assert_pixel_rgba(first_block->tile, first_block->tile_w, first_block->tile_h, 3, 3, 16, 32, 48, 255);
+    assert_pixel_rgba(first_block->tile, first_block->tile_w, first_block->tile_h, 200, 10, 16, 32, 48, 255);
 
-    assert_pixel_rgba(root->tile, root->tile_w, root->tile_h, 3, 3, 16, 32, 48, 255);
+    assert_pixel_rgba(root->tile, root->tile_w, root->tile_h, 200, 10, 16, 32, 48, 255);
 
 #if defined(QUANTON_BACKEND_PNG) || defined(QUANTON_BACKEND_X11) || defined(QUANTON_BACKEND_SDL2)
     {
@@ -279,7 +349,7 @@ int main(void)
     cache = q_font_cache_create();
     assert(cache != NULL);
 
-    font = q_font_load(cache, "sans-serif", "/usr/share/fonts/dejavu/DejaVuSans.ttf", 16.0f, 400);
+    font = q_font_load(cache, "sans-serif", NULL, 16.0f, 400);
     if (font != NULL) {
         assert(q_font_measure(font, "hello", 5) > 0.0f);
 

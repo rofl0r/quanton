@@ -8,22 +8,33 @@
 
 static void q_layout_measure_text(q_box_t *box)
 {
-    q_font_cache_t *cache;
+    static q_font_cache_t *cache;
     q_font_t *font = NULL;
     q_shaped_run_t *run = NULL;
 
     q_shaped_run_free(box->run);
     box->run = NULL;
 
-    cache = q_font_cache_create();
+    if (cache == NULL) {
+        cache = q_font_cache_create();
+    }
+
     if (cache != NULL) {
         font = q_font_match(cache,
                             "sans-serif",
                             Q_LAYOUT_DEFAULT_FONT_SIZE,
                             Q_LAYOUT_DEFAULT_FONT_WEIGHT);
-        if (font != NULL) {
-            run = q_font_shape_run(font, box->text, box->text_len);
+    }
+
+    if (font != NULL) {
+        run = q_font_shape_run(font, box->text, box->text_len);
+        if (run != NULL) {
+            run->font = font;
         }
+    }
+    else {
+        /* Keep text boxes paintable even when font load fails */
+        box->run = NULL;
     }
 
     if (run != NULL) {
@@ -38,7 +49,6 @@ static void q_layout_measure_text(q_box_t *box)
         box->height = Q_LAYOUT_DEFAULT_FONT_SIZE;
     }
 
-    q_font_cache_destroy(cache);
 }
 
 void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
