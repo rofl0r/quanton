@@ -1535,17 +1535,16 @@ post_process(Raster buf, uint8_t *image)
 static int
 render_outline(Outline *outl, double transform[6], SFT_Image image)
 {
-	Cell *cells = NULL;
+	Cell *cells;
 	Raster buf;
 	unsigned int numPixels;
 	
 	numPixels = (unsigned int) image.width * (unsigned int) image.height;
 
-	STACK_ALLOC(cells, Cell, 128 * 128, numPixels);
+	cells = calloc(numPixels, sizeof *cells);
 	if (!cells) {
 		return -1;
 	}
-	memset(cells, 0, numPixels * sizeof *cells);
 	buf.cells  = cells;
 	buf.width  = image.width;
 	buf.height = image.height;
@@ -1555,7 +1554,7 @@ render_outline(Outline *outl, double transform[6], SFT_Image image)
 	clip_points(outl->numPoints, outl->points, image.width, image.height);
 
 	if (tesselate_curves(outl) < 0) {
-		STACK_FREE(cells);
+		free(cells);
 		return -1;
 	}
 
@@ -1563,7 +1562,6 @@ render_outline(Outline *outl, double transform[6], SFT_Image image)
 
 	post_process(buf, image.pixels);
 
-	STACK_FREE(cells);
+	free(cells);
 	return 0;
 }
-

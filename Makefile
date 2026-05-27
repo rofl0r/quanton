@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -std=c99 -Wall -Wextra -Werror -O2 -Iinclude -I. -Ilexbor/source
+CFLAGS = -std=c99 -Wall -Wextra -Werror -O2 -Iinclude -I. -Ilexbor/source -Ithird_party
 
 LEXBOR_LIBS = \
 -llexbor-css \
@@ -24,8 +24,9 @@ SRC = \
 src/resource/resource.c \
 src/integration/lexbor_shim.c \
 src/layout/box_tree.c \
+src/layout/block_layout.c \
 src/font/font.c \
-libschrift/schrift.c
+third_party/libschrift/schrift.c
 
 OBJ = $(SRC:.c=.o)
 

@@ -52,6 +52,10 @@ typedef enum q_box_type {
 
 struct q_box {
     q_box_type_t type;
+    float x;
+    float y;
+    float width;
+    float height;
     lxb_dom_node_t *dom_node;
     struct q_box *parent;
     struct q_box *first_child;
@@ -60,10 +64,13 @@ struct q_box {
     struct q_box *prev_sibling;
     const char *text;
     size_t text_len;
+    q_shaped_run_t *run;
 };
 
 q_box_t *q_layout_build_tree(q_document_t *doc);
 void q_layout_free_tree(q_box_t *root);
+void q_layout_measure(q_box_t *box, float containing_w, float containing_h);
+void q_layout_position(q_box_t *box, float origin_x, float origin_y);
 
 /* task 3: font cache + libschrift wrapper surface */
 q_font_cache_t *q_font_cache_create(void);

@@ -2,7 +2,7 @@
 
 #include "quanton.h"
 
-#include "libschrift/schrift.h"
+#include "third_party/libschrift/schrift.h"
 
 #include <math.h>
 #include <stdlib.h>

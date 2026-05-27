@@ -144,5 +144,6 @@ void q_layout_free_tree(q_box_t *root)
         child = next;
     }
 
+    q_shaped_run_free(root->run);
     free(root);
 }
