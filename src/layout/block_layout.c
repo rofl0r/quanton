@@ -52,6 +52,13 @@ static void q_layout_measure_text(q_box_t *box)
 
 }
 
+/* Returns 1 if this box is taken out of normal flow */
+static int q_is_out_of_flow(const q_box_t *box)
+{
+    return box->position == Q_POSITION_ABSOLUTE
+        || box->position == Q_POSITION_FIXED;
+}
+
 void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
 {
     q_box_t *child;
@@ -85,7 +92,12 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
         return;
     }
 
-    box->width = (containing_w > 0.0f) ? containing_w : 0.0f;
+    /* Apply explicit CSS width override before measuring children */
+    if (!isnan(box->style_width)) {
+        box->width = box->style_width;
+    } else {
+        box->width = (containing_w > 0.0f) ? containing_w : 0.0f;
+    }
     box->height = 0.0f;
 
     if (box->is_flex_container) {
@@ -94,8 +106,11 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
         float max_h = 0.0f;
         float used_w = 0.0f;
 
+        /* Count only in-flow flex children */
         for (child = box->first_child; child != NULL; child = child->next_sibling) {
-            ++child_count;
+            if (!q_is_out_of_flow(child)) {
+                ++child_count;
+            }
         }
 
         if (child_count > 0 && box->width > 0.0f) {
@@ -104,16 +119,21 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
 
         for (child = box->first_child; child != NULL; child = child->next_sibling) {
             q_layout_measure(child, item_w, containing_h);
-            used_w += child->width;
-            if (child->height > max_h) {
-                max_h = child->height;
+            if (!q_is_out_of_flow(child)) {
+                used_w += child->width;
+                if (child->height > max_h) {
+                    max_h = child->height;
+                }
             }
         }
 
-        if (box->width <= 0.0f) {
+        if (isnan(box->style_width) && box->width <= 0.0f) {
             box->width = used_w;
         }
         box->height = max_h;
+        if (!isnan(box->style_height)) {
+            box->height = box->style_height;
+        }
         return;
     }
 
@@ -124,16 +144,21 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
 
     for (child = box->first_child; child != NULL; child = child->next_sibling) {
         q_layout_measure(child, box->width, containing_h);
-        used_h += child->height;
-        if (child->width > max_w) {
-            max_w = child->width;
+        if (!q_is_out_of_flow(child)) {
+            used_h += child->height;
+            if (child->width > max_w) {
+                max_w = child->width;
+            }
         }
     }
 
-    if (box->width <= 0.0f) {
+    if (isnan(box->style_width) && box->width <= 0.0f) {
         box->width = max_w;
     }
     box->height = used_h;
+    if (!isnan(box->style_height)) {
+        box->height = box->style_height;
+    }
 }
 
 void q_layout_position(q_box_t *box, float origin_x, float origin_y)
@@ -163,15 +188,107 @@ void q_layout_position(q_box_t *box, float origin_x, float origin_y)
     if (box->is_flex_container) {
         cursor_x = origin_x;
         for (child = box->first_child; child != NULL; child = child->next_sibling) {
-            q_layout_position(child, cursor_x, origin_y);
-            cursor_x += child->width;
+            if (!q_is_out_of_flow(child)) {
+                q_layout_position(child, cursor_x, origin_y);
+                cursor_x += child->width;
+            }
         }
         return;
     }
 
     child_y = origin_y;
     for (child = box->first_child; child != NULL; child = child->next_sibling) {
-        q_layout_position(child, origin_x, child_y);
-        child_y += child->height;
+        if (!q_is_out_of_flow(child)) {
+            q_layout_position(child, origin_x, child_y);
+            child_y += child->height;
+        }
     }
+}
+
+/* ── Second pass: position absolute/fixed boxes ──────────────────────────── */
+
+/* Find the nearest ancestor with position != static, or the root for fixed. */
+static q_box_t *q_containing_block(q_box_t *box)
+{
+    q_box_t *p = box->parent;
+
+    if (box->position == Q_POSITION_FIXED) {
+        /* Walk up to the root */
+        while (p != NULL && p->parent != NULL) {
+            p = p->parent;
+        }
+        return p;
+    }
+
+    /* Absolute: nearest non-static ancestor */
+    while (p != NULL) {
+        if (p->position != Q_POSITION_STATIC) {
+            return p;
+        }
+        if (p->parent == NULL) {
+            /* Hit root — it is the containing block even though static */
+            return p;
+        }
+        p = p->parent;
+    }
+    return NULL;
+}
+
+/* Recursively walk the tree and resolve abs/fixed boxes. */
+static void q_position_abs_walk(q_box_t *box)
+{
+    q_box_t *child;
+
+    if (box == NULL) {
+        return;
+    }
+
+    for (child = box->first_child; child != NULL; child = child->next_sibling) {
+        if (q_is_out_of_flow(child)) {
+            q_box_t *cb = q_containing_block(child);
+
+            if (cb != NULL) {
+                float ox = cb->x;
+                float oy = cb->y;
+                float cw = cb->width;
+                float ch = cb->height;
+
+                /* Measure the positioned box itself now that CB dimensions
+                 * are finalised.  Use explicit style_width when set; fall
+                 * back to the containing-block width so the box fills it. */
+                float mw = !isnan(child->style_width)  ? child->style_width  : cw;
+                float mh = !isnan(child->style_height) ? child->style_height : ch;
+
+                q_layout_measure(child, mw, mh);
+
+                /* Resolve horizontal offset: prefer left, then right */
+                if (!isnan(child->style_left)) {
+                    child->x = ox + child->style_left;
+                } else if (!isnan(child->style_right)) {
+                    child->x = ox + cw - child->style_right - child->width;
+                } else {
+                    child->x = ox; /* default: top-left of CB */
+                }
+
+                /* Resolve vertical offset: prefer top, then bottom */
+                if (!isnan(child->style_top)) {
+                    child->y = oy + child->style_top;
+                } else if (!isnan(child->style_bottom)) {
+                    child->y = oy + ch - child->style_bottom - child->height;
+                } else {
+                    child->y = oy;
+                }
+
+                /* Recurse into the positioned box */
+                q_layout_position(child, child->x, child->y);
+            }
+        }
+        /* Always recurse to find deeper out-of-flow descendants */
+        q_position_abs_walk(child);
+    }
+}
+
+void q_layout_position_absolute(q_box_t *root)
+{
+    q_position_abs_walk(root);
 }

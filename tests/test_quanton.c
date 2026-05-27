@@ -17,6 +17,7 @@
 #define Q_NON_TEXT_SAMPLE_X 200
 #define Q_NON_TEXT_SAMPLE_Y 10
 
+#if defined(QUANTON_BACKEND_X11) || defined(QUANTON_BACKEND_SDL2)
 static char *make_url_from_filename(const char *filename)
 {
     size_t len;
@@ -40,6 +41,7 @@ static char *make_url_from_filename(const char *filename)
     memcpy(url + sizeof("file://") - 1, filename, len + 1);
     return url;
 }
+#endif
 
 static int g_event_called;
 static q_box_t *g_event_target_box;
@@ -173,6 +175,7 @@ static void render_html_case_to_png(const char *html_url, const char *output_png
 
     q_layout_measure(root, (float) width, 0.0f);
     q_layout_position(root, 0.0f, 0.0f);
+    q_layout_position_absolute(root);
     q_paint_box(root);
 
     memset(&ctx, 0, sizeof(ctx));
@@ -383,6 +386,57 @@ int main(int argc, char **argv)
         q_document_destroy(flex_doc);
     }
 
+    /* ── Absolute / fixed positioning ──────────────────────────────────── */
+    {
+        /* relative container 400x200; absolute child at left:10, top:20, 100x40 */
+        static const char abs_html[] =
+            "<html><body>"
+            "<div style='position:relative; width:400px; height:200px;'>"
+            "<div style='position:absolute; left:10px; top:20px; width:100px; height:40px;'>Absolute</div>"
+            "<div>Normal flow</div>"
+            "</div>"
+            "</body></html>";
+        q_document_t *abs_doc;
+        q_box_t *abs_root;
+        q_box_t *abs_container;
+        q_box_t *abs_child;
+        q_box_t *normal_child;
+
+        abs_doc = q_document_create();
+        assert(abs_doc != NULL);
+        assert(q_document_load_html(abs_doc, abs_html, sizeof(abs_html) - 1,
+                                    "file://./tests/abs.html") == 0);
+
+        abs_root = q_layout_build_tree(abs_doc);
+        assert(abs_root != NULL);
+        q_layout_measure(abs_root, 800.0f, 0.0f);
+        q_layout_position(abs_root, 0.0f, 0.0f);
+        q_layout_position_absolute(abs_root);
+
+        abs_container = abs_root->first_child;
+        assert(abs_container != NULL);
+        assert(abs_container->position == Q_POSITION_RELATIVE);
+        assert(nearly_equal(abs_container->width,  400.0f));
+        assert(nearly_equal(abs_container->height, 200.0f));
+
+        abs_child = abs_container->first_child;
+        assert(abs_child != NULL);
+        assert(abs_child->position == Q_POSITION_ABSOLUTE);
+        assert(nearly_equal(abs_child->x, abs_container->x + 10.0f));
+        assert(nearly_equal(abs_child->y, abs_container->y + 20.0f));
+        assert(nearly_equal(abs_child->width,  100.0f));
+        assert(nearly_equal(abs_child->height,  40.0f));
+
+        /* Normal-flow sibling should start at the container top (abs child
+         * is out of flow and contributes zero height to normal flow). */
+        normal_child = abs_child->next_sibling;
+        assert(normal_child != NULL);
+        assert(nearly_equal(normal_child->y, abs_container->y));
+
+        q_layout_free_tree(abs_root);
+        q_document_destroy(abs_doc);
+    }
+
     {
         quanton_ctx_t bctx;
         quanton_view_t bview;
@@ -423,6 +477,7 @@ int main(int argc, char **argv)
         render_html_case_to_png("file://./tests/html/inline_wrap.html", "output_inline_wrap.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/nested_blocks.html", "output_nested_blocks.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/flex_row.html", "output_flex_row.png", TEST_WIDTH, TEST_HEIGHT);
+        render_html_case_to_png("file://./tests/html/absolute_pos.html", "output_absolute_pos.png", TEST_WIDTH, TEST_HEIGHT);
 #else
         q_document_t *interactive_doc = NULL;
         q_box_t *interactive_root = root;

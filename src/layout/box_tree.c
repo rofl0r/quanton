@@ -6,11 +6,174 @@
 #include "lexbor/html/interfaces/document.h"
 
 #include <ctype.h>
+#include <math.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define Q_DEFAULT_BACKGROUND 0xF2F2F2FFu
 #define Q_DEFAULT_BORDER 0x303030FFu
 #define Q_DEFAULT_BORDER_WIDTH 1.0f
+
+/* ─── Inline CSS style attribute parser ─────────────────────────────────── */
+
+/* Case-insensitive compare of a lxb_char_t span against a lowercase literal.
+ * The span is [s, s+slen); the literal is a NUL-terminated lowercase string.
+ * Returns 1 if equal. */
+static int css_name_eq(const lxb_char_t *s, size_t slen, const char *name)
+{
+    size_t i;
+    for (i = 0; i < slen; ++i) {
+        if (name[i] == '\0') {
+            return 0; /* name is shorter */
+        }
+        if (tolower((unsigned char) s[i]) != (unsigned char) name[i]) {
+            return 0;
+        }
+    }
+    return name[slen] == '\0';
+}
+
+/* Case-insensitive compare of the value region [val, val+vlen) (with leading
+ * whitespace stripped) against a lowercase keyword.  Trailing whitespace in
+ * the value is also ignored. */
+static int css_value_is(const lxb_char_t *val, size_t vlen, const char *kw)
+{
+    size_t kwlen = strlen(kw);
+    size_t i = 0;
+
+    /* skip leading space */
+    while (i < vlen && isspace((unsigned char) val[i])) {
+        ++i;
+    }
+    if (vlen - i < kwlen) {
+        return 0;
+    }
+    if (!css_name_eq(val + i, kwlen, kw)) {
+        return 0;
+    }
+    i += kwlen;
+    /* only trailing space is allowed after the keyword */
+    while (i < vlen && isspace((unsigned char) val[i])) {
+        ++i;
+    }
+    return i >= vlen;
+}
+
+/* Parse a CSS length value (e.g. "10px", "  20 ", "0") and return it as a
+ * float in pixels.  Units other than px are accepted but treated as px.
+ * Returns 0.0f on parse failure. */
+static float css_parse_length(const lxb_char_t *val, size_t vlen)
+{
+    char buf[32];
+    size_t i = 0;
+    size_t n;
+
+    while (i < vlen && isspace((unsigned char) val[i])) {
+        ++i;
+    }
+    n = vlen - i;
+    if (n == 0) {
+        return 0.0f;
+    }
+    if (n > sizeof(buf) - 1) {
+        n = sizeof(buf) - 1;
+    }
+    memcpy(buf, val + i, n);
+    buf[n] = '\0';
+    return strtof(buf, NULL);
+}
+
+/* Parse relevant CSS properties from a style attribute string and apply them
+ * to *box.  Handles: display, position, top/right/bottom/left, width, height. */
+static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
+                                  q_box_t *box)
+{
+    size_t i = 0;
+
+    while (i < style_len) {
+        size_t prop_start;
+        size_t prop_end;
+        size_t val_start;
+        size_t val_end;
+        size_t prop_len;
+        size_t val_len;
+        const lxb_char_t *prop;
+        const lxb_char_t *val;
+
+        /* skip leading whitespace */
+        while (i < style_len && isspace((unsigned char) style[i])) {
+            ++i;
+        }
+        if (i >= style_len) {
+            break;
+        }
+
+        prop_start = i;
+        /* scan property name up to ':' or ';' */
+        while (i < style_len && style[i] != ':' && style[i] != ';') {
+            ++i;
+        }
+        if (i >= style_len || style[i] != ':') {
+            /* no colon — skip to next ';' */
+            while (i < style_len && style[i] != ';') {
+                ++i;
+            }
+            if (i < style_len) {
+                ++i; /* skip ';' */
+            }
+            continue;
+        }
+        prop_end = i;
+        ++i; /* skip ':' */
+
+        val_start = i;
+        while (i < style_len && style[i] != ';') {
+            ++i;
+        }
+        val_end = i;
+        if (i < style_len) {
+            ++i; /* skip ';' */
+        }
+
+        /* trim trailing whitespace from property name */
+        while (prop_end > prop_start
+               && isspace((unsigned char) style[prop_end - 1])) {
+            --prop_end;
+        }
+        prop_len = prop_end - prop_start;
+        val_len  = val_end  - val_start;
+        prop = style + prop_start;
+        val  = style + val_start;
+
+        if (css_name_eq(prop, prop_len, "display")) {
+            if (css_value_is(val, val_len, "flex")) {
+                box->is_flex_container = 1;
+            }
+        } else if (css_name_eq(prop, prop_len, "position")) {
+            if (css_value_is(val, val_len, "absolute")) {
+                box->position = Q_POSITION_ABSOLUTE;
+            } else if (css_value_is(val, val_len, "fixed")) {
+                box->position = Q_POSITION_FIXED;
+            } else if (css_value_is(val, val_len, "relative")) {
+                box->position = Q_POSITION_RELATIVE;
+            }
+        } else if (css_name_eq(prop, prop_len, "top")) {
+            box->style_top = css_parse_length(val, val_len);
+        } else if (css_name_eq(prop, prop_len, "right")) {
+            box->style_right = css_parse_length(val, val_len);
+        } else if (css_name_eq(prop, prop_len, "bottom")) {
+            box->style_bottom = css_parse_length(val, val_len);
+        } else if (css_name_eq(prop, prop_len, "left")) {
+            box->style_left = css_parse_length(val, val_len);
+        } else if (css_name_eq(prop, prop_len, "width")) {
+            box->style_width = css_parse_length(val, val_len);
+        } else if (css_name_eq(prop, prop_len, "height")) {
+            box->style_height = css_parse_length(val, val_len);
+        }
+    }
+}
+
+/* ─── Box tree ────────────────────────────────────────────────────────────── */
 
 static q_box_t *q_box_create(q_box_type_t type, lxb_dom_node_t *dom_node,
                               const char *text, size_t text_len)
@@ -33,6 +196,14 @@ static q_box_t *q_box_create(q_box_type_t type, lxb_dom_node_t *dom_node,
     box->border_width[1] = Q_DEFAULT_BORDER_WIDTH;
     box->border_width[2] = Q_DEFAULT_BORDER_WIDTH;
     box->border_width[3] = Q_DEFAULT_BORDER_WIDTH;
+
+    /* NaN sentinel = "not set" for all explicit style dimensions / offsets */
+    box->style_top    = (float) NAN;
+    box->style_right  = (float) NAN;
+    box->style_bottom = (float) NAN;
+    box->style_left   = (float) NAN;
+    box->style_width  = (float) NAN;
+    box->style_height = (float) NAN;
 
     return box;
 }
@@ -76,33 +247,14 @@ static int q_layout_walk_node(lxb_dom_node_t *node, q_box_t *parent)
     {
         current = q_box_create(Q_BOX_BLOCK, node, NULL, 0);
         if (current != NULL && lxb_dom_node_type(node) == LXB_DOM_NODE_TYPE_ELEMENT) {
-            const lxb_char_t *style;
             size_t style_len = 0;
-            size_t i;
-
-            style = lxb_dom_element_get_attribute(lxb_dom_interface_element(node),
-                                                  (const lxb_char_t *) "style",
-                                                  sizeof("style") - 1,
-                                                  &style_len);
-            if (style != NULL && style_len >= sizeof("display:flex") - 1) {
-                for (i = 0; i + (sizeof("display:flex") - 1) <= style_len; ++i) {
-                    if (tolower((unsigned char) style[i + 0]) == 'd'
-                        && tolower((unsigned char) style[i + 1]) == 'i'
-                        && tolower((unsigned char) style[i + 2]) == 's'
-                        && tolower((unsigned char) style[i + 3]) == 'p'
-                        && tolower((unsigned char) style[i + 4]) == 'l'
-                        && tolower((unsigned char) style[i + 5]) == 'a'
-                        && tolower((unsigned char) style[i + 6]) == 'y'
-                        && style[i + 7] == ':'
-                        && tolower((unsigned char) style[i + 8]) == 'f'
-                        && tolower((unsigned char) style[i + 9]) == 'l'
-                        && tolower((unsigned char) style[i + 10]) == 'e'
-                        && tolower((unsigned char) style[i + 11]) == 'x')
-                    {
-                        current->is_flex_container = 1;
-                        break;
-                    }
-                }
+            const lxb_char_t *style =
+                lxb_dom_element_get_attribute(lxb_dom_interface_element(node),
+                                              (const lxb_char_t *) "style",
+                                              sizeof("style") - 1,
+                                              &style_len);
+            if (style != NULL && style_len > 0) {
+                parse_style_attribute(style, style_len, current);
             }
         }
     }
