@@ -50,24 +50,9 @@ lexbor_all:
 libquanton.a: $(OBJ)
 	ar rcs $@ $(OBJ)
 
-# ── Optional backend targets ─────────────────────────────────────────────
-# These are not built by default; link -lX11 or SDL2 when using them.
-#
-#   make libquanton-x11.a   (requires libX11-dev)
-#   make libquanton-sdl2.a  (requires libSDL2-dev)
-
 SRC_X11  = src/backend/x11/x11_backend.c
 SRC_SDL2 = src/backend/sdl2/sdl2_backend.c
 SRC_PNG  = src/backend/png/png_backend.c
-
-libquanton-x11.a: $(OBJ) src/backend/x11/x11_backend.o
-	ar rcs $@ $(OBJ) src/backend/x11/x11_backend.o
-
-libquanton-sdl2.a: $(OBJ) src/backend/sdl2/sdl2_backend.o
-	ar rcs $@ $(OBJ) src/backend/sdl2/sdl2_backend.o
-
-libquanton-png.a: $(OBJ) src/backend/png/png_backend.o
-	ar rcs $@ $(OBJ) src/backend/png/png_backend.o
 
 src/backend/x11/x11_backend.o: $(SRC_X11) include/quanton.h
 	$(CC) $(CFLAGS) -c -o $@ $(SRC_X11)
@@ -101,7 +86,7 @@ test_sdl2: lexbor_all tests/test_quanton.c libquanton.a src/backend/sdl2/sdl2_ba
 	    libquanton.a src/backend/sdl2/sdl2_backend.o $(LDFLAGS) $(LDFLAGS_LEXBOR) $(SDL2_LDFLAGS)
 
 clean:
-	rm -f $(OBJ) libquanton.a libquanton-x11.a libquanton-sdl2.a libquanton-png.a \
+	rm -f $(OBJ) libquanton.a \
 	    test test_x11 test_sdl2 test_png output.png
 	rm -f src/backend/x11/x11_backend.o src/backend/sdl2/sdl2_backend.o \
 	    src/backend/png/png_backend.o
