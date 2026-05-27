@@ -1,6 +1,10 @@
 #define _POSIX_C_SOURCE 200809L
 #include "quanton.h"
 
+#include "lexbor/dom/interface.h"
+#include "lexbor/dom/interfaces/element.h"
+#include "lexbor/dom/interfaces/node.h"
+
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
@@ -564,6 +568,156 @@ int main(int argc, char **argv)
 #endif
 
     q_layout_free_tree(root);
+
+    /* ── DOM mutation API + dirty tracking (step 11) ─────────────────────── */
+    {
+        static const char mut_html[] =
+            "<html><body>"
+            "<div id='box' class='alpha'>Hello</div>"
+            "</body></html>";
+        q_document_t    *mut_doc;
+        q_box_t         *mut_root;
+        q_box_t         *mut_block;
+        float            orig_height;
+        quanton_view_t   mut_view;
+        lxb_dom_element_t *found;
+
+        mut_doc = q_document_create();
+        assert(mut_doc != NULL);
+        assert(q_document_load_html(mut_doc, mut_html, sizeof(mut_html) - 1,
+                                    "file://./tests/mut.html") == 0);
+
+        mut_root = q_layout_build_tree(mut_doc);
+        assert(mut_root != NULL);
+        q_layout_measure(mut_root, 400.0f, 0.0f);
+        q_layout_position(mut_root, 0.0f, 0.0f);
+
+        mut_block = mut_root->first_child;
+        assert(mut_block != NULL);
+        orig_height = mut_block->height;
+        assert(orig_height > 0.0f);
+
+        /* Set up a minimal view for q_view_update */
+        memset(&mut_view, 0, sizeof(mut_view));
+        mut_view.document    = mut_doc;
+        mut_view.layout_root = mut_root;
+        mut_view.vp_width    = 400;
+        mut_view.vp_height   = 300;
+
+        /* ── q_dom_has_class ── */
+        assert(q_dom_has_class(lxb_dom_interface_element(mut_block->dom_node),
+                               "alpha") == true);
+        assert(q_dom_has_class(lxb_dom_interface_element(mut_block->dom_node),
+                               "beta") == false);
+
+        /* ── q_dom_add_class ── */
+        q_dom_add_class(&mut_view,
+                        lxb_dom_interface_element(mut_block->dom_node),
+                        "beta");
+        assert(q_dom_has_class(lxb_dom_interface_element(mut_block->dom_node),
+                               "alpha") == true);
+        assert(q_dom_has_class(lxb_dom_interface_element(mut_block->dom_node),
+                               "beta") == true);
+        /* adding the same class again is a no-op */
+        q_dom_add_class(&mut_view,
+                        lxb_dom_interface_element(mut_block->dom_node),
+                        "beta");
+        assert(q_dom_has_class(lxb_dom_interface_element(mut_block->dom_node),
+                               "beta") == true);
+
+        /* ── q_dom_remove_class ── */
+        q_dom_remove_class(&mut_view,
+                           lxb_dom_interface_element(mut_block->dom_node),
+                           "alpha");
+        assert(q_dom_has_class(lxb_dom_interface_element(mut_block->dom_node),
+                               "alpha") == false);
+        assert(q_dom_has_class(lxb_dom_interface_element(mut_block->dom_node),
+                               "beta") == true);
+
+        /* ── q_dom_set_attr / q_dom_remove_attr ── */
+        assert(q_dom_set_attr(&mut_view,
+                              lxb_dom_interface_element(mut_block->dom_node),
+                              "data-test", "42") == 0);
+        assert(q_dom_remove_attr(&mut_view,
+                                 lxb_dom_interface_element(mut_block->dom_node),
+                                 "data-test") == 0);
+
+        /* ── q_dom_mark_dirty accumulates flags ── */
+        mut_view.dirty_flags = 0;
+        q_dom_mark_dirty(&mut_view, mut_block->dom_node, Q_DIRTY_LAYOUT);
+        assert((mut_view.dirty_flags & Q_DIRTY_LAYOUT) != 0);
+        q_dom_mark_dirty(&mut_view, NULL, Q_DIRTY_PAINT);
+        assert((mut_view.dirty_flags & Q_DIRTY_PAINT) != 0);
+
+        /* ── q_view_update triggers full relayout ── */
+        assert(q_dom_set_text_content(
+                    &mut_view,
+                    lxb_dom_interface_element(mut_block->dom_node),
+                    "Updated text content", 20) == 0);
+        assert((mut_view.dirty_flags & Q_DIRTY_LAYOUT) != 0);
+
+        q_view_update(&mut_view);
+
+        /* After update dirty flags should be cleared */
+        assert(mut_view.dirty_flags == 0);
+
+        /* A new layout_root should have been built */
+        assert(mut_view.layout_root != NULL);
+        /* old mut_root was freed; new root was built from same doc */
+        mut_root = mut_view.layout_root;
+
+        /* ── q_dom_query_selector ── */
+        found = q_dom_query_selector(&mut_view, "div");
+        assert(found != NULL);
+        found = q_dom_query_selector(&mut_view, "span");
+        assert(found == NULL); /* no span in the document */
+
+        /* ── q_dom_append_element + relayout ── */
+        {
+            lxb_dom_element_t *body_el;
+            lxb_dom_element_t *new_el;
+            q_box_t           *old_root = mut_view.layout_root;
+
+            body_el = q_dom_query_selector(&mut_view, "body");
+            assert(body_el != NULL);
+            new_el = q_dom_append_element(&mut_view, body_el, "p");
+            assert(new_el != NULL);
+            assert((mut_view.dirty_flags & Q_DIRTY_LAYOUT) != 0);
+            q_view_update(&mut_view);
+            assert(mut_view.dirty_flags == 0);
+            assert(mut_view.layout_root != NULL);
+            (void) old_root; /* pointer may be reused; check observables only */
+        }
+
+        /* ── q_dom_remove_node + relayout ── */
+        {
+            lxb_dom_element_t *div_el;
+            q_box_t           *old_root2 = mut_view.layout_root;
+            (void) old_root2;
+
+            div_el = q_dom_query_selector(&mut_view, "div");
+            assert(div_el != NULL);
+            assert(q_dom_remove_node(&mut_view,
+                                     lxb_dom_interface_node(div_el)) == 0);
+            assert((mut_view.dirty_flags & Q_DIRTY_LAYOUT) != 0);
+            q_view_update(&mut_view);
+            assert(mut_view.dirty_flags == 0);
+            assert(mut_view.layout_root != NULL);
+        }
+
+        /* ── q_view_refresh forces full relayout even when clean ── */
+        {
+            q_box_t *old_root3 = mut_view.layout_root;
+            (void) old_root3;
+            assert(mut_view.dirty_flags == 0);
+            q_view_refresh(&mut_view);
+            assert(mut_view.dirty_flags == 0);
+            assert(mut_view.layout_root != NULL);
+        }
+
+        q_layout_free_tree(mut_view.layout_root);
+        q_document_destroy(mut_doc);
+    }
 
     cache = q_font_cache_create();
     assert(cache != NULL);

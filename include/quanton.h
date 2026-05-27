@@ -3,10 +3,12 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 /* Forward declarations for lexbor types used by the shim API. */
 typedef struct lxb_html_document lxb_html_document_t;
 typedef struct lxb_dom_node lxb_dom_node_t;
+typedef struct lxb_dom_element lxb_dom_element_t;
 typedef struct lxb_css_rule_declaration lxb_css_rule_declaration_t;
 
 typedef struct q_document    q_document_t;
@@ -138,6 +140,13 @@ struct q_box {
     float style_height;
 };
 
+/* ── Dirty flags for incremental relayout ── */
+typedef enum q_dirty_flags {
+    Q_DIRTY_STYLE  = 1 << 0,  /* recompute computed styles */
+    Q_DIRTY_LAYOUT = 1 << 1,  /* rebuild box tree + measure */
+    Q_DIRTY_PAINT  = 1 << 2,  /* repaint tiles */
+} q_dirty_flags_t;
+
 /* ── Application context (one per process) ── */
 struct quanton_ctx {
     q_font_cache_t       *font_cache;
@@ -156,6 +165,7 @@ struct quanton_view {
     void               *on_event_userdata;
     void               *window_handle;     /* opaque backend-specific handle */
     int                 should_close;
+    q_dirty_flags_t     dirty_flags;       /* accumulated dirty bits */
 };
 
 q_box_t *q_layout_build_tree(q_document_t *doc);
@@ -211,6 +221,71 @@ void q_shaped_run_free(q_shaped_run_t *run);
  * Allocates view->framebuffer if it is NULL.
  */
 void q_composite_frame(quanton_view_t *view);
+
+/* ── View update (dirty-flag processing) ── */
+
+/*
+ * Mark a DOM subtree dirty; will be processed on the next q_view_update().
+ * Passing NULL for node marks the entire document dirty.
+ */
+void q_dom_mark_dirty(quanton_view_t *view,
+                      lxb_dom_node_t *node,
+                      q_dirty_flags_t flags);
+
+/*
+ * Process all pending dirty flags: rebuild box tree, re-measure, re-position,
+ * repaint and composite as needed.  Does nothing if dirty_flags == 0.
+ */
+void q_view_update(quanton_view_t *view);
+
+/*
+ * Force a synchronous full relayout + repaint, regardless of dirty state.
+ */
+void q_view_refresh(quanton_view_t *view);
+
+/* ── DOM mutation helpers ── */
+
+/* Set an attribute on an element; schedules Q_DIRTY_LAYOUT. */
+int q_dom_set_attr(quanton_view_t *view,
+                   lxb_dom_element_t *el,
+                   const char *name, const char *value);
+
+/* Remove an attribute; schedules Q_DIRTY_LAYOUT. */
+int q_dom_remove_attr(quanton_view_t *view,
+                      lxb_dom_element_t *el,
+                      const char *name);
+
+/*
+ * Set element.textContent — replaces all children with a single text node;
+ * schedules Q_DIRTY_LAYOUT.
+ */
+int q_dom_set_text_content(quanton_view_t *view,
+                            lxb_dom_element_t *el,
+                            const char *text, size_t len);
+
+/* Append a new child element; schedules Q_DIRTY_LAYOUT. */
+lxb_dom_element_t *q_dom_append_element(quanton_view_t *view,
+                                         lxb_dom_element_t *parent,
+                                         const char *tag_name);
+
+/* Remove a node from the tree; schedules Q_DIRTY_LAYOUT. */
+int q_dom_remove_node(quanton_view_t *view, lxb_dom_node_t *node);
+
+/* CSS class helpers (built on q_dom_set_attr). */
+void q_dom_add_class(quanton_view_t *view,
+                     lxb_dom_element_t *el, const char *cls);
+void q_dom_remove_class(quanton_view_t *view,
+                        lxb_dom_element_t *el, const char *cls);
+bool q_dom_has_class(lxb_dom_element_t *el, const char *cls);
+
+/* querySelector using lexbor's selectors module. */
+lxb_dom_element_t *q_dom_query_selector(quanton_view_t *view,
+                                         const char *selector);
+
+/* querySelectorAll — fills out[], returns match count. */
+size_t q_dom_query_selector_all(quanton_view_t *view,
+                                 const char *selector,
+                                 lxb_dom_element_t **out, size_t out_max);
 
 /* ── Backend vtable instances ── */
 extern const q_backend_vt_t q_backend_x11;
