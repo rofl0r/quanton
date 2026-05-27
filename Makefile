@@ -38,6 +38,7 @@ src/event/event.c \
 src/paint/paint.c \
 src/paint/composite.c \
 src/font/font.c \
+src/dom_api/dom_api.c \
 third_party/libschrift/schrift.c
 
 OBJ = $(SRC:.c=.o)
