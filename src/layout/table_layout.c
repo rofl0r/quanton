@@ -184,6 +184,9 @@ void q_table_fixup_anonymous(q_box_t *root)
 #define Q_TABLE_MAX_COLS       128
 #define Q_TABLE_MAX_ROWS       1024
 #define Q_TABLE_CELL_PAD       8.0f   /* synthetic cell padding (left+right) */
+#define Q_TABLE_DEFAULT_FONT_SIZE   16.0f
+#define Q_TABLE_DEFAULT_FONT_WEIGHT 400
+#define Q_TABLE_MIN_ROW_HEIGHT      20.0f
 
 /* ── q_table_free ─────────────────────────────────────────────────────────── */
 
@@ -269,7 +272,9 @@ static float q_dom_text_natural_width(lxb_dom_node_t *root)
     }
 
     cache = q_font_cache_create();
-    font  = (cache != NULL) ? q_font_match(cache, "sans-serif", 16.0f, 400) : NULL;
+    font  = (cache != NULL) ? q_font_match(cache, "sans-serif",
+                                            Q_TABLE_DEFAULT_FONT_SIZE,
+                                            Q_TABLE_DEFAULT_FONT_WEIGHT) : NULL;
 
     /* Depth-first traversal of DOM subtree */
     cur = root;
@@ -615,7 +620,7 @@ void q_table_measure(q_box_t *table_box, float containing_w)
         int ri;
         for (ri = 0; ri < nrows; ri++) {
             if (t->rows[ri].height < 1.0f) {
-                t->rows[ri].height = 20.0f;
+                t->rows[ri].height = Q_TABLE_MIN_ROW_HEIGHT;
             }
         }
     }
