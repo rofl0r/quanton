@@ -285,12 +285,20 @@ static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
         if (css_name_eq(prop, prop_len, "display")) {
             if (css_value_is(val, val_len, "flex")) {
                 box->is_flex_container = 1;
+                box->is_inline_block = 0;
+                if (box->type != Q_BOX_IMAGE) {
+                    box->type = Q_BOX_BLOCK;
+                }
+            } else if (css_value_is(val, val_len, "inline-block")) {
+                box->is_flex_container = 0;
+                box->is_inline_block = 1;
                 if (box->type != Q_BOX_IMAGE) {
                     box->type = Q_BOX_BLOCK;
                 }
             } else if (css_value_is(val, val_len, "table")
                        || css_value_is(val, val_len, "inline-table")) {
                 box->is_flex_container = 0;
+                box->is_inline_block = 0;
                 if (box->type != Q_BOX_IMAGE) {
                     box->type = Q_BOX_TABLE;
                 }
@@ -298,21 +306,25 @@ static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
                        || css_value_is(val, val_len, "table-header-group")
                        || css_value_is(val, val_len, "table-footer-group")) {
                 box->is_flex_container = 0;
+                box->is_inline_block = 0;
                 if (box->type != Q_BOX_IMAGE) {
                     box->type = Q_BOX_TABLE_SECTION;
                 }
             } else if (css_value_is(val, val_len, "table-row")) {
                 box->is_flex_container = 0;
+                box->is_inline_block = 0;
                 if (box->type != Q_BOX_IMAGE) {
                     box->type = Q_BOX_TABLE_ROW;
                 }
             } else if (css_value_is(val, val_len, "table-cell")) {
                 box->is_flex_container = 0;
+                box->is_inline_block = 0;
                 if (box->type != Q_BOX_IMAGE) {
                     box->type = Q_BOX_TABLE_CELL;
                 }
             } else if (css_value_is(val, val_len, "table-caption")) {
                 box->is_flex_container = 0;
+                box->is_inline_block = 0;
                 if (box->type != Q_BOX_IMAGE) {
                     box->type = Q_BOX_TABLE_CAPTION;
                 }
@@ -410,6 +422,14 @@ static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
             }
         } else if (css_name_eq(prop, prop_len, "border-collapse")) {
             box->table_border_collapse = css_value_is(val, val_len, "collapse") ? 1 : 0;
+        } else if (css_name_eq(prop, prop_len, "white-space")) {
+            if (css_value_is(val, val_len, "pre")) {
+                box->white_space = Q_WHITE_SPACE_PRE;
+            } else if (css_value_is(val, val_len, "nowrap")) {
+                box->white_space = Q_WHITE_SPACE_NOWRAP;
+            } else {
+                box->white_space = Q_WHITE_SPACE_NORMAL;
+            }
         }
     }
 }
@@ -439,6 +459,13 @@ static q_box_t *q_box_create(q_box_type_t type, lxb_dom_node_t *dom_node,
     box->border_width[3] = Q_DEFAULT_BORDER_WIDTH;
 
     if (type == Q_BOX_IMAGE) {
+        box->background_color = 0x00000000u;
+        box->border_width[0] = 0.0f;
+        box->border_width[1] = 0.0f;
+        box->border_width[2] = 0.0f;
+        box->border_width[3] = 0.0f;
+    }
+    if (type == Q_BOX_LINE_BREAK) {
         box->background_color = 0x00000000u;
         box->border_width[0] = 0.0f;
         box->border_width[1] = 0.0f;
@@ -542,6 +569,8 @@ static q_box_type_t q_box_type_from_tag_id(lxb_tag_id_t tag_id)
             return Q_BOX_TABLE_CELL;
         case LXB_TAG_CAPTION:
             return Q_BOX_TABLE_CAPTION;
+        case LXB_TAG_BR:
+            return Q_BOX_LINE_BREAK;
         default:
             return Q_BOX_BLOCK;
     }
@@ -558,6 +587,7 @@ static q_box_t *q_ensure_inline_container(q_box_t *parent)
     if (parent->last_child != NULL
         && parent->last_child->type == Q_BOX_INLINE_CONTAINER)
     {
+        parent->last_child->white_space = parent->white_space;
         return parent->last_child;
     }
 
@@ -569,6 +599,7 @@ static q_box_t *q_ensure_inline_container(q_box_t *parent)
         free(ic);
         return NULL;
     }
+    ic->white_space = parent->white_space;
     return ic;
 }
 
@@ -608,7 +639,8 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
         lxb_dom_character_data_t *ch_data = (lxb_dom_character_data_t *) node;
 
         if (ch_data->data.length != 0
-            && !q_text_is_whitespace(ch_data->data.data, ch_data->data.length))
+            && (parent->white_space == Q_WHITE_SPACE_PRE
+                || !q_text_is_whitespace(ch_data->data.data, ch_data->data.length)))
         {
             q_box_t *ic;
             q_box_t *text_box;
@@ -634,7 +666,9 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
     }
 
     if (current != NULL && parent != NULL) {
-        if (current->type == Q_BOX_IMAGE) {
+        if (current->type == Q_BOX_IMAGE
+            || current->type == Q_BOX_LINE_BREAK
+            || current->is_inline_block) {
             q_box_t *ic = q_ensure_inline_container(parent);
             if (ic == NULL || q_box_append_child(ic, current) != 0) {
                 free(current);

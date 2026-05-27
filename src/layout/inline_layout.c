@@ -75,6 +75,23 @@ static q_box_t *make_word_box(q_box_t *line_parent,
     return word;
 }
 
+static int append_existing_box_to_line(q_box_t *line, q_box_t *child)
+{
+    if (line == NULL || child == NULL) {
+        return -1;
+    }
+    child->next_sibling = NULL;
+    child->prev_sibling = line->last_child;
+    child->parent = line;
+    if (line->last_child != NULL) {
+        line->last_child->next_sibling = child;
+    } else {
+        line->first_child = child;
+    }
+    line->last_child = child;
+    return 0;
+}
+
 /*
  * q_layout_line_wrap — break the inline container's Q_BOX_TEXT children
  * into Q_BOX_LINE children, each holding word-level Q_BOX_TEXT boxes.
@@ -96,6 +113,9 @@ void q_layout_line_wrap(q_box_t *ic)
     float cursor_x = 0.0f;
     float line_h = 0.0f;
     float container_w;
+    const int no_wrap = (ic->white_space == Q_WHITE_SPACE_NOWRAP || ic->white_space == Q_WHITE_SPACE_PRE);
+    const float default_line_h = Q_LINE_DEFAULT_FONT_SIZE * 1.2f;
+    const float space_w = measure_word(" ", 1u);
 
     if (ic == NULL) {
         return;
@@ -121,59 +141,117 @@ void q_layout_line_wrap(q_box_t *ic)
             size_t text_len = orig->text_len;
             size_t i = 0;
 
-            while (i < text_len) {
-                size_t word_start;
-                size_t word_len;
-                float word_w;
-                float word_h;
+            if (ic->white_space == Q_WHITE_SPACE_PRE) {
+                while (i < text_len) {
+                    size_t seg_start = i;
+                    size_t seg_len;
+                    float seg_w;
+                    float seg_h = default_line_h;
 
-                /* skip whitespace */
-                while (i < text_len && isspace((unsigned char) text[i])) {
-                    ++i;
-                }
-                if (i >= text_len) {
-                    break;
-                }
-
-                word_start = i;
-                while (i < text_len && !isspace((unsigned char) text[i])) {
-                    ++i;
-                }
-                word_len = i - word_start;
-
-                word_w = measure_word(text + word_start, word_len);
-                word_h = Q_LINE_DEFAULT_FONT_SIZE * 1.2f;
-
-                /* Open first line if needed */
-                if (line == NULL) {
-                    line = make_line_box(ic);
+                    while (i < text_len && text[i] != '\n') {
+                        ++i;
+                    }
+                    seg_len = i - seg_start;
                     if (line == NULL) {
+                        line = make_line_box(ic);
+                        if (line == NULL) {
+                            goto cleanup;
+                        }
+                    }
+                    if (seg_len > 0u) {
+                        seg_w = measure_word(text + seg_start, seg_len);
+                        if (make_word_box(line, orig->dom_node, text + seg_start, seg_len,
+                                          seg_w, seg_h) == NULL) {
+                            goto cleanup;
+                        }
+                        cursor_x += seg_w + Q_LINE_WORD_SPACING;
+                        if (seg_h > line_h) {
+                            line_h = seg_h;
+                        }
+                    }
+
+                    if (i < text_len && text[i] == '\n') {
+                        line->height = (line_h > 0.0f) ? line_h : default_line_h;
+                        line = make_line_box(ic);
+                        if (line == NULL) {
+                            goto cleanup;
+                        }
+                        cursor_x = 0.0f;
+                        line_h = 0.0f;
+                        ++i;
+                    }
+                }
+            } else {
+                int pending_space = 0;
+
+                while (i < text_len) {
+                    size_t word_start;
+                    size_t word_len;
+                    float word_w;
+                    float word_h = default_line_h;
+                    float token_w;
+
+                    while (i < text_len && isspace((unsigned char) text[i])) {
+                        pending_space = 1;
+                        ++i;
+                    }
+                    if (i >= text_len) {
+                        break;
+                    }
+
+                    word_start = i;
+                    while (i < text_len && !isspace((unsigned char) text[i])) {
+                        ++i;
+                    }
+                    word_len = i - word_start;
+                    word_w = measure_word(text + word_start, word_len);
+
+                    if (line == NULL) {
+                        line = make_line_box(ic);
+                        if (line == NULL) {
+                            goto cleanup;
+                        }
+                        cursor_x = 0.0f;
+                        line_h = 0.0f;
+                    }
+
+                    token_w = word_w;
+                    if (pending_space && line->first_child != NULL) {
+                        token_w += space_w + Q_LINE_WORD_SPACING;
+                    }
+                    if (!no_wrap
+                        && line->first_child != NULL && container_w > 0.0f
+                        && cursor_x + token_w > container_w) {
+                        line->height = (line_h > 0.0f) ? line_h : default_line_h;
+                        line = make_line_box(ic);
+                        if (line == NULL) {
+                            goto cleanup;
+                        }
+                        cursor_x = 0.0f;
+                        line_h = 0.0f;
+                    }
+
+                    if (pending_space && line->first_child != NULL) {
+                        if (make_word_box(line, orig->dom_node, " ", 1u,
+                                          space_w, word_h) == NULL) {
+                            goto cleanup;
+                        }
+                        cursor_x += space_w + Q_LINE_WORD_SPACING;
+                        if (word_h > line_h) {
+                            line_h = word_h;
+                        }
+                    }
+
+                    if (make_word_box(line, orig->dom_node, text + word_start, word_len,
+                                      word_w, word_h) == NULL) {
                         goto cleanup;
                     }
-                    cursor_x = 0.0f;
-                    line_h = 0.0f;
-                }
 
-                /* Break to new line when word doesn't fit on a non-empty line */
-                if (line->first_child != NULL && container_w > 0.0f
-                    && cursor_x + word_w > container_w) {
-                    line->height = line_h;
-                    line = make_line_box(ic);
-                    if (line == NULL) {
-                        goto cleanup;
+                    cursor_x += word_w + Q_LINE_WORD_SPACING;
+                    if (word_h > line_h) {
+                        line_h = word_h;
                     }
-                    cursor_x = 0.0f;
-                    line_h = 0.0f;
-                }
-
-                if (make_word_box(line, orig->dom_node, text + word_start, word_len,
-                                  word_w, word_h) == NULL) {
-                    goto cleanup;
-                }
-
-                cursor_x += word_w + Q_LINE_WORD_SPACING;
-                if (word_h > line_h) {
-                    line_h = word_h;
+                    pending_space = 0;
                 }
             }
 
@@ -184,9 +262,27 @@ void q_layout_line_wrap(q_box_t *ic)
             continue;
         }
 
-        q_layout_measure(orig, container_w, 0.0f);
+        if (orig->type == Q_BOX_LINE_BREAK) {
+            if (line == NULL) {
+                line = make_line_box(ic);
+                if (line == NULL) {
+                    goto cleanup;
+                }
+            }
+            line->height = (line_h > 0.0f) ? line_h : default_line_h;
+            line = make_line_box(ic);
+            if (line == NULL) {
+                goto cleanup;
+            }
+            cursor_x = 0.0f;
+            line_h = 0.0f;
+            free(orig);
+            continue;
+        }
+
+        q_layout_measure(orig, orig->is_inline_block ? 0.0f : container_w, 0.0f);
         if (orig->height <= 0.0f) {
-            orig->height = Q_LINE_DEFAULT_FONT_SIZE * 1.2f;
+            orig->height = default_line_h;
         }
 
         if (line == NULL) {
@@ -198,9 +294,10 @@ void q_layout_line_wrap(q_box_t *ic)
             line_h = 0.0f;
         }
 
-        if (line->first_child != NULL && container_w > 0.0f
+        if (!no_wrap
+            && line->first_child != NULL && container_w > 0.0f
             && cursor_x + orig->width > container_w) {
-            line->height = line_h;
+            line->height = (line_h > 0.0f) ? line_h : default_line_h;
             line = make_line_box(ic);
             if (line == NULL) {
                 goto cleanup;
@@ -209,15 +306,9 @@ void q_layout_line_wrap(q_box_t *ic)
             line_h = 0.0f;
         }
 
-        orig->next_sibling = NULL;
-        orig->prev_sibling = line->last_child;
-        orig->parent = line;
-        if (line->last_child != NULL) {
-            line->last_child->next_sibling = orig;
-        } else {
-            line->first_child = orig;
+        if (append_existing_box_to_line(line, orig) != 0) {
+            goto cleanup;
         }
-        line->last_child = orig;
 
         cursor_x += orig->width + Q_LINE_WORD_SPACING;
         if (orig->height > line_h) {
@@ -226,7 +317,7 @@ void q_layout_line_wrap(q_box_t *ic)
     }
 
     if (line != NULL) {
-        line->height = line_h;
+        line->height = (line_h > 0.0f) ? line_h : default_line_h;
     }
     return;
 
