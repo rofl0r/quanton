@@ -271,6 +271,8 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
     /* Apply explicit CSS width override before measuring children */
     if (!isnan(box->style_width)) {
         box->width = box->style_width;
+    } else if (!isnan(box->style_width_pct) && containing_w > 0.0f) {
+        box->width = containing_w * box->style_width_pct / 100.0f;
     } else {
         box->width = (containing_w > 0.0f) ? containing_w : 0.0f;
     }
@@ -321,7 +323,11 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
 
     {
         q_float_ctx_t float_ctx;
-        float flow_y = 0.0f;
+        float pad_top    = box->padding_top;
+        float pad_right  = box->padding_right;
+        float pad_bottom = box->padding_bottom;
+        float pad_left   = box->padding_left;
+        float flow_y = pad_top;
 
         memset(&float_ctx, 0, sizeof(float_ctx));
         for (child = box->first_child; child != NULL; child = child->next_sibling) {
@@ -332,12 +338,14 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
             if (child->float_type != Q_FLOAT_NONE) {
                 float float_start_y = flow_y;
                 float placed_bottom;
+                float inner_w = box->width - pad_left - pad_right;
+                if (inner_w < 0.0f) inner_w = 0.0f;
 
                 float_start_y = q_layout_resolve_clear_y(&float_ctx, float_start_y,
                                                          child->clear_type);
 
-                q_layout_measure(child, box->width, containing_h);
-                placed_bottom = q_layout_block_place_float(&float_ctx, child, box->width, float_start_y);
+                q_layout_measure(child, inner_w, containing_h);
+                placed_bottom = q_layout_block_place_float(&float_ctx, child, inner_w, float_start_y);
                 if (q_float_ctx_add(&float_ctx, child, child->float_type) != 0) {
                     continue;
                 }
@@ -356,30 +364,30 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
                 float left;
                 float right;
                 float avail_w;
+                float inner_w;
 
                 child_y = q_layout_resolve_clear_y(&float_ctx, child_y, child->clear_type);
 
-                left = q_float_ctx_left_edge(&float_ctx, child_y, probe_h);
-                right = q_float_ctx_right_edge(&float_ctx, child_y, probe_h, box->width);
+                inner_w = box->width - pad_left - pad_right;
+                if (inner_w < 0.0f) inner_w = 0.0f;
+
+                left  = q_float_ctx_left_edge(&float_ctx, child_y, probe_h);
+                right = q_float_ctx_right_edge(&float_ctx, child_y, probe_h, inner_w);
                 avail_w = right - left;
-                if (avail_w < 0.0f) {
-                    avail_w = 0.0f;
-                }
+                if (avail_w < 0.0f) avail_w = 0.0f;
 
                 q_layout_measure(child, avail_w, containing_h);
 
-                left = q_float_ctx_left_edge(&float_ctx, child_y, q_layout_maxf(child->height, 1.0f));
+                left  = q_float_ctx_left_edge(&float_ctx, child_y, q_layout_maxf(child->height, 1.0f));
                 right = q_float_ctx_right_edge(&float_ctx, child_y,
-                                               q_layout_maxf(child->height, 1.0f), box->width);
+                                               q_layout_maxf(child->height, 1.0f), inner_w);
                 avail_w = right - left;
-                if (avail_w < 0.0f) {
-                    avail_w = 0.0f;
-                }
+                if (avail_w < 0.0f) avail_w = 0.0f;
                 if (child->type == Q_BOX_INLINE_CONTAINER) {
                     q_layout_measure(child, avail_w, containing_h);
                 }
 
-                child->x = left;
+                child->x = pad_left + left;
                 child->y = child_y;
                 flow_y = child_y + child->height;
                 used_h = q_layout_maxf(used_h, flow_y);
@@ -388,6 +396,7 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
                 }
             }
         }
+        used_h += pad_bottom;
         q_float_ctx_reset(&float_ctx);
     }
 

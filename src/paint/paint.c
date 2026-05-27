@@ -879,5 +879,17 @@ void q_paint_box(q_box_t *box)
     q_paint_scrollbar(box, 0);
     q_paint_apply_border_radius(box);
 
+#ifdef Q_DEBUG_BOXES
+    {
+        /* Draw 1px magenta outline around every painted box */
+        uint32_t dbg_color = 0xFF00FFFFu;
+        int dbg_w = box->tile_w, dbg_h = box->tile_h;
+        q_paint_fill_rect(box->tile, dbg_w, dbg_h, 0, 0, dbg_w, 1, dbg_color);
+        q_paint_fill_rect(box->tile, dbg_w, dbg_h, 0, dbg_h - 1, dbg_w, 1, dbg_color);
+        q_paint_fill_rect(box->tile, dbg_w, dbg_h, 0, 0, 1, dbg_h, dbg_color);
+        q_paint_fill_rect(box->tile, dbg_w, dbg_h, dbg_w - 1, 0, 1, dbg_h, dbg_color);
+    }
+#endif
+
     free(entries);
 }

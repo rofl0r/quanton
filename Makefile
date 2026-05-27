@@ -78,7 +78,7 @@ test: lexbor_all tests/test_quanton.c libquanton.a include/quanton.h
 # test_png runs headlessly and auto-executes.
 # test_x11 and test_sdl2 are compiled only (require a live display to run).
 test_png: lexbor_all tests/test_quanton.c libquanton.a src/backend/png/png_backend.o include/quanton.h
-	$(CC) $(CFLAGS) -DQUANTON_BACKEND_PNG -o $@ tests/test_quanton.c \
+	$(CC) $(CFLAGS) -DQUANTON_BACKEND_PNG -DQ_DEBUG_BOXES -o $@ tests/test_quanton.c \
 	    libquanton.a src/backend/png/png_backend.o $(LDFLAGS) $(LDFLAGS_LEXBOR) -lpng
 	./$@
 
