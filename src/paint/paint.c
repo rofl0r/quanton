@@ -5,6 +5,10 @@
 #include <string.h>
 
 #define Q_TEXT_COLOR 0x000000FFu
+#define Q_SCROLLBAR_THICKNESS 12
+#define Q_SCROLLBAR_MIN_THUMB 16
+#define Q_SCROLLBAR_TRACK_COLOR 0xA0A0A0FFu
+#define Q_SCROLLBAR_THUMB_COLOR 0x707070FFu
 
 static uint8_t q_color_r(uint32_t color) { return (uint8_t) ((color >> 24) & 0xFFu); }
 static uint8_t q_color_g(uint32_t color) { return (uint8_t) ((color >> 16) & 0xFFu); }
@@ -21,6 +25,214 @@ static int q_paint_box_height(const q_box_t *box)
 {
     int h = (int) ceilf(box->height);
     return (h > 0) ? h : 1;
+}
+
+static int q_box_scrolls_x(const q_box_t *box)
+{
+    return box != NULL
+        && (box->overflow_x == Q_OVERFLOW_SCROLL || box->overflow_x == Q_OVERFLOW_AUTO);
+}
+
+static int q_box_scrolls_y(const q_box_t *box)
+{
+    return box != NULL
+        && (box->overflow_y == Q_OVERFLOW_SCROLL || box->overflow_y == Q_OVERFLOW_AUTO);
+}
+
+static int q_box_overflow_clips(q_overflow_type_t overflow)
+{
+    return overflow == Q_OVERFLOW_HIDDEN
+        || overflow == Q_OVERFLOW_CLIP
+        || overflow == Q_OVERFLOW_SCROLL
+        || overflow == Q_OVERFLOW_AUTO;
+}
+
+static void q_box_content_extent(const q_box_t *box, float *out_w, float *out_h)
+{
+    q_box_t *child;
+    float max_w = 0.0f;
+    float max_h = 0.0f;
+
+    if (box == NULL || out_w == NULL || out_h == NULL) {
+        return;
+    }
+
+    for (child = box->first_child; child != NULL; child = child->next_sibling) {
+        float local_right = (child->x - box->x) + child->width;
+        float local_bottom = (child->y - box->y) + child->height;
+        if (local_right > max_w) {
+            max_w = local_right;
+        }
+        if (local_bottom > max_h) {
+            max_h = local_bottom;
+        }
+    }
+
+    if (max_w < 0.0f) {
+        max_w = 0.0f;
+    }
+    if (max_h < 0.0f) {
+        max_h = 0.0f;
+    }
+    *out_w = max_w;
+    *out_h = max_h;
+}
+
+static int q_box_has_vertical_scrollbar(const q_box_t *box, float content_h, float viewport_h)
+{
+    if (box == NULL) {
+        return 0;
+    }
+
+    if (box->overflow_y == Q_OVERFLOW_SCROLL) {
+        return 1;
+    }
+    if (box->overflow_y == Q_OVERFLOW_AUTO && content_h > viewport_h) {
+        return 1;
+    }
+    return 0;
+}
+
+static int q_box_has_horizontal_scrollbar(const q_box_t *box, float content_w, float viewport_w)
+{
+    if (box == NULL) {
+        return 0;
+    }
+
+    if (box->overflow_x == Q_OVERFLOW_SCROLL) {
+        return 1;
+    }
+    if (box->overflow_x == Q_OVERFLOW_AUTO && content_w > viewport_w) {
+        return 1;
+    }
+    return 0;
+}
+
+static int q_paint_clampf_int(float value, int min_value, int max_value)
+{
+    if (value < (float) min_value) {
+        return min_value;
+    }
+    if (value > (float) max_value) {
+        return max_value;
+    }
+    return (int) lroundf(value);
+}
+
+static void q_paint_scrollbar(q_box_t *box, int vertical)
+{
+    float content_w;
+    float content_h;
+    int top;
+    int right;
+    int bottom;
+    int left;
+    int viewport_w;
+    int viewport_h;
+    int show_vertical;
+    int show_horizontal;
+    int track_x;
+    int track_y;
+    int track_w;
+    int track_h;
+    int thumb_x;
+    int thumb_y;
+    int thumb_w;
+    int thumb_h;
+    float max_scroll;
+    float scroll;
+    float ratio;
+
+    if (box == NULL || box->tile == NULL) {
+        return;
+    }
+
+    q_box_content_extent(box, &content_w, &content_h);
+    top = (int) ceilf(box->border_width[0]);
+    right = (int) ceilf(box->border_width[1]);
+    bottom = (int) ceilf(box->border_width[2]);
+    left = (int) ceilf(box->border_width[3]);
+    viewport_w = box->tile_w - left - right;
+    viewport_h = box->tile_h - top - bottom;
+    if (viewport_w <= 0 || viewport_h <= 0) {
+        return;
+    }
+
+    show_vertical = q_box_has_vertical_scrollbar(box, content_h, (float) viewport_h);
+    show_horizontal = q_box_has_horizontal_scrollbar(box, content_w, (float) viewport_w);
+
+    if (vertical) {
+        if (!show_vertical) {
+            return;
+        }
+
+        track_w = Q_SCROLLBAR_THICKNESS;
+        if (track_w > viewport_w) {
+            track_w = viewport_w;
+        }
+        track_h = viewport_h - (show_horizontal ? Q_SCROLLBAR_THICKNESS : 0);
+        if (track_h <= 0) {
+            return;
+        }
+        track_x = box->tile_w - right - track_w;
+        track_y = top;
+
+        thumb_w = track_w;
+        thumb_h = q_paint_clampf_int(((float) viewport_h / (content_h > 0.0f ? content_h : 1.0f)) * track_h,
+                                     Q_SCROLLBAR_MIN_THUMB, track_h);
+        max_scroll = content_h - (float) viewport_h;
+        if (max_scroll < 0.0f) {
+            max_scroll = 0.0f;
+        }
+        scroll = box->scroll_y;
+        if (scroll < 0.0f) {
+            scroll = 0.0f;
+        }
+        if (scroll > max_scroll) {
+            scroll = max_scroll;
+        }
+        ratio = (max_scroll > 0.0f) ? (scroll / max_scroll) : 0.0f;
+        thumb_x = track_x;
+        thumb_y = track_y + q_paint_clampf_int(ratio * (float) (track_h - thumb_h), 0, track_h - thumb_h);
+    } else {
+        if (!show_horizontal) {
+            return;
+        }
+
+        track_h = Q_SCROLLBAR_THICKNESS;
+        if (track_h > viewport_h) {
+            track_h = viewport_h;
+        }
+        track_w = viewport_w - (show_vertical ? Q_SCROLLBAR_THICKNESS : 0);
+        if (track_w <= 0) {
+            return;
+        }
+        track_x = left;
+        track_y = box->tile_h - bottom - track_h;
+
+        thumb_h = track_h;
+        thumb_w = q_paint_clampf_int(((float) viewport_w / (content_w > 0.0f ? content_w : 1.0f)) * track_w,
+                                     Q_SCROLLBAR_MIN_THUMB, track_w);
+        max_scroll = content_w - (float) viewport_w;
+        if (max_scroll < 0.0f) {
+            max_scroll = 0.0f;
+        }
+        scroll = box->scroll_x;
+        if (scroll < 0.0f) {
+            scroll = 0.0f;
+        }
+        if (scroll > max_scroll) {
+            scroll = max_scroll;
+        }
+        ratio = (max_scroll > 0.0f) ? (scroll / max_scroll) : 0.0f;
+        thumb_x = track_x + q_paint_clampf_int(ratio * (float) (track_w - thumb_w), 0, track_w - thumb_w);
+        thumb_y = track_y;
+    }
+
+    q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                      track_x, track_y, track_w, track_h, Q_SCROLLBAR_TRACK_COLOR);
+    q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                      thumb_x, thumb_y, thumb_w, thumb_h, Q_SCROLLBAR_THUMB_COLOR);
 }
 
 typedef struct q_paint_child_entry {
@@ -63,6 +275,11 @@ static void q_paint_box_child(q_box_t *parent, q_box_t *child)
     int clip_y;
     int clip_w;
     int clip_h;
+    int should_clip;
+    float content_w;
+    float content_h;
+    int show_vertical;
+    int show_horizontal;
 
     q_paint_box(child);
     if (child->tile == NULL) {
@@ -71,9 +288,16 @@ static void q_paint_box_child(q_box_t *parent, q_box_t *child)
 
     dx = (int) lroundf(child->x - parent->x);
     dy = (int) lroundf(child->y - parent->y);
+    if (q_box_scrolls_x(parent)) {
+        dx -= (int) lroundf(parent->scroll_x);
+    }
+    if (q_box_scrolls_y(parent)) {
+        dy -= (int) lroundf(parent->scroll_y);
+    }
 
-    if (parent->overflow_x == Q_OVERFLOW_HIDDEN || parent->overflow_x == Q_OVERFLOW_CLIP ||
-        parent->overflow_y == Q_OVERFLOW_HIDDEN || parent->overflow_y == Q_OVERFLOW_CLIP) {
+    should_clip = q_box_overflow_clips(parent->overflow_x) || q_box_overflow_clips(parent->overflow_y);
+
+    if (should_clip) {
         /* Clip to the parent's content area (inside its borders). */
         int bleft  = (int) ceilf(parent->border_width[3]);
         int btop   = (int) ceilf(parent->border_width[0]);
@@ -84,6 +308,16 @@ static void q_paint_box_child(q_box_t *parent, q_box_t *child)
         clip_y = btop;
         clip_w = parent->tile_w - bleft - bright;
         clip_h = parent->tile_h - btop  - bbottom;
+
+        q_box_content_extent(parent, &content_w, &content_h);
+        show_vertical = q_box_has_vertical_scrollbar(parent, content_h, (float) clip_h);
+        show_horizontal = q_box_has_horizontal_scrollbar(parent, content_w, (float) clip_w);
+        if (show_vertical) {
+            clip_w -= Q_SCROLLBAR_THICKNESS;
+        }
+        if (show_horizontal) {
+            clip_h -= Q_SCROLLBAR_THICKNESS;
+        }
 
         /* If one axis allows overflow (VISIBLE), expand the clip region to
          * cover the full tile on that axis so only the other axis is clipped. */
@@ -417,6 +651,9 @@ void q_paint_box(q_box_t *box)
             q_paint_box_child(box, child);
         }
     }
+
+    q_paint_scrollbar(box, 1);
+    q_paint_scrollbar(box, 0);
 
     free(entries);
 }

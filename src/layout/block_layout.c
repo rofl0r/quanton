@@ -99,6 +99,79 @@ static int q_is_out_of_flow(const q_box_t *box)
         || box->position == Q_POSITION_FIXED;
 }
 
+static int q_box_scrolls_x(const q_box_t *box)
+{
+    return box != NULL
+        && (box->overflow_x == Q_OVERFLOW_SCROLL || box->overflow_x == Q_OVERFLOW_AUTO);
+}
+
+static int q_box_scrolls_y(const q_box_t *box)
+{
+    return box != NULL
+        && (box->overflow_y == Q_OVERFLOW_SCROLL || box->overflow_y == Q_OVERFLOW_AUTO);
+}
+
+static float q_layout_clampf(float value, float max_value)
+{
+    if (value < 0.0f) {
+        return 0.0f;
+    }
+    if (value > max_value) {
+        return max_value;
+    }
+    return value;
+}
+
+static void q_layout_clamp_box_scroll(q_box_t *box, float content_w, float content_h)
+{
+    float viewport_w;
+    float viewport_h;
+    float max_x;
+    float max_y;
+    float border_left;
+    float border_right;
+    float border_top;
+    float border_bottom;
+
+    if (box == NULL) {
+        return;
+    }
+
+    border_left = ceilf(box->border_width[3]);
+    border_right = ceilf(box->border_width[1]);
+    border_top = ceilf(box->border_width[0]);
+    border_bottom = ceilf(box->border_width[2]);
+    viewport_w = box->width - border_left - border_right;
+    viewport_h = box->height - border_top - border_bottom;
+    if (viewport_w < 0.0f) {
+        viewport_w = 0.0f;
+    }
+    if (viewport_h < 0.0f) {
+        viewport_h = 0.0f;
+    }
+
+    max_x = content_w - viewport_w;
+    max_y = content_h - viewport_h;
+    if (max_x < 0.0f) {
+        max_x = 0.0f;
+    }
+    if (max_y < 0.0f) {
+        max_y = 0.0f;
+    }
+
+    if (q_box_scrolls_x(box)) {
+        box->scroll_x = q_layout_clampf(box->scroll_x, max_x);
+    } else {
+        box->scroll_x = 0.0f;
+    }
+
+    if (q_box_scrolls_y(box)) {
+        box->scroll_y = q_layout_clampf(box->scroll_y, max_y);
+    } else {
+        box->scroll_y = 0.0f;
+    }
+}
+
 void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
 {
     q_box_t *child;
@@ -179,6 +252,7 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
         if (!isnan(box->style_height)) {
             box->height = box->style_height;
         }
+        q_layout_clamp_box_scroll(box, used_w, max_h);
         return;
     }
 
@@ -204,6 +278,7 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
     if (!isnan(box->style_height)) {
         box->height = box->style_height;
     }
+    q_layout_clamp_box_scroll(box, max_w, used_h);
 }
 
 void q_layout_position(q_box_t *box, float origin_x, float origin_y)

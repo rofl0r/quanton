@@ -148,6 +148,8 @@ struct q_box {
     /* CSS overflow clipping */
     q_overflow_type_t overflow_x;   /* Q_OVERFLOW_VISIBLE = default (calloc zero) */
     q_overflow_type_t overflow_y;
+    float scroll_x;
+    float scroll_y;
     /* Explicit CSS dimensions / offsets (NaN = not set, use normal flow) */
     float style_top;
     float style_right;
