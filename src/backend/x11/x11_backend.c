@@ -116,7 +116,7 @@ static int x11_create_window(quanton_view_t *view, int w, int h, const char *tit
     XSetWMProtocols(dpy, win->window, &win->wm_delete, 1);
 
     win->gc = XCreateGC(dpy, win->window, 0, NULL);
-    if (win->gc == NULL) {
+    if (win->gc == 0) {
         XDestroyWindow(dpy, win->window);
         XCloseDisplay(dpy);
         free(win);

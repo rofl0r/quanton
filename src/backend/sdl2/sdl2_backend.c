@@ -171,7 +171,6 @@ static void sdl2_blit(quanton_view_t *view)
 
 static void sdl2_poll_events(quanton_view_t *view)
 {
-    q_sdl2_win_t *win;
     SDL_Event     sev;
     q_event_t     ev;
     int           need_blit = 0;
@@ -179,9 +178,6 @@ static void sdl2_poll_events(quanton_view_t *view)
     if (view == NULL || view->window_handle == NULL) {
         return;
     }
-
-    win = (q_sdl2_win_t *) view->window_handle;
-    (void) win;
 
     while (SDL_PollEvent(&sev)) {
         memset(&ev, 0, sizeof(ev));
