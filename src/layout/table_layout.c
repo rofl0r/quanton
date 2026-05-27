@@ -427,6 +427,7 @@ void q_table_measure(q_box_t *table_box, float containing_w)
     }
     t->col_count = ncols;
     t->row_count = nrows;
+    t->border_collapse = table_box->table_border_collapse;
     t->cols  = (q_table_col_t  *) calloc((size_t) ncols, sizeof(*t->cols));
     t->rows  = (q_table_row_t  *) calloc((size_t) nrows, sizeof(*t->rows));
     t->spans = (q_table_span_t *) calloc(
