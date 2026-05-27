@@ -329,6 +329,14 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
         float pad_left   = box->padding_left;
         float flow_y = pad_top;
 
+        if (box->parent == NULL) {
+            pad_top += box->margin_top;
+            pad_right += box->margin_right;
+            pad_bottom += box->margin_bottom;
+            pad_left += box->margin_left;
+            flow_y = pad_top;
+        }
+
         memset(&float_ctx, 0, sizeof(float_ctx));
         for (child = box->first_child; child != NULL; child = child->next_sibling) {
             if (q_is_out_of_flow(child)) {
@@ -336,7 +344,7 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
             }
 
             if (child->float_type != Q_FLOAT_NONE) {
-                float float_start_y = flow_y;
+                float float_start_y = flow_y + child->margin_top;
                 float placed_bottom;
                 float inner_w = box->width - pad_left - pad_right;
                 if (inner_w < 0.0f) inner_w = 0.0f;
@@ -344,22 +352,23 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
                 float_start_y = q_layout_resolve_clear_y(&float_ctx, float_start_y,
                                                          child->clear_type);
 
-                q_layout_measure(child, inner_w, containing_h);
+                q_layout_measure(child, inner_w - child->margin_left - child->margin_right, containing_h);
                 placed_bottom = q_layout_block_place_float(&float_ctx, child, inner_w, float_start_y);
                 if (q_float_ctx_add(&float_ctx, child, child->float_type) != 0) {
                     continue;
                 }
+                child->x += child->margin_left;
                 if (child->x + child->width > max_w) {
-                    max_w = child->x + child->width;
+                    max_w = child->x + child->width + child->margin_right;
                 }
                 if (placed_bottom > used_h) {
-                    used_h = placed_bottom;
+                    used_h = placed_bottom + child->margin_bottom;
                 }
                 continue;
             }
 
             {
-                float child_y = flow_y;
+                float child_y = flow_y + child->margin_top;
                 float probe_h = 1.0f;
                 float left;
                 float right;
@@ -376,6 +385,8 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
                 avail_w = right - left;
                 if (avail_w < 0.0f) avail_w = 0.0f;
 
+                avail_w -= child->margin_left + child->margin_right;
+                if (avail_w < 0.0f) avail_w = 0.0f;
                 q_layout_measure(child, avail_w, containing_h);
 
                 left  = q_float_ctx_left_edge(&float_ctx, child_y, q_layout_maxf(child->height, 1.0f));
@@ -383,16 +394,18 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
                                                q_layout_maxf(child->height, 1.0f), inner_w);
                 avail_w = right - left;
                 if (avail_w < 0.0f) avail_w = 0.0f;
+                avail_w -= child->margin_left + child->margin_right;
+                if (avail_w < 0.0f) avail_w = 0.0f;
                 if (child->type == Q_BOX_INLINE_CONTAINER) {
                     q_layout_measure(child, avail_w, containing_h);
                 }
 
-                child->x = pad_left + left;
+                child->x = pad_left + left + child->margin_left;
                 child->y = child_y;
-                flow_y = child_y + child->height;
+                flow_y = child_y + child->height + child->margin_bottom;
                 used_h = q_layout_maxf(used_h, flow_y);
-                if (child->x + child->width > max_w) {
-                    max_w = child->x + child->width;
+                if (child->x + child->width + child->margin_right > max_w) {
+                    max_w = child->x + child->width + child->margin_right;
                 }
             }
         }
