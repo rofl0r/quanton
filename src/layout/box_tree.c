@@ -1172,6 +1172,17 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
                     current->list_style_type = Q_LIST_STYLE_DISC;
                 }
                 current->list_item_index = q_count_preceding_list_items(node);
+            } else if (tag_id >= LXB_TAG_H1 && tag_id <= LXB_TAG_H6) {
+                /* WHATWG UA: h1-h6 { font-weight:bold; font-size:Nem;
+                 *                    margin-block: 0.67em * font_size } */
+                static const float heading_em[6] = {
+                    2.0f, 1.5f, 1.17f, 1.0f, 0.83f, 0.67f
+                };
+                int level = (int)(tag_id - LXB_TAG_H1); /* 0 = h1 … 5 = h6 */
+                current->font_size    = heading_em[level] * 16.0f;
+                current->font_weight  = 700;
+                current->margin_top   = current->font_size * 0.67f;
+                current->margin_bottom = current->font_size * 0.67f;
             }
 
             if (tag_id == LXB_TAG_TD || tag_id == LXB_TAG_TH) {
@@ -1180,6 +1191,32 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
                 current->padding_right  = 1.0f;
                 current->padding_bottom = 1.0f;
                 current->padding_left   = 1.0f;
+            }
+
+            if (tag_id == LXB_TAG_B || tag_id == LXB_TAG_STRONG) {
+                /* WHATWG UA: b, strong { font-weight: bold }
+                 * Mark as inline-block so the box flows inline with surrounding
+                 * text while carrying the bold font-weight for its children. */
+                current->font_weight    = 700;
+                current->is_inline_block = 1;
+            }
+
+            if (tag_id == LXB_TAG_I || tag_id == LXB_TAG_EM) {
+                /* WHATWG UA: i, em { font-style: italic }
+                 * Mark as inline-block so the box flows inline with surrounding
+                 * text while carrying the italic font-style for its children. */
+                current->font_style     = Q_FONT_STYLE_ITALIC;
+                current->is_inline_block = 1;
+            }
+
+            if (tag_id == LXB_TAG_HR) {
+                /* WHATWG UA: hr { border-top: 1px solid #888; margin-block: 4px;
+                 *                 height: 0 } */
+                current->style_height     = 0.0f;
+                current->border_width[0]  = 1.0f;  /* top */
+                current->border_color[0]  = 0x888888FFu;
+                current->margin_top       = 4.0f;
+                current->margin_bottom    = 4.0f;
             }
 
             if (tag_id == LXB_TAG_INPUT) {
