@@ -5,7 +5,7 @@
 
 #define Q_LINE_DEFAULT_FONT_SIZE   16.0f
 #define Q_LINE_DEFAULT_FONT_WEIGHT 400
-#define Q_LINE_WORD_SPACING        4.0f
+#define Q_LINE_WORD_SPACING        0.0f
 
 static float measure_word(const char *text, size_t len)
 {
