@@ -1,5 +1,11 @@
 #include "quanton.h"
 
+#include "lexbor/dom/interface.h"
+#include "lexbor/dom/interfaces/character_data.h"
+#include "lexbor/dom/interfaces/element.h"
+#include "lexbor/dom/interfaces/node.h"
+#include "lexbor/tag/const.h"
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +22,20 @@ static uint8_t q_color_r(uint32_t color) { return (uint8_t) ((color >> 24) & 0xF
 static uint8_t q_color_g(uint32_t color) { return (uint8_t) ((color >> 16) & 0xFFu); }
 static uint8_t q_color_b(uint32_t color) { return (uint8_t) ((color >> 8) & 0xFFu); }
 static uint8_t q_color_a(uint32_t color) { return (uint8_t) (color & 0xFFu); }
+
+static uint32_t q_paint_resolve_text_color(const q_box_t *box)
+{
+    const q_box_t *cur = box;
+
+    while (cur != NULL) {
+        if (cur->has_text_color) {
+            return cur->text_color;
+        }
+        cur = cur->parent;
+    }
+
+    return Q_TEXT_COLOR;
+}
 
 static int q_paint_box_width(const q_box_t *box)
 {
@@ -469,7 +489,7 @@ static void q_paint_background_image(q_box_t *box)
     }
 }
 
-static void q_paint_text_decoration(q_box_t *box)
+static void q_paint_text_decoration(q_box_t *box, uint32_t color)
 {
     int baseline;
     int underline_y;
@@ -487,13 +507,13 @@ static void q_paint_text_decoration(q_box_t *box)
                                   : (int) lroundf(box->height * 0.5f);
 
     if (box->text_decoration & Q_TEXT_DECORATION_UNDERLINE) {
-        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, 0, underline_y, box->tile_w, 1, Q_TEXT_COLOR);
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, 0, underline_y, box->tile_w, 1, color);
     }
     if (box->text_decoration & Q_TEXT_DECORATION_OVERLINE) {
-        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, 0, overline_y, box->tile_w, 1, Q_TEXT_COLOR);
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, 0, overline_y, box->tile_w, 1, color);
     }
     if (box->text_decoration & Q_TEXT_DECORATION_LINE_THROUGH) {
-        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, 0, strike_y, box->tile_w, 1, Q_TEXT_COLOR);
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, 0, strike_y, box->tile_w, 1, color);
     }
 }
 
@@ -502,6 +522,7 @@ static void q_paint_list_marker(q_box_t *box)
     static q_font_cache_t *cache;
     q_font_t *font;
     int marker_y;
+    uint32_t text_color = q_paint_resolve_text_color(box);
 
     if (box == NULL
         || box->tile == NULL
@@ -514,7 +535,7 @@ static void q_paint_list_marker(q_box_t *box)
     marker_y = box->tile_h / 2;
     if (box->list_style_type == Q_LIST_STYLE_DISC) {
         q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
-                          Q_MARKER_GUTTER_X, marker_y - 2, 5, 5, Q_TEXT_COLOR);
+                          Q_MARKER_GUTTER_X, marker_y - 2, 5, 5, text_color);
         return;
     }
 
@@ -548,9 +569,173 @@ static void q_paint_list_marker(q_box_t *box)
         if (marker_run_y < 0) {
             marker_run_y = 0;
         }
-        q_font_render_run(run, Q_TEXT_COLOR, box->tile, box->tile_w, box->tile_h,
+        q_font_render_run(run, text_color, box->tile, box->tile_w, box->tile_h,
                           marker_x, marker_run_y);
         q_shaped_run_free(run);
+    }
+}
+
+static lxb_tag_id_t q_paint_box_tag_id(const q_box_t *box)
+{
+    if (box == NULL || box->dom_node == NULL
+        || lxb_dom_node_type(box->dom_node) != LXB_DOM_NODE_TYPE_ELEMENT)
+    {
+        return LXB_TAG__UNDEF;
+    }
+    return lxb_dom_node_tag_id(box->dom_node);
+}
+
+static const lxb_char_t *q_paint_get_attr(const q_box_t *box,
+                                          const char *name,
+                                          size_t *out_len)
+{
+    lxb_dom_element_t *el;
+
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (box == NULL || box->dom_node == NULL
+        || lxb_dom_node_type(box->dom_node) != LXB_DOM_NODE_TYPE_ELEMENT)
+    {
+        return NULL;
+    }
+    el = lxb_dom_interface_element(box->dom_node);
+    return lxb_dom_element_get_attribute(el, (const lxb_char_t *) name, strlen(name), out_len);
+}
+
+static int q_paint_attr_is(const q_box_t *box, const char *name, const char *value)
+{
+    const lxb_char_t *attr;
+    size_t attr_len = 0;
+    size_t value_len = strlen(value);
+
+    attr = q_paint_get_attr(box, name, &attr_len);
+    if (attr == NULL || attr_len != value_len) {
+        return 0;
+    }
+    return memcmp(attr, value, value_len) == 0;
+}
+
+static void q_paint_render_widget_text(q_box_t *box, const char *text, size_t text_len,
+                                       int x, int y, uint32_t color)
+{
+    static q_font_cache_t *cache;
+    q_font_t *font;
+    q_shaped_run_t *run;
+
+    if (box == NULL || box->tile == NULL || text == NULL || text_len == 0u) {
+        return;
+    }
+    if (cache == NULL) {
+        cache = q_font_cache_create();
+    }
+    if (cache == NULL) {
+        return;
+    }
+
+    font = q_font_match(cache, "sans-serif",
+                        (!isnan(box->font_size) && box->font_size > 0.0f) ? box->font_size : 16.0f,
+                        (box->font_weight > 0) ? box->font_weight : 400);
+    if (font == NULL) {
+        return;
+    }
+    run = q_font_shape_run(font, text, text_len);
+    if (run == NULL) {
+        return;
+    }
+    run->font = font;
+    q_font_render_run(run, color, box->tile, box->tile_w, box->tile_h, x, y);
+    q_shaped_run_free(run);
+}
+
+static void q_paint_form_widget(q_box_t *box)
+{
+    lxb_tag_id_t tag;
+    uint32_t text_color;
+
+    if (box == NULL || box->tile == NULL) {
+        return;
+    }
+    tag = q_paint_box_tag_id(box);
+    if (tag != LXB_TAG_INPUT && tag != LXB_TAG_BUTTON
+        && tag != LXB_TAG_SELECT && tag != LXB_TAG_TEXTAREA)
+    {
+        return;
+    }
+
+    text_color = q_paint_resolve_text_color(box);
+
+    if (tag == LXB_TAG_INPUT) {
+        if (q_paint_attr_is(box, "type", "checkbox")) {
+            if (q_paint_get_attr(box, "checked", NULL) != NULL) {
+                q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                                  3, box->tile_h / 2, 4, 2, text_color);
+                q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                                  6, box->tile_h / 2 - 2, 4, 2, text_color);
+            }
+            return;
+        }
+        if (q_paint_attr_is(box, "type", "radio")) {
+            if (q_paint_get_attr(box, "checked", NULL) != NULL) {
+                int cx = box->tile_w / 2 - 2;
+                int cy = box->tile_h / 2 - 2;
+                q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, cx, cy, 4, 4, text_color);
+            }
+            return;
+        }
+        if (q_paint_attr_is(box, "type", "submit")
+            || q_paint_attr_is(box, "type", "button")
+            || q_paint_attr_is(box, "type", "reset"))
+        {
+            const lxb_char_t *value;
+            size_t value_len = 0;
+            const char *fallback = "Submit";
+            value = q_paint_get_attr(box, "value", &value_len);
+            q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                              1, 1, box->tile_w - 2, box->tile_h / 2, 0xF4F4F4FFu);
+            q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                              1, box->tile_h / 2, box->tile_w - 2, box->tile_h - box->tile_h / 2 - 1,
+                              0xD8D8D8FFu);
+            if (value != NULL && value_len > 0u) {
+                q_paint_render_widget_text(box, (const char *) value, value_len, 6, 4, text_color);
+            } else {
+                q_paint_render_widget_text(box, fallback, strlen(fallback), 6, 4, text_color);
+            }
+            return;
+        }
+
+        {
+            const lxb_char_t *value;
+            size_t value_len = 0;
+            value = q_paint_get_attr(box, "value", &value_len);
+            if (value != NULL && value_len > 0u) {
+                q_paint_render_widget_text(box, (const char *) value, value_len, 4, 4, text_color);
+            }
+        }
+        return;
+    }
+
+    if (tag == LXB_TAG_BUTTON) {
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                          1, 1, box->tile_w - 2, box->tile_h / 2, 0xF4F4F4FFu);
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                          1, box->tile_h / 2, box->tile_w - 2, box->tile_h - box->tile_h / 2 - 1,
+                          0xD8D8D8FFu);
+        return;
+    }
+
+    if (tag == LXB_TAG_SELECT) {
+        int mid_y = box->tile_h / 2;
+        int x0 = box->tile_w - 11;
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, x0, mid_y - 1, 6, 1, text_color);
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, x0 + 1, mid_y, 4, 1, text_color);
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, x0 + 2, mid_y + 1, 2, 1, text_color);
+        return;
+    }
+
+    if (tag == LXB_TAG_TEXTAREA) {
+        /* Visual-only widget: border/background are enough. */
+        return;
     }
 }
 
@@ -860,6 +1045,7 @@ void q_paint_box(q_box_t *box)
     size_t i = 0;
     int w;
     int h;
+    uint32_t text_color;
 
     if (box == NULL) {
         return;
@@ -887,6 +1073,7 @@ void q_paint_box(q_box_t *box)
 
     box->tile_w = w;
     box->tile_h = h;
+    text_color = q_paint_resolve_text_color(box);
 
     if (box->type == Q_BOX_BLOCK
             || box->type == Q_BOX_TABLE
@@ -896,13 +1083,14 @@ void q_paint_box(q_box_t *box)
         q_paint_background_image(box);
         q_paint_borders(box);
         q_paint_list_marker(box);
+        q_paint_form_widget(box);
     } else if (box->type == Q_BOX_IMAGE) {
         q_paint_image(box);
     } else if (box->type == Q_BOX_TEXT && box->run != NULL) {
-        q_font_render_run(box->run, Q_TEXT_COLOR, box->tile, w, h, 0, 0);
-        q_paint_text_decoration(box);
+        q_font_render_run(box->run, text_color, box->tile, w, h, 0, 0);
+        q_paint_text_decoration(box, text_color);
     } else if (box->type == Q_BOX_TEXT) {
-        q_paint_text_decoration(box);
+        q_paint_text_decoration(box, text_color);
     }
 
     for (child = box->first_child; child != NULL; child = child->next_sibling) {

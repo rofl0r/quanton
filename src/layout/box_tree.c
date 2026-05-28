@@ -15,6 +15,7 @@
 
 #define Q_DEFAULT_BACKGROUND 0xF2F2F2FFu
 #define Q_DEFAULT_BORDER 0x303030FFu
+#define Q_DEFAULT_TEXT_COLOR 0x000000FFu
 #define Q_DEFAULT_BORDER_WIDTH 0.0f
 #define Q_CSS_INT_PARSE_BUF_SIZE 64u
 
@@ -696,6 +697,26 @@ static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
             if (css_parse_color(val, val_len, &color)) {
                 box->background_color = color;
             }
+        } else if (css_name_eq(prop, prop_len, "font-size")) {
+            box->font_size = css_parse_length_pct(val, val_len, NULL);
+        } else if (css_name_eq(prop, prop_len, "font-weight")) {
+            int fw = 0;
+            if (css_value_is(val, val_len, "normal")) {
+                fw = 400;
+            } else if (css_value_is(val, val_len, "bold")) {
+                fw = 700;
+            } else if (css_parse_int(val, val_len, &fw)) {
+                if (fw < 1) {
+                    fw = 1;
+                }
+            }
+            box->font_weight = fw;
+        } else if (css_name_eq(prop, prop_len, "color")) {
+            uint32_t color;
+            if (css_parse_color(val, val_len, &color)) {
+                box->text_color = color;
+                box->has_text_color = 1;
+            }
         } else if (css_name_eq(prop, prop_len, "background")) {
             uint32_t color;
             if (css_parse_color(val, val_len, &color)) {
@@ -891,6 +912,10 @@ static q_box_t *q_box_create(q_box_type_t type, lxb_dom_node_t *dom_node,
     box->border_width[1] = Q_DEFAULT_BORDER_WIDTH;
     box->border_width[2] = Q_DEFAULT_BORDER_WIDTH;
     box->border_width[3] = Q_DEFAULT_BORDER_WIDTH;
+    box->font_size = (float) NAN;
+    box->font_weight = 0;
+    box->text_color = Q_DEFAULT_TEXT_COLOR;
+    box->has_text_color = 0;
 
     if (type == Q_BOX_IMAGE) {
         box->background_color = 0x00000000u;
@@ -923,6 +948,23 @@ static q_box_t *q_box_create(q_box_type_t type, lxb_dom_node_t *dom_node,
     }
 
     return box;
+}
+
+static void q_box_inherit_text_style(q_box_t *box, const q_box_t *parent)
+{
+    if (box == NULL || parent == NULL) {
+        return;
+    }
+    if (isnan(box->font_size) && !isnan(parent->font_size)) {
+        box->font_size = parent->font_size;
+    }
+    if (box->font_weight == 0 && parent->font_weight != 0) {
+        box->font_weight = parent->font_weight;
+    }
+    if (!box->has_text_color && parent->has_text_color) {
+        box->text_color = parent->text_color;
+        box->has_text_color = 1;
+    }
 }
 
 static int q_box_append_child(q_box_t *parent, q_box_t *child)
@@ -1030,6 +1072,7 @@ static q_box_t *q_ensure_inline_container(q_box_t *parent)
     {
         parent->last_child->white_space = parent->white_space;
         parent->last_child->text_decoration = parent->text_decoration;
+        q_box_inherit_text_style(parent->last_child, parent);
         return parent->last_child;
     }
 
@@ -1043,6 +1086,7 @@ static q_box_t *q_ensure_inline_container(q_box_t *parent)
     }
     ic->white_space = parent->white_space;
     ic->text_decoration = parent->text_decoration;
+    q_box_inherit_text_style(ic, parent);
     return ic;
 }
 
@@ -1083,11 +1127,15 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
         }
 
         current = q_box_create(type, node, NULL, 0);
+        if (current != NULL && parent != NULL) {
+            q_box_inherit_text_style(current, parent);
+        }
         if (current != NULL && lxb_dom_node_type(node) == LXB_DOM_NODE_TYPE_ELEMENT) {
             lxb_tag_id_t tag_id = lxb_dom_node_tag_id(node);
+            lxb_dom_element_t *el = lxb_dom_interface_element(node);
             size_t style_len = 0;
             const lxb_char_t *style =
-                lxb_dom_element_get_attribute(lxb_dom_interface_element(node),
+                lxb_dom_element_get_attribute(el,
                                               (const lxb_char_t *) "style",
                                               sizeof("style") - 1,
                                               &style_len);
@@ -1130,6 +1178,128 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
                 current->padding_left   = 1.0f;
             }
 
+            if (tag_id == LXB_TAG_INPUT) {
+                const lxb_char_t *type_attr;
+                size_t type_len = 0;
+                current->is_inline_block = 1;
+                current->background_color = 0xFFFFFFFFu;
+                current->border_width[0] = 1.0f;
+                current->border_width[1] = 1.0f;
+                current->border_width[2] = 1.0f;
+                current->border_width[3] = 1.0f;
+                current->border_color[0] = 0x707070FFu;
+                current->border_color[1] = 0x707070FFu;
+                current->border_color[2] = 0x707070FFu;
+                current->border_color[3] = 0x707070FFu;
+                current->padding_top = 2.0f;
+                current->padding_bottom = 2.0f;
+                current->padding_left = 4.0f;
+                current->padding_right = 4.0f;
+
+                type_attr = lxb_dom_element_get_attribute(el, (const lxb_char_t *) "type", 4, &type_len);
+                if (type_attr != NULL
+                    && (css_name_eq(type_attr, type_len, "checkbox")
+                        || css_name_eq(type_attr, type_len, "radio")))
+                {
+                    current->style_width = 14.0f;
+                    current->style_height = 14.0f;
+                    current->padding_top = 0.0f;
+                    current->padding_right = 0.0f;
+                    current->padding_bottom = 0.0f;
+                    current->padding_left = 0.0f;
+                    if (css_name_eq(type_attr, type_len, "radio")) {
+                        current->border_radius[0] = 7.0f;
+                        current->border_radius[1] = 7.0f;
+                        current->border_radius[2] = 7.0f;
+                        current->border_radius[3] = 7.0f;
+                    }
+                } else if (type_attr != NULL
+                           && (css_name_eq(type_attr, type_len, "submit")
+                               || css_name_eq(type_attr, type_len, "button")
+                               || css_name_eq(type_attr, type_len, "reset")))
+                {
+                    current->style_width = 90.0f;
+                    current->style_height = 24.0f;
+                    current->background_color = 0xE0E0E0FFu;
+                    current->padding_left = 8.0f;
+                    current->padding_right = 8.0f;
+                } else {
+                    current->style_width = 140.0f;
+                    current->style_height = 22.0f;
+                }
+            } else if (tag_id == LXB_TAG_BUTTON) {
+                current->is_inline_block = 1;
+                current->style_height = 24.0f;
+                current->background_color = 0xE0E0E0FFu;
+                current->border_width[0] = 1.0f;
+                current->border_width[1] = 1.0f;
+                current->border_width[2] = 1.0f;
+                current->border_width[3] = 1.0f;
+                current->border_color[0] = 0x707070FFu;
+                current->border_color[1] = 0x707070FFu;
+                current->border_color[2] = 0x707070FFu;
+                current->border_color[3] = 0x707070FFu;
+                current->padding_top = 2.0f;
+                current->padding_bottom = 2.0f;
+                current->padding_left = 8.0f;
+                current->padding_right = 8.0f;
+            } else if (tag_id == LXB_TAG_SELECT) {
+                current->is_inline_block = 1;
+                current->style_width = 120.0f;
+                current->style_height = 22.0f;
+                current->background_color = 0xFFFFFFFFu;
+                current->border_width[0] = 1.0f;
+                current->border_width[1] = 1.0f;
+                current->border_width[2] = 1.0f;
+                current->border_width[3] = 1.0f;
+                current->border_color[0] = 0x707070FFu;
+                current->border_color[1] = 0x707070FFu;
+                current->border_color[2] = 0x707070FFu;
+                current->border_color[3] = 0x707070FFu;
+                current->padding_top = 2.0f;
+                current->padding_bottom = 2.0f;
+                current->padding_left = 4.0f;
+                current->padding_right = 18.0f;
+            } else if (tag_id == LXB_TAG_TEXTAREA) {
+                const lxb_char_t *rows_attr;
+                const lxb_char_t *cols_attr;
+                size_t rows_len = 0;
+                size_t cols_len = 0;
+                int rows = 2;
+                int cols = 20;
+                current->is_inline_block = 1;
+                current->background_color = 0xFFFFFFFFu;
+                current->border_width[0] = 1.0f;
+                current->border_width[1] = 1.0f;
+                current->border_width[2] = 1.0f;
+                current->border_width[3] = 1.0f;
+                current->border_color[0] = 0x707070FFu;
+                current->border_color[1] = 0x707070FFu;
+                current->border_color[2] = 0x707070FFu;
+                current->border_color[3] = 0x707070FFu;
+                current->padding_top = 2.0f;
+                current->padding_bottom = 2.0f;
+                current->padding_left = 4.0f;
+                current->padding_right = 4.0f;
+
+                rows_attr = lxb_dom_element_get_attribute(el, (const lxb_char_t *) "rows", 4, &rows_len);
+                cols_attr = lxb_dom_element_get_attribute(el, (const lxb_char_t *) "cols", 4, &cols_len);
+                if (rows_attr != NULL) {
+                    int parsed = 0;
+                    if (css_parse_int(rows_attr, rows_len, &parsed) && parsed > 0) {
+                        rows = parsed;
+                    }
+                }
+                if (cols_attr != NULL) {
+                    int parsed = 0;
+                    if (css_parse_int(cols_attr, cols_len, &parsed) && parsed > 0) {
+                        cols = parsed;
+                    }
+                }
+                current->style_width = (float) (cols * 8 + 8);
+                current->style_height = (float) (rows * 18 + 8);
+            }
+
             if (style != NULL && style_len > 0) {
                 parse_style_attribute(style, style_len, current, doc);
             }
@@ -1160,6 +1330,7 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
                 return -1;
             }
             text_box->text_decoration = ic->text_decoration;
+            q_box_inherit_text_style(text_box, ic);
             if (q_box_append_child(ic, text_box) != 0) {
                 free(text_box);
                 return -1;
@@ -1222,6 +1393,10 @@ q_box_t *q_layout_build_tree(q_document_t *doc)
     if (root == NULL) {
         return NULL;
     }
+    root->font_size = 16.0f;
+    root->font_weight = 400;
+    root->text_color = Q_DEFAULT_TEXT_COLOR;
+    root->has_text_color = 1;
 
     if (body != NULL) {
         /* WHATWG UA stylesheet: body { margin: 8px } */
