@@ -538,15 +538,31 @@ int main(int argc, char **argv)
 
         img_a = img_line->first_child;
         assert(img_a != NULL);
-        img_b = img_a->next_sibling;
-        assert(img_b != NULL);
-        img_c = img_b->next_sibling;
-        assert(img_c != NULL);
-        assert(img_c->next_sibling == NULL);
-
         assert(img_a->type == Q_BOX_IMAGE);
+
+        /* The line may contain inter-image space word-boxes; skip them. */
+        img_b = img_a->next_sibling;
+        while (img_b != NULL && img_b->type == Q_BOX_TEXT) {
+            img_b = img_b->next_sibling;
+        }
+        assert(img_b != NULL);
         assert(img_b->type == Q_BOX_IMAGE);
+
+        img_c = img_b->next_sibling;
+        while (img_c != NULL && img_c->type == Q_BOX_TEXT) {
+            img_c = img_c->next_sibling;
+        }
+        assert(img_c != NULL);
         assert(img_c->type == Q_BOX_IMAGE);
+
+        /* No further image siblings */
+        {
+            q_box_t *next = img_c->next_sibling;
+            while (next != NULL && next->type == Q_BOX_TEXT) {
+                next = next->next_sibling;
+            }
+            assert(next == NULL);
+        }
         assert(nearly_equal(img_a->y, img_b->y));
         assert(nearly_equal(img_b->y, img_c->y));
         assert(img_b->x > img_a->x);

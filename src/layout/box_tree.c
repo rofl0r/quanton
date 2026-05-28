@@ -1311,21 +1311,44 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
     else if (node->type == LXB_DOM_NODE_TYPE_TEXT) {
         lxb_dom_character_data_t *ch_data = (lxb_dom_character_data_t *) node;
 
-        if (ch_data->data.length != 0
-            && (parent->white_space == Q_WHITE_SPACE_PRE
-                || !q_text_is_whitespace(ch_data->data.data, ch_data->data.length)))
-        {
+        if (ch_data->data.length != 0) {
+            /* In normal (non-PRE) flow, whitespace-only text between inline
+             * elements collapses to a single space " " that the line-wrapper
+             * uses as an inter-element gap signal.  We only do this when an
+             * inline container is already the parent's last child; whitespace
+             * that would open a brand-new IC (i.e. block-level inter-element
+             * whitespace) is dropped to avoid spurious anonymous ICs.
+             * In PRE mode the raw text is always preserved. */
+            static const char space_char = ' ';
+            const char *text_data;
+            size_t      text_len;
+            int is_ws_only;
             q_box_t *ic;
             q_box_t *text_box;
+
+            is_ws_only = (parent->white_space != Q_WHITE_SPACE_PRE
+                          && q_text_is_whitespace(ch_data->data.data,
+                                                  ch_data->data.length));
+            if (is_ws_only) {
+                /* Drop whitespace that would create a new IC at block level */
+                if (parent->last_child == NULL
+                    || parent->last_child->type != Q_BOX_INLINE_CONTAINER)
+                {
+                    return 0;
+                }
+                text_data = &space_char;
+                text_len  = 1;
+            } else {
+                text_data = (const char *) ch_data->data.data;
+                text_len  = ch_data->data.length;
+            }
 
             ic = q_ensure_inline_container(parent);
             if (ic == NULL) {
                 return -1;
             }
 
-            text_box = q_box_create(Q_BOX_TEXT, node,
-                                    (const char *) ch_data->data.data,
-                                    ch_data->data.length);
+            text_box = q_box_create(Q_BOX_TEXT, node, text_data, text_len);
             if (text_box == NULL) {
                 return -1;
             }

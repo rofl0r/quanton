@@ -117,6 +117,7 @@ void q_layout_line_wrap(q_box_t *ic)
     float cursor_x = 0.0f;
     float line_h = 0.0f;
     float container_w;
+    int pending_space = 0; /* set when a text token ended in whitespace */
     const int no_wrap = (ic->white_space == Q_WHITE_SPACE_NOWRAP || ic->white_space == Q_WHITE_SPACE_PRE);
     const float default_line_h = Q_LINE_DEFAULT_FONT_SIZE * 1.2f;
     const float space_w = measure_word(" ", 1u);
@@ -188,8 +189,6 @@ void q_layout_line_wrap(q_box_t *ic)
                     }
                 }
             } else {
-                int pending_space = 0;
-
                 while (i < text_len) {
                     size_t word_start;
                     size_t word_len;
@@ -286,6 +285,7 @@ void q_layout_line_wrap(q_box_t *ic)
             }
             cursor_x = 0.0f;
             line_h = 0.0f;
+            pending_space = 0;
             free(orig);
             continue;
         }
@@ -315,6 +315,22 @@ void q_layout_line_wrap(q_box_t *ic)
             cursor_x = 0.0f;
             line_h = 0.0f;
         }
+
+        /* Inject inter-element space when the preceding text ended with
+         * whitespace and there is already content on the current line. */
+        if (pending_space && line->first_child != NULL) {
+            float sp_h = default_line_h;
+            if (make_word_box(line, orig->dom_node, " ", 1u,
+                              space_w, sp_h, 0,
+                              Q_VERTICAL_ALIGN_BASELINE) == NULL) {
+                goto cleanup;
+            }
+            cursor_x += space_w + Q_LINE_WORD_SPACING;
+            if (sp_h > line_h) {
+                line_h = sp_h;
+            }
+        }
+        pending_space = 0;
 
         if (append_existing_box_to_line(line, orig) != 0) {
             goto cleanup;
