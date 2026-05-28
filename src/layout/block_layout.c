@@ -291,16 +291,29 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
     }
 
     if (box->type == Q_BOX_LINE) {
-        /* Line width spans the container; height = tallest child */
+        /* Line width spans the container; height = tallest child.
+         * Inline-block children are already measured shrink-to-fit by
+         * q_layout_line_wrap; re-measuring them with the line width would
+         * overwrite their natural width, so we skip them here.
+         * When containing_w is 0 (shrink-to-fit context) the LINE itself
+         * reports the sum of its children's widths so the value propagates
+         * up to the surrounding inline-block box. */
         float max_h = 0.0f;
+        float used_w = 0.0f;
 
         box->width = (containing_w > 0.0f) ? containing_w : 0.0f;
         box->height = 0.0f;
         for (child = box->first_child; child != NULL; child = child->next_sibling) {
-            q_layout_measure(child, box->width, containing_h);
+            if (!child->is_inline_block) {
+                q_layout_measure(child, box->width, containing_h);
+            }
+            used_w += child->width;
             if (child->height > max_h) {
                 max_h = child->height;
             }
+        }
+        if (containing_w <= 0.0f) {
+            box->width = used_w;
         }
         box->height = max_h;
         return;
@@ -507,6 +520,12 @@ void q_layout_position(q_box_t *box, float origin_x, float origin_y)
             child->x = cursor_x;
             child->y = y;
             cursor_x += child->width + Q_LAYOUT_WORD_SPACING;
+            /* Inline-block children carry a full sub-tree; recurse so their
+             * internal coordinates are converted to absolute form before
+             * the paint pass computes dx = child->x - parent->x offsets. */
+            if (child->is_inline_block) {
+                q_layout_position(child, child->x, child->y);
+            }
         }
         return;
     }
