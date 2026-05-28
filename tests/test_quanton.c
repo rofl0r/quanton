@@ -1511,6 +1511,9 @@ int main(int argc, char **argv)
         render_html_case_to_png("file://./tests/html/list_ol_ul.html", "output_list_ol_ul.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/bg_image.html", "output_bg_image.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/percent_width_table.html", "output_percent_width_table.png", TEST_WIDTH, TEST_HEIGHT);
+        render_html_case_to_png("file://./tests/html/headings.html", "output_headings.png", TEST_WIDTH, TEST_HEIGHT);
+        render_html_case_to_png("file://./tests/html/bold_italic.html", "output_bold_italic.png", TEST_WIDTH, TEST_HEIGHT);
+        render_html_case_to_png("file://./tests/html/hr.html", "output_hr.png", TEST_WIDTH, TEST_HEIGHT);
 #else
         q_document_t *interactive_doc = NULL;
         q_box_t *interactive_root = root;
@@ -2014,6 +2017,138 @@ int main(int argc, char **argv)
         q_document_destroy(id_doc);
     }
 
+    /* ── UA defaults: h1-h6, b/strong, i/em, hr ────────────────────────── */
+
+    /* h1-h6: font-size and font-weight defaults */
+    {
+        static const char hdr_html[] =
+            "<html><body>"
+            "<h1>A</h1><h2>B</h2><h3>C</h3>"
+            "<h4>D</h4><h5>E</h5><h6>F</h6>"
+            "</body></html>";
+        static const float expected_px[6] = {32.0f, 24.0f, 18.72f, 16.0f, 13.28f, 10.72f};
+
+        q_document_t *hdoc  = q_document_create();
+        q_box_t      *hroot = NULL;
+        q_box_t      *h;
+        int           level;
+
+        assert(hdoc != NULL);
+        assert(q_document_load_html(hdoc, hdr_html,
+                                    sizeof(hdr_html) - 1, NULL) == 0);
+        hroot = q_layout_build_tree(hdoc);
+        assert(hroot != NULL);
+        q_layout_measure(hroot, 800.0f, 600.0f);
+        q_layout_position(hroot, 0.0f, 0.0f);
+
+        /* q_layout_build_tree returns the body box directly; its first_child
+         * is h1 (no extra body wrapper). */
+        h = hroot->first_child;
+        for (level = 0; level < 6; ++level) {
+            assert(h != NULL);
+            assert(h->type == Q_BOX_BLOCK);
+            assert(fabsf(h->font_size - expected_px[level]) < 0.1f);
+            assert(h->font_weight == 700);
+            assert(h->margin_top    > 0.0f);
+            assert(h->margin_bottom > 0.0f);
+            h = h->next_sibling;
+        }
+
+        q_layout_free_tree(hroot);
+        q_document_destroy(hdoc);
+    }
+
+    /* b/strong → font_weight 700; i/em → font_style italic */
+    {
+        static const char bi_html[] =
+            "<html><body>"
+            "<b>bold</b><strong>strong</strong>"
+            "<i>ital</i><em>em</em>"
+            "</body></html>";
+        q_document_t *bdoc  = q_document_create();
+        q_box_t      *broot = NULL;
+        q_box_t      *body2;
+
+        assert(bdoc != NULL);
+        assert(q_document_load_html(bdoc, bi_html,
+                                    sizeof(bi_html) - 1, NULL) == 0);
+        broot = q_layout_build_tree(bdoc);
+        assert(broot != NULL);
+        /* Check font properties right after tree build, before measure() moves
+         * inline-block boxes into LINE wrappers. */
+
+        body2 = broot;  /* q_layout_build_tree returns the body box directly */
+        assert(body2 != NULL);
+
+        /* Check font_weight on b/strong boxes directly; they are inline-block
+         * Q_BOX_BLOCK children of the anonymous inline container. */
+        {
+            q_box_t *b_box = NULL, *strong_box = NULL;
+            q_box_t *i_box = NULL, *em_box = NULL;
+            q_box_t *ic, *kid;
+            /* body's first child is an anonymous inline container */
+            ic = body2->first_child;
+            assert(ic != NULL && ic->type == Q_BOX_INLINE_CONTAINER);
+            for (kid = ic->first_child; kid != NULL; kid = kid->next_sibling) {
+                if (kid->is_inline_block) {
+                    if (kid->font_weight == 700 && b_box == NULL)
+                        b_box = kid;
+                    else if (kid->font_weight == 700)
+                        strong_box = kid;
+                    else if (kid->font_style == Q_FONT_STYLE_ITALIC && i_box == NULL)
+                        i_box = kid;
+                    else if (kid->font_style == Q_FONT_STYLE_ITALIC)
+                        em_box = kid;
+                }
+            }
+            assert(b_box != NULL);
+            assert(strong_box != NULL);
+            assert(i_box != NULL);
+            assert(em_box != NULL);
+        }
+
+        q_layout_free_tree(broot);
+        q_document_destroy(bdoc);
+    }
+
+    /* hr: style_height=0, top border=1px, margin-block=4px */
+    {
+        static const char hr_html[] =
+            "<html><body><p>Before</p><hr><p>After</p></body></html>";
+        q_document_t *hdoc2 = q_document_create();
+        q_box_t      *hroot2 = NULL;
+        q_box_t      *p1, *hr_box, *p2;
+
+        assert(hdoc2 != NULL);
+        assert(q_document_load_html(hdoc2, hr_html,
+                                    sizeof(hr_html) - 1, NULL) == 0);
+        hroot2 = q_layout_build_tree(hdoc2);
+        assert(hroot2 != NULL);
+        q_layout_measure(hroot2, 800.0f, 600.0f);
+        q_layout_position(hroot2, 0.0f, 0.0f);
+
+        /* q_layout_build_tree returns the body box directly; its children
+         * are p1, hr, p2 in order. */
+        p1     = hroot2->first_child;
+        assert(p1 != NULL);
+        hr_box = p1->next_sibling;
+        assert(hr_box != NULL);
+        p2     = hr_box->next_sibling;
+        assert(p2 != NULL);
+
+        assert(hr_box->type == Q_BOX_BLOCK);
+        assert(fabsf(hr_box->style_height) < 0.01f);        /* height: 0 */
+        assert(fabsf(hr_box->border_width[0] - 1.0f) < 0.01f); /* 1px top border */
+        assert(fabsf(hr_box->border_color[0] - (float) 0x888888FFu) < 1.0f);
+        assert(hr_box->margin_top    >= 4.0f);
+        assert(hr_box->margin_bottom >= 4.0f);
+        /* hr is rendered between the two paragraphs */
+        assert(hr_box->y > p1->y);
+        assert(p2->y     > hr_box->y);
+
+        q_layout_free_tree(hroot2);
+        q_document_destroy(hdoc2);
+    }
     cache = q_font_cache_create();
     assert(cache != NULL);
 
