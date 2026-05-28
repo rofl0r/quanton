@@ -33,6 +33,19 @@ static int q_layout_resolve_font_weight(const q_box_t *box)
     return Q_LAYOUT_DEFAULT_FONT_WEIGHT;
 }
 
+static int q_layout_resolve_font_style(const q_box_t *box)
+{
+    const q_box_t *cur = box;
+
+    while (cur != NULL) {
+        if (cur->font_style != Q_FONT_STYLE_NORMAL) {
+            return (int) cur->font_style;
+        }
+        cur = cur->parent;
+    }
+    return (int) Q_FONT_STYLE_NORMAL;
+}
+
 static void q_layout_measure_text(q_box_t *box)
 {
     static q_font_cache_t *cache;
@@ -40,6 +53,7 @@ static void q_layout_measure_text(q_box_t *box)
     q_shaped_run_t *run = NULL;
     float font_size = q_layout_resolve_font_size(box);
     int font_weight = q_layout_resolve_font_weight(box);
+    int font_style  = q_layout_resolve_font_style(box);
 
     q_shaped_run_free(box->run);
     box->run = NULL;
@@ -52,7 +66,8 @@ static void q_layout_measure_text(q_box_t *box)
         font = q_font_match(cache,
                             "sans-serif",
                             font_size,
-                            font_weight);
+                            font_weight,
+                            font_style);
     }
 
     if (font != NULL) {

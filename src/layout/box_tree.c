@@ -961,6 +961,10 @@ static void q_box_inherit_text_style(q_box_t *box, const q_box_t *parent)
     if (box->font_weight == 0 && parent->font_weight != 0) {
         box->font_weight = parent->font_weight;
     }
+    if (box->font_style == Q_FONT_STYLE_NORMAL
+        && parent->font_style != Q_FONT_STYLE_NORMAL) {
+        box->font_style = parent->font_style;
+    }
     if (!box->has_text_color && parent->has_text_color) {
         box->text_color = parent->text_color;
         box->has_text_color = 1;

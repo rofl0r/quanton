@@ -11,6 +11,8 @@
 
 #define Q_DEFAULT_FONT_PATH "/usr/share/fonts/dejavu/DejaVuSans.ttf"
 
+/* Probe ordered lists of candidate paths and return the first one that
+ * exists, or fall back to the primary path when none is found. */
 static const char *q_default_font_path(void)
 {
     static const char *paths[] = {
@@ -31,6 +33,55 @@ static const char *q_default_font_path(void)
     return Q_DEFAULT_FONT_PATH;
 }
 
+/* Return the best-matching DejaVu Sans font path for the given weight and
+ * style.  Falls back to the regular face when the specialised file does not
+ * exist.  weight >= 600 = bold; style != Q_FONT_STYLE_NORMAL = oblique. */
+static const char *q_select_font_path(int weight, int style)
+{
+    int bold    = (weight >= 600);
+    int oblique = (style != Q_FONT_STYLE_NORMAL);
+
+    /* Candidate lists for each variant, tried in priority order. */
+    static const char *bold_oblique_paths[] = {
+        "/usr/share/fonts/dejavu/DejaVuSans-BoldOblique.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans-BoldOblique.ttf",
+        NULL
+    };
+    static const char *bold_paths[] = {
+        "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+        NULL
+    };
+    static const char *oblique_paths[] = {
+        "/usr/share/fonts/dejavu/DejaVuSans-Oblique.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans-Oblique.ttf",
+        NULL
+    };
+
+    const char **candidates = NULL;
+    size_t i;
+
+    if (bold && oblique)      candidates = bold_oblique_paths;
+    else if (bold)            candidates = bold_paths;
+    else if (oblique)         candidates = oblique_paths;
+
+    if (candidates != NULL) {
+        for (i = 0; candidates[i] != NULL; ++i) {
+            FILE *fp = fopen(candidates[i], "rb");
+            if (fp != NULL) {
+                fclose(fp);
+                return candidates[i];
+            }
+        }
+        /* Variant not installed; fall through to regular face */
+    }
+
+    return q_default_font_path();
+}
+
 struct q_font {
     char *family;
     char *path;
@@ -40,6 +91,7 @@ struct q_font {
     size_t font_len;
     float size_px;
     int weight;
+    int style;
 };
 
 struct q_font_cache {
@@ -145,13 +197,15 @@ static q_font_t *q_find_font(q_font_cache_t *cache,
                              const char *family,
                              const char *path,
                              float size_px,
-                             int weight)
+                             int weight,
+                             int style)
 {
     size_t i;
 
     for (i = 0; i < cache->count; ++i) {
         q_font_t *font = cache->entries[i];
-        if (font->weight == weight && fabsf(font->size_px - size_px) < 0.01f
+        if (font->weight == weight && font->style == style
+            && fabsf(font->size_px - size_px) < 0.01f
             && strcmp(font->family, family) == 0 && strcmp(font->path, path) == 0)
         {
             return font;
@@ -216,7 +270,7 @@ q_font_t *q_font_load(q_font_cache_t *cache,
     family = (family_name != NULL) ? family_name : "sans-serif";
     path = (ttf_path != NULL) ? ttf_path : q_default_font_path();
 
-    font = q_find_font(cache, family, path, size_px, weight);
+    font = q_find_font(cache, family, path, size_px, weight, Q_FONT_STYLE_NORMAL);
     if (font != NULL) {
         return font;
     }
@@ -231,6 +285,7 @@ q_font_t *q_font_load(q_font_cache_t *cache,
     font->sft_font = sft_loadfile(path);
     font->size_px = size_px;
     font->weight = weight;
+    font->style = Q_FONT_STYLE_NORMAL;
 
     if (font->family == NULL || font->path == NULL || font->sft_font == NULL) {
         q_font_destroy(font);
@@ -312,29 +367,56 @@ q_font_t *q_font_load_mem(q_font_cache_t *cache,
 q_font_t *q_font_match(q_font_cache_t *cache,
                        const char *family_name,
                        float size_px,
-                       int weight)
+                       int weight,
+                       int style)
 {
-    size_t i;
+    const char *family;
+    const char *path;
+    q_font_t *font;
 
     if (cache == NULL) {
         return NULL;
     }
 
-    for (i = 0; i < cache->count; ++i) {
-        q_font_t *font = cache->entries[i];
-        if ((family_name == NULL || strcmp(font->family, family_name) == 0)
-            && font->weight == weight
-            && fabsf(font->size_px - size_px) < 0.01f)
-        {
-            return font;
-        }
+    family = (family_name != NULL) ? family_name : "sans-serif";
+    path = q_select_font_path(weight, style);
+
+    font = q_find_font(cache, family, path, size_px, weight, style);
+    if (font != NULL) {
+        return font;
     }
 
-    return q_font_load(cache,
-                       (family_name != NULL) ? family_name : "sans-serif",
-                       q_default_font_path(),
-                       size_px,
-                       weight);
+    font = (q_font_t *) calloc(1, sizeof(*font));
+    if (font == NULL) {
+        return NULL;
+    }
+
+    font->family = strdup(family);
+    font->path = strdup(path);
+    font->sft_font = sft_loadfile(path);
+    font->size_px = size_px;
+    font->weight = weight;
+    font->style = style;
+
+    if (font->family == NULL || font->path == NULL || font->sft_font == NULL) {
+        q_font_destroy(font);
+        return NULL;
+    }
+
+    font->sft.font = font->sft_font;
+    font->sft.xScale = size_px;
+    font->sft.yScale = size_px;
+    font->sft.xOffset = 0.0;
+    font->sft.yOffset = 0.0;
+    font->sft.flags = SFT_DOWNWARD_Y;
+
+    if (q_cache_reserve(cache, cache->count + 1) != 0) {
+        q_font_destroy(font);
+        return NULL;
+    }
+
+    cache->entries[cache->count++] = font;
+    return font;
 }
 
 float q_font_measure(q_font_t *font, const char *text, size_t len)

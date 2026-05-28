@@ -19,7 +19,8 @@ static float measure_word(const char *text, size_t len)
     }
     font = q_font_match(cache, "sans-serif",
                         Q_LINE_DEFAULT_FONT_SIZE,
-                        Q_LINE_DEFAULT_FONT_WEIGHT);
+                        Q_LINE_DEFAULT_FONT_WEIGHT,
+                        Q_FONT_STYLE_NORMAL);
     if (font != NULL) {
         w = q_font_measure(font, text, len);
     } else {

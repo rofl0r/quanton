@@ -550,7 +550,7 @@ static void q_paint_list_marker(q_box_t *box)
         return;
     }
 
-    font = q_font_match(cache, "sans-serif", 16.0f, 400);
+    font = q_font_match(cache, "sans-serif", 16.0f, 400, Q_FONT_STYLE_NORMAL);
     if (font != NULL) {
         char marker[24];
         q_shaped_run_t *run;
@@ -632,7 +632,8 @@ static void q_paint_render_widget_text(q_box_t *box, const char *text, size_t te
 
     font = q_font_match(cache, "sans-serif",
                         (!isnan(box->font_size) && box->font_size > 0.0f) ? box->font_size : 16.0f,
-                        (box->font_weight > 0) ? box->font_weight : 400);
+                        (box->font_weight > 0) ? box->font_weight : 400,
+                        (int) box->font_style);
     if (font == NULL) {
         return;
     }

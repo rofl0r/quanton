@@ -167,6 +167,12 @@ typedef enum q_list_style_type {
     Q_LIST_STYLE_DECIMAL = 2,
 } q_list_style_type_t;
 
+typedef enum q_font_style {
+    Q_FONT_STYLE_NORMAL  = 0,
+    Q_FONT_STYLE_ITALIC  = 1,
+    Q_FONT_STYLE_OBLIQUE = 2,
+} q_font_style_t;
+
 #define Q_TEXT_DECORATION_UNDERLINE    (1u << 0)
 #define Q_TEXT_DECORATION_OVERLINE     (1u << 1)
 #define Q_TEXT_DECORATION_LINE_THROUGH (1u << 2)
@@ -273,6 +279,7 @@ struct q_box {
     uint8_t text_decoration;
     float font_size;          /* NaN = inherit / default */
     int font_weight;          /* 0 = inherit / default */
+    q_font_style_t font_style; /* Q_FONT_STYLE_NORMAL=0 = inherit / default */
     uint32_t text_color;      /* valid when has_text_color != 0 */
     int has_text_color;
     int is_inline_block;
@@ -364,7 +371,8 @@ q_font_t *q_font_load_mem(q_font_cache_t *cache,
 q_font_t *q_font_match(q_font_cache_t *cache,
                        const char *family_name,
                        float size_px,
-                       int weight);
+                       int weight,
+                       int style);
 float q_font_measure(q_font_t *font, const char *text, size_t len);
 q_shaped_run_t *q_font_shape_run(q_font_t *font, const char *text, size_t len);
 void q_font_render_run(const q_shaped_run_t *run,

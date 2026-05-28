@@ -275,7 +275,8 @@ static float q_dom_text_natural_width(lxb_dom_node_t *root)
     cache = q_font_cache_create();
     font  = (cache != NULL) ? q_font_match(cache, "sans-serif",
                                             Q_TABLE_DEFAULT_FONT_SIZE,
-                                            Q_TABLE_DEFAULT_FONT_WEIGHT) : NULL;
+                                            Q_TABLE_DEFAULT_FONT_WEIGHT,
+                                            Q_FONT_STYLE_NORMAL) : NULL;
 
     /* Depth-first traversal of DOM subtree */
     cur = root;
