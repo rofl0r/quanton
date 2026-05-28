@@ -5,7 +5,7 @@
 
 #define Q_LAYOUT_DEFAULT_FONT_SIZE 16.0f
 #define Q_LAYOUT_DEFAULT_FONT_WEIGHT 400
-#define Q_LAYOUT_WORD_SPACING 4.0f
+#define Q_LAYOUT_WORD_SPACING 0.0f
 
 static void q_layout_measure_text(q_box_t *box)
 {
