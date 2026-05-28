@@ -271,6 +271,10 @@ struct q_box {
     q_white_space_type_t white_space;
     q_vertical_align_type_t vertical_align;
     uint8_t text_decoration;
+    float font_size;          /* NaN = inherit / default */
+    int font_weight;          /* 0 = inherit / default */
+    uint32_t text_color;      /* valid when has_text_color != 0 */
+    int has_text_color;
     int is_inline_block;
     int table_border_collapse;     /* 1 when border-collapse: collapse */
     float table_border_spacing;    /* CSS border-spacing for TABLE boxes (default 2) */
