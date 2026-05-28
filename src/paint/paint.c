@@ -565,10 +565,7 @@ static void q_paint_list_marker(q_box_t *box)
             return;
         }
         run->font = font;
-        marker_run_y = marker_y - (int) lroundf(run->ascender * 0.5f);
-        if (marker_run_y < 0) {
-            marker_run_y = 0;
-        }
+        marker_run_y = 0;
         q_font_render_run(run, text_color, box->tile, box->tile_w, box->tile_h,
                           marker_x, marker_run_y);
         q_shaped_run_free(run);
