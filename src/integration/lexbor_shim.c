@@ -117,6 +117,15 @@ lxb_html_document_t *q_document_handle(q_document_t *doc)
     return doc->document;
 }
 
+const char *q_document_base_url(const q_document_t *doc)
+{
+    if (doc == NULL) {
+        return NULL;
+    }
+
+    return doc->base_url;
+}
+
 const lxb_css_rule_declaration_t *q_document_get_computed_style(const q_document_t *doc,
                                                                 const lxb_dom_node_t *node)
 {

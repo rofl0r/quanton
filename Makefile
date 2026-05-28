@@ -30,10 +30,13 @@ endif
 
 SRC = \
 src/resource/resource.c \
+src/image/image.c \
 src/integration/lexbor_shim.c \
 src/layout/box_tree.c \
 src/layout/block_layout.c \
 src/layout/inline_layout.c \
+src/layout/float_layout.c \
+src/layout/table_layout.c \
 src/event/event.c \
 src/paint/paint.c \
 src/paint/composite.c \
@@ -75,7 +78,7 @@ test: lexbor_all tests/test_quanton.c libquanton.a include/quanton.h
 # test_png runs headlessly and auto-executes.
 # test_x11 and test_sdl2 are compiled only (require a live display to run).
 test_png: lexbor_all tests/test_quanton.c libquanton.a src/backend/png/png_backend.o include/quanton.h
-	$(CC) $(CFLAGS) -DQUANTON_BACKEND_PNG -o $@ tests/test_quanton.c \
+	$(CC) $(CFLAGS) -DQUANTON_BACKEND_PNG -DQ_DEBUG_BOXES -o $@ tests/test_quanton.c \
 	    libquanton.a src/backend/png/png_backend.o $(LDFLAGS) $(LDFLAGS_LEXBOR) -lpng
 	./$@
 
@@ -87,13 +90,26 @@ test_sdl2: lexbor_all tests/test_quanton.c libquanton.a src/backend/sdl2/sdl2_ba
 	$(CC) $(CFLAGS) $(SDL2_CFLAGS) -DQUANTON_BACKEND_SDL2 -o $@ tests/test_quanton.c \
 	    libquanton.a src/backend/sdl2/sdl2_backend.o $(LDFLAGS) $(LDFLAGS_LEXBOR) $(SDL2_LDFLAGS)
 
+filebrowser_png: lexbor_all examples/filebrowser_png.c libquanton.a src/backend/png/png_backend.o include/quanton.h
+	$(CC) $(CFLAGS) -DQUANTON_BACKEND_PNG -o $@ examples/filebrowser_png.c \
+	    src/backend/png/png_backend.o libquanton.a $(LDFLAGS) $(LDFLAGS_LEXBOR) -lpng
+
+filebrowser_x11: lexbor_all examples/filebrowser_interactive.c libquanton.a src/backend/x11/x11_backend.o include/quanton.h
+	$(CC) $(CFLAGS) -DQUANTON_BACKEND_X11 -o $@ examples/filebrowser_interactive.c \
+	    src/backend/x11/x11_backend.o libquanton.a $(LDFLAGS) $(LDFLAGS_LEXBOR) -lX11
+
+filebrowser_sdl2: lexbor_all examples/filebrowser_interactive.c libquanton.a src/backend/sdl2/sdl2_backend.o include/quanton.h
+	$(CC) $(CFLAGS) $(SDL2_CFLAGS) -DQUANTON_BACKEND_SDL2 -o $@ examples/filebrowser_interactive.c \
+	    src/backend/sdl2/sdl2_backend.o libquanton.a $(LDFLAGS) $(LDFLAGS_LEXBOR) $(SDL2_LDFLAGS)
+
 clean:
 	rm -f $(OBJ) libquanton.a \
-	    test test_x11 test_sdl2 test_png output.png
+	    test test_x11 test_sdl2 test_png filebrowser_png filebrowser_x11 filebrowser_sdl2 \
+	    output.png filebrowser_name.png filebrowser_size.png filebrowser_date.png
 	rm -f src/backend/x11/x11_backend.o src/backend/sdl2/sdl2_backend.o \
 	    src/backend/png/png_backend.o
 
 clean_lexbor:
 	rm -rf build lexbor/build
 
-.PHONY: all test test_x11 test_sdl2 test_png clean clean_lexbor lexbor_all
+.PHONY: all test test_x11 test_sdl2 test_png filebrowser_png filebrowser_x11 filebrowser_sdl2 clean clean_lexbor lexbor_all

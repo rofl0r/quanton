@@ -1,15 +1,41 @@
 #include "quanton.h"
 
+#include "lexbor/dom/interface.h"
+#include "lexbor/dom/interfaces/character_data.h"
+#include "lexbor/dom/interfaces/element.h"
+#include "lexbor/dom/interfaces/node.h"
+#include "lexbor/tag/const.h"
+
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define Q_TEXT_COLOR 0x000000FFu
+#define Q_MARKER_GUTTER_X 4
+#define Q_SCROLLBAR_THICKNESS 12
+#define Q_SCROLLBAR_MIN_THUMB 16
+#define Q_SCROLLBAR_TRACK_COLOR 0xA0A0A0FFu
+#define Q_SCROLLBAR_THUMB_COLOR 0x707070FFu
 
 static uint8_t q_color_r(uint32_t color) { return (uint8_t) ((color >> 24) & 0xFFu); }
 static uint8_t q_color_g(uint32_t color) { return (uint8_t) ((color >> 16) & 0xFFu); }
 static uint8_t q_color_b(uint32_t color) { return (uint8_t) ((color >> 8) & 0xFFu); }
 static uint8_t q_color_a(uint32_t color) { return (uint8_t) (color & 0xFFu); }
+
+static uint32_t q_paint_resolve_text_color(const q_box_t *box)
+{
+    const q_box_t *cur = box;
+
+    while (cur != NULL) {
+        if (cur->has_text_color) {
+            return cur->text_color;
+        }
+        cur = cur->parent;
+    }
+
+    return Q_TEXT_COLOR;
+}
 
 static int q_paint_box_width(const q_box_t *box)
 {
@@ -21,6 +47,214 @@ static int q_paint_box_height(const q_box_t *box)
 {
     int h = (int) ceilf(box->height);
     return (h > 0) ? h : 1;
+}
+
+static int q_box_scrolls_x(const q_box_t *box)
+{
+    return box != NULL
+        && (box->overflow_x == Q_OVERFLOW_SCROLL || box->overflow_x == Q_OVERFLOW_AUTO);
+}
+
+static int q_box_scrolls_y(const q_box_t *box)
+{
+    return box != NULL
+        && (box->overflow_y == Q_OVERFLOW_SCROLL || box->overflow_y == Q_OVERFLOW_AUTO);
+}
+
+static int q_box_overflow_clips(q_overflow_type_t overflow)
+{
+    return overflow == Q_OVERFLOW_HIDDEN
+        || overflow == Q_OVERFLOW_CLIP
+        || overflow == Q_OVERFLOW_SCROLL
+        || overflow == Q_OVERFLOW_AUTO;
+}
+
+static void q_box_content_extent(const q_box_t *box, float *out_w, float *out_h)
+{
+    q_box_t *child;
+    float max_w = 0.0f;
+    float max_h = 0.0f;
+
+    if (box == NULL || out_w == NULL || out_h == NULL) {
+        return;
+    }
+
+    for (child = box->first_child; child != NULL; child = child->next_sibling) {
+        float local_right = (child->x - box->x) + child->width;
+        float local_bottom = (child->y - box->y) + child->height;
+        if (local_right > max_w) {
+            max_w = local_right;
+        }
+        if (local_bottom > max_h) {
+            max_h = local_bottom;
+        }
+    }
+
+    if (max_w < 0.0f) {
+        max_w = 0.0f;
+    }
+    if (max_h < 0.0f) {
+        max_h = 0.0f;
+    }
+    *out_w = max_w;
+    *out_h = max_h;
+}
+
+static int q_box_has_vertical_scrollbar(const q_box_t *box, float content_h, float viewport_h)
+{
+    if (box == NULL) {
+        return 0;
+    }
+
+    if (box->overflow_y == Q_OVERFLOW_SCROLL) {
+        return 1;
+    }
+    if (box->overflow_y == Q_OVERFLOW_AUTO && content_h > viewport_h) {
+        return 1;
+    }
+    return 0;
+}
+
+static int q_box_has_horizontal_scrollbar(const q_box_t *box, float content_w, float viewport_w)
+{
+    if (box == NULL) {
+        return 0;
+    }
+
+    if (box->overflow_x == Q_OVERFLOW_SCROLL) {
+        return 1;
+    }
+    if (box->overflow_x == Q_OVERFLOW_AUTO && content_w > viewport_w) {
+        return 1;
+    }
+    return 0;
+}
+
+static int q_paint_clampf_int(float value, int min_value, int max_value)
+{
+    if (value < (float) min_value) {
+        return min_value;
+    }
+    if (value > (float) max_value) {
+        return max_value;
+    }
+    return (int) lroundf(value);
+}
+
+static void q_paint_scrollbar(q_box_t *box, int vertical)
+{
+    float content_w;
+    float content_h;
+    int top;
+    int right;
+    int bottom;
+    int left;
+    int viewport_w;
+    int viewport_h;
+    int show_vertical;
+    int show_horizontal;
+    int track_x;
+    int track_y;
+    int track_w;
+    int track_h;
+    int thumb_x;
+    int thumb_y;
+    int thumb_w;
+    int thumb_h;
+    float max_scroll;
+    float scroll;
+    float ratio;
+
+    if (box == NULL || box->tile == NULL) {
+        return;
+    }
+
+    q_box_content_extent(box, &content_w, &content_h);
+    top = (int) ceilf(box->border_width[0]);
+    right = (int) ceilf(box->border_width[1]);
+    bottom = (int) ceilf(box->border_width[2]);
+    left = (int) ceilf(box->border_width[3]);
+    viewport_w = box->tile_w - left - right;
+    viewport_h = box->tile_h - top - bottom;
+    if (viewport_w <= 0 || viewport_h <= 0) {
+        return;
+    }
+
+    show_vertical = q_box_has_vertical_scrollbar(box, content_h, (float) viewport_h);
+    show_horizontal = q_box_has_horizontal_scrollbar(box, content_w, (float) viewport_w);
+
+    if (vertical) {
+        if (!show_vertical) {
+            return;
+        }
+
+        track_w = Q_SCROLLBAR_THICKNESS;
+        if (track_w > viewport_w) {
+            track_w = viewport_w;
+        }
+        track_h = viewport_h - (show_horizontal ? Q_SCROLLBAR_THICKNESS : 0);
+        if (track_h <= 0) {
+            return;
+        }
+        track_x = box->tile_w - right - track_w;
+        track_y = top;
+
+        thumb_w = track_w;
+        thumb_h = q_paint_clampf_int(((float) viewport_h / (content_h > 0.0f ? content_h : 1.0f)) * track_h,
+                                     Q_SCROLLBAR_MIN_THUMB, track_h);
+        max_scroll = content_h - (float) viewport_h;
+        if (max_scroll < 0.0f) {
+            max_scroll = 0.0f;
+        }
+        scroll = box->scroll_y;
+        if (scroll < 0.0f) {
+            scroll = 0.0f;
+        }
+        if (scroll > max_scroll) {
+            scroll = max_scroll;
+        }
+        ratio = (max_scroll > 0.0f) ? (scroll / max_scroll) : 0.0f;
+        thumb_x = track_x;
+        thumb_y = track_y + q_paint_clampf_int(ratio * (float) (track_h - thumb_h), 0, track_h - thumb_h);
+    } else {
+        if (!show_horizontal) {
+            return;
+        }
+
+        track_h = Q_SCROLLBAR_THICKNESS;
+        if (track_h > viewport_h) {
+            track_h = viewport_h;
+        }
+        track_w = viewport_w - (show_vertical ? Q_SCROLLBAR_THICKNESS : 0);
+        if (track_w <= 0) {
+            return;
+        }
+        track_x = left;
+        track_y = box->tile_h - bottom - track_h;
+
+        thumb_h = track_h;
+        thumb_w = q_paint_clampf_int(((float) viewport_w / (content_w > 0.0f ? content_w : 1.0f)) * track_w,
+                                     Q_SCROLLBAR_MIN_THUMB, track_w);
+        max_scroll = content_w - (float) viewport_w;
+        if (max_scroll < 0.0f) {
+            max_scroll = 0.0f;
+        }
+        scroll = box->scroll_x;
+        if (scroll < 0.0f) {
+            scroll = 0.0f;
+        }
+        if (scroll > max_scroll) {
+            scroll = max_scroll;
+        }
+        ratio = (max_scroll > 0.0f) ? (scroll / max_scroll) : 0.0f;
+        thumb_x = track_x + q_paint_clampf_int(ratio * (float) (track_w - thumb_w), 0, track_w - thumb_w);
+        thumb_y = track_y;
+    }
+
+    q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                      track_x, track_y, track_w, track_h, Q_SCROLLBAR_TRACK_COLOR);
+    q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                      thumb_x, thumb_y, thumb_w, thumb_h, Q_SCROLLBAR_THUMB_COLOR);
 }
 
 typedef struct q_paint_child_entry {
@@ -55,10 +289,53 @@ static int q_paint_child_cmp(const void *a, const void *b)
     return ea->dom_order - eb->dom_order;
 }
 
+static q_table_t *q_paint_find_cell_table(q_box_t *cell)
+{
+    q_box_t *cur;
+
+    if (cell == NULL || cell->type != Q_BOX_TABLE_CELL) {
+        return NULL;
+    }
+
+    for (cur = cell->parent; cur != NULL; cur = cur->parent) {
+        if (cur->type == Q_BOX_TABLE && cur->table != NULL) {
+            return cur->table;
+        }
+    }
+
+    return NULL;
+}
+
+static q_table_span_t *q_paint_find_cell_span(q_table_t *table, q_box_t *cell)
+{
+    int i;
+
+    if (table == NULL || cell == NULL) {
+        return NULL;
+    }
+
+    for (i = 0; i < table->span_count; i++) {
+        if (table->spans[i].cell_box == cell) {
+            return &table->spans[i];
+        }
+    }
+
+    return NULL;
+}
+
 static void q_paint_box_child(q_box_t *parent, q_box_t *child)
 {
     int dx;
     int dy;
+    int clip_x;
+    int clip_y;
+    int clip_w;
+    int clip_h;
+    int should_clip;
+    float content_w;
+    float content_h;
+    int show_vertical;
+    int show_horizontal;
 
     q_paint_box(child);
     if (child->tile == NULL) {
@@ -67,9 +344,495 @@ static void q_paint_box_child(q_box_t *parent, q_box_t *child)
 
     dx = (int) lroundf(child->x - parent->x);
     dy = (int) lroundf(child->y - parent->y);
-    q_paint_composite(parent->tile, parent->tile_w, parent->tile_h,
-                      child->tile, child->tile_w, child->tile_h,
-                      dx, dy);
+    if (q_box_scrolls_x(parent)) {
+        dx -= (int) lroundf(parent->scroll_x);
+    }
+    if (q_box_scrolls_y(parent)) {
+        dy -= (int) lroundf(parent->scroll_y);
+    }
+
+    should_clip = q_box_overflow_clips(parent->overflow_x) || q_box_overflow_clips(parent->overflow_y);
+
+    if (should_clip) {
+        /* Clip to the parent's content area (inside its borders). */
+        int bleft  = (int) ceilf(parent->border_width[3]);
+        int btop   = (int) ceilf(parent->border_width[0]);
+        int bright = (int) ceilf(parent->border_width[1]);
+        int bbottom = (int) ceilf(parent->border_width[2]);
+
+        clip_x = bleft;
+        clip_y = btop;
+        clip_w = parent->tile_w - bleft - bright;
+        clip_h = parent->tile_h - btop  - bbottom;
+
+        q_box_content_extent(parent, &content_w, &content_h);
+        show_vertical = q_box_has_vertical_scrollbar(parent, content_h, (float) clip_h);
+        show_horizontal = q_box_has_horizontal_scrollbar(parent, content_w, (float) clip_w);
+        if (show_vertical) {
+            clip_w -= Q_SCROLLBAR_THICKNESS;
+        }
+        if (show_horizontal) {
+            clip_h -= Q_SCROLLBAR_THICKNESS;
+        }
+
+        /* If one axis allows overflow (VISIBLE), expand the clip region to
+         * cover the full tile on that axis so only the other axis is clipped. */
+        if (parent->overflow_x == Q_OVERFLOW_VISIBLE) {
+            clip_x = 0;
+            clip_w = parent->tile_w;
+        }
+        if (parent->overflow_y == Q_OVERFLOW_VISIBLE) {
+            clip_y = 0;
+            clip_h = parent->tile_h;
+        }
+
+        q_paint_composite_clipped(parent->tile, parent->tile_w, parent->tile_h,
+                                  child->tile, child->tile_w, child->tile_h,
+                                  dx, dy,
+                                  clip_x, clip_y, clip_w, clip_h);
+    } else {
+        q_paint_composite(parent->tile, parent->tile_w, parent->tile_h,
+                          child->tile, child->tile_w, child->tile_h,
+                          dx, dy);
+    }
+}
+
+static void q_paint_image(q_box_t *box)
+{
+    const uint8_t *src;
+    int src_w;
+    int src_h;
+    int dst_w;
+    int dst_h;
+    int y;
+    int x;
+
+    if (box == NULL || box->tile == NULL || box->image == NULL) {
+        return;
+    }
+
+    src = q_image_pixels(box->image);
+    src_w = q_image_width(box->image);
+    src_h = q_image_height(box->image);
+    dst_w = box->tile_w;
+    dst_h = box->tile_h;
+
+    if (src == NULL || src_w <= 0 || src_h <= 0 || dst_w <= 0 || dst_h <= 0) {
+        return;
+    }
+
+    for (y = 0; y < dst_h; ++y) {
+        int sy = (y * src_h) / dst_h;
+        if (sy >= src_h) {
+            sy = src_h - 1;
+        }
+
+        for (x = 0; x < dst_w; ++x) {
+            int sx = (x * src_w) / dst_w;
+            size_t sidx;
+            size_t didx;
+
+            if (sx >= src_w) {
+                sx = src_w - 1;
+            }
+
+            sidx = (size_t) (sy * src_w + sx) * 4u;
+            didx = (size_t) (y * dst_w + x) * 4u;
+            box->tile[didx + 0] = src[sidx + 0];
+            box->tile[didx + 1] = src[sidx + 1];
+            box->tile[didx + 2] = src[sidx + 2];
+            box->tile[didx + 3] = src[sidx + 3];
+        }
+    }
+}
+
+static void q_paint_background_image(q_box_t *box)
+{
+    const uint8_t *src;
+    int src_w;
+    int src_h;
+    int tile_x;
+    int tile_y;
+
+    if (box == NULL || box->tile == NULL || box->background_image == NULL) {
+        return;
+    }
+
+    src = q_image_pixels(box->background_image);
+    src_w = q_image_width(box->background_image);
+    src_h = q_image_height(box->background_image);
+    if (src == NULL || src_w <= 0 || src_h <= 0) {
+        return;
+    }
+
+    if (box->background_repeat == Q_BACKGROUND_REPEAT_NO_REPEAT) {
+        q_paint_composite(box->tile, box->tile_w, box->tile_h, src, src_w, src_h, 0, 0);
+        return;
+    }
+    if (box->background_repeat == Q_BACKGROUND_REPEAT_REPEAT_X) {
+        for (tile_x = 0; tile_x < box->tile_w; tile_x += src_w) {
+            q_paint_composite(box->tile, box->tile_w, box->tile_h, src, src_w, src_h, tile_x, 0);
+        }
+        return;
+    }
+    if (box->background_repeat == Q_BACKGROUND_REPEAT_REPEAT_Y) {
+        for (tile_y = 0; tile_y < box->tile_h; tile_y += src_h) {
+            q_paint_composite(box->tile, box->tile_w, box->tile_h, src, src_w, src_h, 0, tile_y);
+        }
+        return;
+    }
+
+    for (tile_y = 0; tile_y < box->tile_h; tile_y += src_h) {
+        for (tile_x = 0; tile_x < box->tile_w; tile_x += src_w) {
+            q_paint_composite(box->tile, box->tile_w, box->tile_h, src, src_w, src_h, tile_x, tile_y);
+        }
+    }
+}
+
+static void q_paint_text_decoration(q_box_t *box, uint32_t color)
+{
+    int baseline;
+    int underline_y;
+    int overline_y;
+    int strike_y;
+
+    if (box == NULL || box->tile == NULL || box->text_decoration == 0u) {
+        return;
+    }
+
+    baseline = (box->run != NULL) ? (int) lroundf(box->run->ascender) : (int) lroundf(box->height * 0.8f);
+    underline_y = baseline + 1;
+    overline_y = 0;
+    strike_y = (box->run != NULL) ? (int) lroundf(baseline - (box->run->ascender * 0.5f))
+                                  : (int) lroundf(box->height * 0.5f);
+
+    if (box->text_decoration & Q_TEXT_DECORATION_UNDERLINE) {
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, 0, underline_y, box->tile_w, 1, color);
+    }
+    if (box->text_decoration & Q_TEXT_DECORATION_OVERLINE) {
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, 0, overline_y, box->tile_w, 1, color);
+    }
+    if (box->text_decoration & Q_TEXT_DECORATION_LINE_THROUGH) {
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, 0, strike_y, box->tile_w, 1, color);
+    }
+}
+
+static void q_paint_list_marker(q_box_t *box)
+{
+    static q_font_cache_t *cache;
+    q_font_t *font;
+    int marker_y;
+    uint32_t text_color = q_paint_resolve_text_color(box);
+
+    if (box == NULL
+        || box->tile == NULL
+        || box->list_style_type == Q_LIST_STYLE_NONE
+        || box->list_item_index <= 0)
+    {
+        return;
+    }
+
+    marker_y = box->tile_h / 2;
+    if (box->list_style_type == Q_LIST_STYLE_DISC) {
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                          Q_MARKER_GUTTER_X, marker_y - 2, 5, 5, text_color);
+        return;
+    }
+
+    if (box->list_style_type != Q_LIST_STYLE_DECIMAL) {
+        return;
+    }
+
+    if (cache == NULL) {
+        cache = q_font_cache_create();
+    }
+    if (cache == NULL) {
+        return;
+    }
+
+    font = q_font_match(cache, "sans-serif", 16.0f, 400);
+    if (font != NULL) {
+        char marker[24];
+        q_shaped_run_t *run;
+        int marker_x = Q_MARKER_GUTTER_X;
+        int marker_run_y;
+        int n = snprintf(marker, sizeof(marker), "%d.", box->list_item_index);
+        if (n <= 0) {
+            return;
+        }
+        run = q_font_shape_run(font, marker, (size_t) n);
+        if (run == NULL) {
+            return;
+        }
+        run->font = font;
+        marker_run_y = marker_y - (int) lroundf(run->ascender * 0.5f);
+        if (marker_run_y < 0) {
+            marker_run_y = 0;
+        }
+        q_font_render_run(run, text_color, box->tile, box->tile_w, box->tile_h,
+                          marker_x, marker_run_y);
+        q_shaped_run_free(run);
+    }
+}
+
+static lxb_tag_id_t q_paint_box_tag_id(const q_box_t *box)
+{
+    if (box == NULL || box->dom_node == NULL
+        || lxb_dom_node_type(box->dom_node) != LXB_DOM_NODE_TYPE_ELEMENT)
+    {
+        return LXB_TAG__UNDEF;
+    }
+    return lxb_dom_node_tag_id(box->dom_node);
+}
+
+static const lxb_char_t *q_paint_get_attr(const q_box_t *box,
+                                          const char *name,
+                                          size_t *out_len)
+{
+    lxb_dom_element_t *el;
+
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (box == NULL || box->dom_node == NULL
+        || lxb_dom_node_type(box->dom_node) != LXB_DOM_NODE_TYPE_ELEMENT)
+    {
+        return NULL;
+    }
+    el = lxb_dom_interface_element(box->dom_node);
+    return lxb_dom_element_get_attribute(el, (const lxb_char_t *) name, strlen(name), out_len);
+}
+
+static int q_paint_attr_is(const q_box_t *box, const char *name, const char *value)
+{
+    const lxb_char_t *attr;
+    size_t attr_len = 0;
+    size_t value_len = strlen(value);
+
+    attr = q_paint_get_attr(box, name, &attr_len);
+    if (attr == NULL || attr_len != value_len) {
+        return 0;
+    }
+    return memcmp(attr, value, value_len) == 0;
+}
+
+static void q_paint_render_widget_text(q_box_t *box, const char *text, size_t text_len,
+                                       int x, int y, uint32_t color)
+{
+    static q_font_cache_t *cache;
+    q_font_t *font;
+    q_shaped_run_t *run;
+
+    if (box == NULL || box->tile == NULL || text == NULL || text_len == 0u) {
+        return;
+    }
+    if (cache == NULL) {
+        cache = q_font_cache_create();
+    }
+    if (cache == NULL) {
+        return;
+    }
+
+    font = q_font_match(cache, "sans-serif",
+                        (!isnan(box->font_size) && box->font_size > 0.0f) ? box->font_size : 16.0f,
+                        (box->font_weight > 0) ? box->font_weight : 400);
+    if (font == NULL) {
+        return;
+    }
+    run = q_font_shape_run(font, text, text_len);
+    if (run == NULL) {
+        return;
+    }
+    run->font = font;
+    q_font_render_run(run, color, box->tile, box->tile_w, box->tile_h, x, y);
+    q_shaped_run_free(run);
+}
+
+static void q_paint_form_widget(q_box_t *box)
+{
+    lxb_tag_id_t tag;
+    uint32_t text_color;
+
+    if (box == NULL || box->tile == NULL) {
+        return;
+    }
+    tag = q_paint_box_tag_id(box);
+    if (tag != LXB_TAG_INPUT && tag != LXB_TAG_BUTTON
+        && tag != LXB_TAG_SELECT && tag != LXB_TAG_TEXTAREA)
+    {
+        return;
+    }
+
+    text_color = q_paint_resolve_text_color(box);
+
+    if (tag == LXB_TAG_INPUT) {
+        if (q_paint_attr_is(box, "type", "checkbox")) {
+            if (q_paint_get_attr(box, "checked", NULL) != NULL) {
+                q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                                  3, box->tile_h / 2, 4, 2, text_color);
+                q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                                  6, box->tile_h / 2 - 2, 4, 2, text_color);
+            }
+            return;
+        }
+        if (q_paint_attr_is(box, "type", "radio")) {
+            if (q_paint_get_attr(box, "checked", NULL) != NULL) {
+                int cx = box->tile_w / 2 - 2;
+                int cy = box->tile_h / 2 - 2;
+                q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, cx, cy, 4, 4, text_color);
+            }
+            return;
+        }
+        if (q_paint_attr_is(box, "type", "submit")
+            || q_paint_attr_is(box, "type", "button")
+            || q_paint_attr_is(box, "type", "reset"))
+        {
+            const lxb_char_t *value;
+            size_t value_len = 0;
+            const char *fallback = "Submit";
+            value = q_paint_get_attr(box, "value", &value_len);
+            q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                              1, 1, box->tile_w - 2, box->tile_h / 2, 0xF4F4F4FFu);
+            q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                              1, box->tile_h / 2, box->tile_w - 2, box->tile_h - box->tile_h / 2 - 1,
+                              0xD8D8D8FFu);
+            if (value != NULL && value_len > 0u) {
+                q_paint_render_widget_text(box, (const char *) value, value_len, 6, 4, text_color);
+            } else {
+                q_paint_render_widget_text(box, fallback, strlen(fallback), 6, 4, text_color);
+            }
+            return;
+        }
+
+        {
+            const lxb_char_t *value;
+            size_t value_len = 0;
+            value = q_paint_get_attr(box, "value", &value_len);
+            if (value != NULL && value_len > 0u) {
+                q_paint_render_widget_text(box, (const char *) value, value_len, 4, 4, text_color);
+            }
+        }
+        return;
+    }
+
+    if (tag == LXB_TAG_BUTTON) {
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                          1, 1, box->tile_w - 2, box->tile_h / 2, 0xF4F4F4FFu);
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                          1, box->tile_h / 2, box->tile_w - 2, box->tile_h - box->tile_h / 2 - 1,
+                          0xD8D8D8FFu);
+        return;
+    }
+
+    if (tag == LXB_TAG_SELECT) {
+        int mid_y = box->tile_h / 2;
+        int x0 = box->tile_w - 11;
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, x0, mid_y - 1, 6, 1, text_color);
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, x0 + 1, mid_y, 4, 1, text_color);
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, x0 + 2, mid_y + 1, 2, 1, text_color);
+        return;
+    }
+
+    if (tag == LXB_TAG_TEXTAREA) {
+        /* Visual-only widget: border/background are enough. */
+        return;
+    }
+}
+
+static int q_paint_box_has_radius(const q_box_t *box)
+{
+    return box != NULL
+        && (box->border_radius[0] > 0.0f
+            || box->border_radius[1] > 0.0f
+            || box->border_radius[2] > 0.0f
+            || box->border_radius[3] > 0.0f);
+}
+
+static void q_paint_radius_corner_clip(q_box_t *box, int corner, float radius)
+{
+    int x_start;
+    int y_start;
+    int x_end;
+    int y_end;
+    float cx;
+    float cy;
+    int x;
+    int y;
+
+    if (box == NULL || box->tile == NULL || radius <= 0.0f) {
+        return;
+    }
+
+    if (corner == 0) {
+        x_start = 0;
+        y_start = 0;
+        x_end = (int) ceilf(radius);
+        y_end = (int) ceilf(radius);
+        cx = radius;
+        cy = radius;
+    } else if (corner == 1) {
+        x_start = box->tile_w - (int) ceilf(radius);
+        y_start = 0;
+        x_end = box->tile_w;
+        y_end = (int) ceilf(radius);
+        cx = (float) box->tile_w - radius;
+        cy = radius;
+    } else if (corner == 2) {
+        x_start = box->tile_w - (int) ceilf(radius);
+        y_start = box->tile_h - (int) ceilf(radius);
+        x_end = box->tile_w;
+        y_end = box->tile_h;
+        cx = (float) box->tile_w - radius;
+        cy = (float) box->tile_h - radius;
+    } else {
+        x_start = 0;
+        y_start = box->tile_h - (int) ceilf(radius);
+        x_end = (int) ceilf(radius);
+        y_end = box->tile_h;
+        cx = radius;
+        cy = (float) box->tile_h - radius;
+    }
+
+    if (x_start < 0) {
+        x_start = 0;
+    }
+    if (y_start < 0) {
+        y_start = 0;
+    }
+    if (x_end > box->tile_w) {
+        x_end = box->tile_w;
+    }
+    if (y_end > box->tile_h) {
+        y_end = box->tile_h;
+    }
+
+    for (y = y_start; y < y_end; ++y) {
+        for (x = x_start; x < x_end; ++x) {
+            float px = (float) x + 0.5f;
+            float py = (float) y + 0.5f;
+            float dx = px - cx;
+            float dy = py - cy;
+            if (dx * dx + dy * dy > radius * radius) {
+                size_t idx = (size_t) (y * box->tile_w + x) * 4u;
+                box->tile[idx + 0] = 0u;
+                box->tile[idx + 1] = 0u;
+                box->tile[idx + 2] = 0u;
+                box->tile[idx + 3] = 0u;
+            }
+        }
+    }
+}
+
+static void q_paint_apply_border_radius(q_box_t *box)
+{
+    if (!q_paint_box_has_radius(box)) {
+        return;
+    }
+
+    q_paint_radius_corner_clip(box, 0, box->border_radius[0]);
+    q_paint_radius_corner_clip(box, 1, box->border_radius[1]);
+    q_paint_radius_corner_clip(box, 2, box->border_radius[2]);
+    q_paint_radius_corner_clip(box, 3, box->border_radius[3]);
 }
 
 void q_paint_fill_rect(uint8_t *pixels, int buf_w, int buf_h,
@@ -140,6 +903,21 @@ void q_paint_borders(q_box_t *box)
     bottom = (int) ceilf(box->border_width[2]);
     left = (int) ceilf(box->border_width[3]);
 
+    if (box->type == Q_BOX_TABLE_CELL) {
+        q_table_t *table = q_paint_find_cell_table(box);
+        if (table != NULL && table->border_collapse) {
+            q_table_span_t *span = q_paint_find_cell_span(table, box);
+            if (span != NULL) {
+                if (span->col + span->colspan < table->col_count) {
+                    right = 0;
+                }
+                if (span->row + span->rowspan < table->row_count) {
+                    bottom = 0;
+                }
+            }
+        }
+    }
+
     if (top > 0) {
         q_paint_fill_rect(box->tile, w, h, 0, 0, w, top, box->border_color[0]);
     }
@@ -199,6 +977,66 @@ void q_paint_composite(uint8_t *dst, int dst_w, int dst_h,
     }
 }
 
+void q_paint_composite_clipped(uint8_t *dst, int dst_w, int dst_h,
+                                const uint8_t *src, int src_w, int src_h,
+                                int dx, int dy,
+                                int clip_x, int clip_y, int clip_w, int clip_h)
+{
+    int sy;
+    int sx;
+    int cx1;
+    int cy1;
+
+    if (dst == NULL || src == NULL || dst_w <= 0 || dst_h <= 0 || src_w <= 0 || src_h <= 0) {
+        return;
+    }
+    if (clip_w <= 0 || clip_h <= 0) {
+        return;
+    }
+
+    cx1 = clip_x + clip_w;
+    cy1 = clip_y + clip_h;
+
+    for (sy = 0; sy < src_h; ++sy) {
+        int dy_pos = dy + sy;
+        if (dy_pos < 0 || dy_pos >= dst_h) {
+            continue;
+        }
+        if (dy_pos < clip_y || dy_pos >= cy1) {
+            continue;
+        }
+
+        for (sx = 0; sx < src_w; ++sx) {
+            int dx_pos = dx + sx;
+            size_t sidx;
+            size_t didx;
+            unsigned int sa;
+            unsigned int inv_sa;
+
+            if (dx_pos < 0 || dx_pos >= dst_w) {
+                continue;
+            }
+            if (dx_pos < clip_x || dx_pos >= cx1) {
+                continue;
+            }
+
+            sidx = (size_t) (sy * src_w + sx) * 4u;
+            didx = (size_t) (dy_pos * dst_w + dx_pos) * 4u;
+
+            sa = src[sidx + 3];
+            if (sa == 0u) {
+                continue;
+            }
+
+            inv_sa = 255u - sa;
+            dst[didx + 0] = (uint8_t) ((src[sidx + 0] * sa + dst[didx + 0] * inv_sa) / 255u);
+            dst[didx + 1] = (uint8_t) ((src[sidx + 1] * sa + dst[didx + 1] * inv_sa) / 255u);
+            dst[didx + 2] = (uint8_t) ((src[sidx + 2] * sa + dst[didx + 2] * inv_sa) / 255u);
+            dst[didx + 3] = (uint8_t) (sa + (dst[didx + 3] * inv_sa) / 255u);
+        }
+    }
+}
+
 void q_paint_box(q_box_t *box)
 {
     q_box_t *child;
@@ -207,6 +1045,7 @@ void q_paint_box(q_box_t *box)
     size_t i = 0;
     int w;
     int h;
+    uint32_t text_color;
 
     if (box == NULL) {
         return;
@@ -234,12 +1073,24 @@ void q_paint_box(q_box_t *box)
 
     box->tile_w = w;
     box->tile_h = h;
+    text_color = q_paint_resolve_text_color(box);
 
-    if (box->type == Q_BOX_BLOCK) {
+    if (box->type == Q_BOX_BLOCK
+            || box->type == Q_BOX_TABLE
+            || box->type == Q_BOX_TABLE_CELL
+            || box->type == Q_BOX_TABLE_CAPTION) {
         q_paint_fill_rect(box->tile, w, h, 0, 0, w, h, box->background_color);
+        q_paint_background_image(box);
         q_paint_borders(box);
+        q_paint_list_marker(box);
+        q_paint_form_widget(box);
+    } else if (box->type == Q_BOX_IMAGE) {
+        q_paint_image(box);
     } else if (box->type == Q_BOX_TEXT && box->run != NULL) {
-        q_font_render_run(box->run, Q_TEXT_COLOR, box->tile, w, h, 0, 0);
+        q_font_render_run(box->run, text_color, box->tile, w, h, 0, 0);
+        q_paint_text_decoration(box, text_color);
+    } else if (box->type == Q_BOX_TEXT) {
+        q_paint_text_decoration(box, text_color);
     }
 
     for (child = box->first_child; child != NULL; child = child->next_sibling) {
@@ -271,6 +1122,22 @@ void q_paint_box(q_box_t *box)
             q_paint_box_child(box, child);
         }
     }
+
+    q_paint_scrollbar(box, 1);
+    q_paint_scrollbar(box, 0);
+    q_paint_apply_border_radius(box);
+
+#ifdef Q_DEBUG_BOXES
+    {
+        /* Draw 1px magenta outline around every painted box */
+        uint32_t dbg_color = 0xFF00FFFFu;
+        int dbg_w = box->tile_w, dbg_h = box->tile_h;
+        q_paint_fill_rect(box->tile, dbg_w, dbg_h, 0, 0, dbg_w, 1, dbg_color);
+        q_paint_fill_rect(box->tile, dbg_w, dbg_h, 0, dbg_h - 1, dbg_w, 1, dbg_color);
+        q_paint_fill_rect(box->tile, dbg_w, dbg_h, 0, 0, 1, dbg_h, dbg_color);
+        q_paint_fill_rect(box->tile, dbg_w, dbg_h, dbg_w - 1, 0, 1, dbg_h, dbg_color);
+    }
+#endif
 
     free(entries);
 }

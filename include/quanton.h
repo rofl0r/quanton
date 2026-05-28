@@ -13,8 +13,10 @@ typedef struct lxb_css_rule_declaration lxb_css_rule_declaration_t;
 
 typedef struct q_document    q_document_t;
 typedef struct q_box         q_box_t;
+typedef struct q_table       q_table_t;
 typedef struct q_font        q_font_t;
 typedef struct q_font_cache  q_font_cache_t;
+typedef struct q_image       q_image_t;
 typedef struct quanton_ctx   quanton_ctx_t;
 typedef struct quanton_view  quanton_view_t;
 
@@ -78,6 +80,7 @@ typedef struct q_backend_vt {
 } q_backend_vt_t;
 
 /* task 1: resource loader */
+char *q_url_resolve(const char *base_url, const char *ref);
 uint8_t *q_resource_load(const char *url, size_t *out_len);
 void q_resource_free(uint8_t *buf);
 
@@ -87,15 +90,23 @@ void q_document_destroy(q_document_t *doc);
 int q_document_load_url(q_document_t *doc, const char *url);
 int q_document_load_html(q_document_t *doc, const char *html, size_t len, const char *base_url);
 lxb_html_document_t *q_document_handle(q_document_t *doc);
+const char *q_document_base_url(const q_document_t *doc);
 const lxb_css_rule_declaration_t *q_document_get_computed_style(const q_document_t *doc,
                                                                 const lxb_dom_node_t *node);
 
 /* task 4: layout pass 1 box tree builder */
 typedef enum q_box_type {
     Q_BOX_BLOCK,
+    Q_BOX_IMAGE,
     Q_BOX_TEXT,
+    Q_BOX_LINE_BREAK,
     Q_BOX_INLINE_CONTAINER, /* anonymous block wrapping consecutive inline content */
-    Q_BOX_LINE              /* one wrapped line inside an inline container */
+    Q_BOX_LINE,             /* one wrapped line inside an inline container */
+    Q_BOX_TABLE,
+    Q_BOX_TABLE_SECTION,
+    Q_BOX_TABLE_ROW,
+    Q_BOX_TABLE_CELL,
+    Q_BOX_TABLE_CAPTION
 } q_box_type_t;
 
 /* CSS position property values (Q_POSITION_STATIC == 0 matches calloc zero) */
@@ -105,6 +116,102 @@ typedef enum q_position_type {
     Q_POSITION_ABSOLUTE = 2,
     Q_POSITION_FIXED    = 3
 } q_position_type_t;
+
+/* CSS overflow property values (Q_OVERFLOW_VISIBLE == 0 matches calloc zero) */
+typedef enum q_overflow_type {
+    Q_OVERFLOW_VISIBLE = 0,
+    Q_OVERFLOW_HIDDEN  = 1,
+    Q_OVERFLOW_SCROLL  = 2,
+    Q_OVERFLOW_AUTO    = 3,
+    Q_OVERFLOW_CLIP    = 4,
+} q_overflow_type_t;
+
+typedef enum q_float_type {
+    Q_FLOAT_NONE  = 0,
+    Q_FLOAT_LEFT  = 1,
+    Q_FLOAT_RIGHT = 2,
+} q_float_type_t;
+
+typedef enum q_clear_type {
+    Q_CLEAR_NONE  = 0,
+    Q_CLEAR_LEFT  = 1,
+    Q_CLEAR_RIGHT = 2,
+    Q_CLEAR_BOTH  = 3,
+} q_clear_type_t;
+
+typedef enum q_white_space_type {
+    Q_WHITE_SPACE_NORMAL = 0,
+    Q_WHITE_SPACE_NOWRAP = 1,
+    Q_WHITE_SPACE_PRE    = 2,
+} q_white_space_type_t;
+
+typedef enum q_vertical_align_type {
+    Q_VERTICAL_ALIGN_BASELINE = 0,
+    Q_VERTICAL_ALIGN_TOP      = 1,
+    Q_VERTICAL_ALIGN_MIDDLE   = 2,
+    Q_VERTICAL_ALIGN_BOTTOM   = 3,
+    Q_VERTICAL_ALIGN_SUB      = 4,
+    Q_VERTICAL_ALIGN_SUPER    = 5,
+} q_vertical_align_type_t;
+
+typedef enum q_background_repeat_type {
+    Q_BACKGROUND_REPEAT_REPEAT   = 0,
+    Q_BACKGROUND_REPEAT_NO_REPEAT = 1,
+    Q_BACKGROUND_REPEAT_REPEAT_X = 2,
+    Q_BACKGROUND_REPEAT_REPEAT_Y = 3,
+} q_background_repeat_type_t;
+
+typedef enum q_list_style_type {
+    Q_LIST_STYLE_NONE = 0,
+    Q_LIST_STYLE_DISC = 1,
+    Q_LIST_STYLE_DECIMAL = 2,
+} q_list_style_type_t;
+
+#define Q_TEXT_DECORATION_UNDERLINE    (1u << 0)
+#define Q_TEXT_DECORATION_OVERLINE     (1u << 1)
+#define Q_TEXT_DECORATION_LINE_THROUGH (1u << 2)
+
+typedef struct q_float_entry {
+    struct q_box       *box;
+    struct q_float_entry *next;
+} q_float_entry_t;
+
+typedef struct q_float_ctx {
+    q_float_entry_t *left_floats;
+    q_float_entry_t *right_floats;
+} q_float_ctx_t;
+
+/* ── Table layout data ── */
+typedef struct q_table_col {
+    float min_width;
+    float max_width;
+    float final_width;
+    float pct_hint;     /* percentage-width hint (0 = none) */
+} q_table_col_t;
+
+typedef struct q_table_row {
+    float    height;
+    q_box_t *box;
+} q_table_row_t;
+
+typedef struct q_table_span {
+    int      row;
+    int      col;
+    int      rowspan;
+    int      colspan;
+    q_box_t *cell_box;
+} q_table_span_t;
+
+struct q_table {
+    int             col_count;
+    int             row_count;
+    q_table_col_t  *cols;
+    q_table_row_t  *rows;
+    q_table_span_t *spans;
+    int             span_count;
+    int             border_collapse;
+    float           border_spacing;  /* CSS border-spacing (0 when collapsed) */
+};
 
 struct q_box {
     q_box_type_t     type;
@@ -125,19 +232,53 @@ struct q_box {
     const char *text;
     size_t text_len;
     q_shaped_run_t *run;
+    q_image_t *image;
     float border_width[4];
     uint32_t border_color[4];
+    float border_radius[4];
     uint32_t background_color;
+    q_image_t *background_image;
+    q_background_repeat_type_t background_repeat;
     uint8_t *tile;
     int tile_w;
     int tile_h;
+    /* CSS overflow clipping */
+    q_overflow_type_t overflow_x;   /* Q_OVERFLOW_VISIBLE = default (calloc zero) */
+    q_overflow_type_t overflow_y;
+    float scroll_x;
+    float scroll_y;
     /* Explicit CSS dimensions / offsets (NaN = not set, use normal flow) */
     float style_top;
     float style_right;
     float style_bottom;
     float style_left;
     float style_width;
+    float style_width_pct;   /* percentage width (NaN = not set) */
     float style_height;
+    /* CSS box model spacing */
+    float margin_top;
+    float margin_right;
+    float margin_bottom;
+    float margin_left;
+    float padding_top;
+    float padding_right;
+    float padding_bottom;
+    float padding_left;
+    q_list_style_type_t list_style_type;
+    int list_item_index;
+    q_float_type_t float_type;
+    q_clear_type_t clear_type;
+    q_white_space_type_t white_space;
+    q_vertical_align_type_t vertical_align;
+    uint8_t text_decoration;
+    float font_size;          /* NaN = inherit / default */
+    int font_weight;          /* 0 = inherit / default */
+    uint32_t text_color;      /* valid when has_text_color != 0 */
+    int has_text_color;
+    int is_inline_block;
+    int table_border_collapse;     /* 1 when border-collapse: collapse */
+    float table_border_spacing;    /* CSS border-spacing for TABLE boxes (default 2) */
+    struct q_table *table;   /* non-NULL for Q_BOX_TABLE after measure */
 };
 
 /* ── Dirty flags for incremental relayout ── */
@@ -145,6 +286,7 @@ typedef enum q_dirty_flags {
     Q_DIRTY_STYLE  = 1 << 0,  /* recompute computed styles */
     Q_DIRTY_LAYOUT = 1 << 1,  /* rebuild box tree + measure */
     Q_DIRTY_PAINT  = 1 << 2,  /* repaint tiles */
+    Q_DIRTY_SCROLL = 1 << 3,  /* composite-only redraw after scrolling */
 } q_dirty_flags_t;
 
 /* ── Application context (one per process) ── */
@@ -160,6 +302,8 @@ struct quanton_view {
     q_document_t       *document;
     q_box_t            *layout_root;
     int                 vp_width, vp_height;
+    float               scroll_x, scroll_y;
+    float               doc_width, doc_height;
     uint8_t            *framebuffer;        /* RGBA8, vp_width × vp_height */
     q_event_handler_fn  on_event;
     void               *on_event_userdata;
@@ -174,6 +318,16 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h);
 void q_layout_position(q_box_t *box, float origin_x, float origin_y);
 void q_layout_position_absolute(q_box_t *root);
 void q_layout_line_wrap(q_box_t *inline_container);
+void q_table_fixup_anonymous(q_box_t *root);
+void q_table_measure(q_box_t *table_box, float containing_w);
+void q_table_position(q_box_t *table_box, float origin_x, float origin_y);
+void q_table_free(q_table_t *t);
+float q_float_ctx_left_edge(const q_float_ctx_t *ctx, float y, float line_h);
+float q_float_ctx_right_edge(const q_float_ctx_t *ctx, float y, float line_h, float containing_w);
+float q_float_ctx_clear_y(const q_float_ctx_t *ctx, q_clear_type_t clear);
+float q_float_ctx_next_y(const q_float_ctx_t *ctx, float y, float line_h);
+int q_float_ctx_add(q_float_ctx_t *ctx, q_box_t *float_box, q_float_type_t side);
+void q_float_ctx_reset(q_float_ctx_t *ctx);
 void q_paint_box(q_box_t *box);
 void q_paint_fill_rect(uint8_t *pixels, int buf_w, int buf_h,
                        int x, int y, int w, int h, uint32_t color);
@@ -181,6 +335,13 @@ void q_paint_borders(q_box_t *box);
 void q_paint_composite(uint8_t *dst, int dst_w, int dst_h,
                        const uint8_t *src, int src_w, int src_h,
                        int dx, int dy);
+/* Like q_paint_composite but additionally clips painted pixels to the
+ * rectangle [clip_x, clip_x+clip_w) × [clip_y, clip_y+clip_h) on dst.
+ * Used to implement overflow:hidden / overflow:clip. */
+void q_paint_composite_clipped(uint8_t *dst, int dst_w, int dst_h,
+                                const uint8_t *src, int src_w, int src_h,
+                                int dx, int dy,
+                                int clip_x, int clip_y, int clip_w, int clip_h);
 
 q_box_t *q_hit_test(q_box_t *root, int x, int y);
 void q_event_dispatch(quanton_view_t *view, q_event_t *event);
@@ -213,6 +374,13 @@ void q_font_render_run(const q_shaped_run_t *run,
                        int dest_x, int dest_y);
 void q_shaped_run_free(q_shaped_run_t *run);
 
+/* ── Image cache / decoder ── */
+q_image_t *q_image_load_url(const char *url);
+void q_image_release(q_image_t *image);
+const uint8_t *q_image_pixels(const q_image_t *image);
+int q_image_width(const q_image_t *image);
+int q_image_height(const q_image_t *image);
+
 /* ── Compositor ── */
 
 /*
@@ -221,6 +389,9 @@ void q_shaped_run_free(q_shaped_run_t *run);
  * Allocates view->framebuffer if it is NULL.
  */
 void q_composite_frame(quanton_view_t *view);
+void q_view_scroll_by(quanton_view_t *view, float dx, float dy);
+void q_view_scroll_to(quanton_view_t *view, float x, float y);
+void q_view_scroll_into_view(quanton_view_t *view, const q_box_t *box);
 
 /* ── View update (dirty-flag processing) ── */
 
@@ -286,6 +457,19 @@ lxb_dom_element_t *q_dom_query_selector(quanton_view_t *view,
 size_t q_dom_query_selector_all(quanton_view_t *view,
                                  const char *selector,
                                  lxb_dom_element_t **out, size_t out_max);
+
+/* getElementById — finds the first element with the given id attribute. */
+lxb_dom_element_t *q_dom_get_element_by_id(quanton_view_t *view,
+                                             const char *id);
+
+/*
+ * innerHTML setter — parses html as a fragment in el's context, replaces
+ * el's children with the result, and marks the view Q_DIRTY_LAYOUT.
+ * Returns 0 on success, -1 on failure.
+ */
+int q_dom_set_inner_html(quanton_view_t *view,
+                          lxb_dom_element_t *el,
+                          const char *html, size_t len);
 
 /* ── Backend vtable instances ── */
 extern const q_backend_vt_t q_backend_x11;
