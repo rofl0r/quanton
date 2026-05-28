@@ -776,6 +776,12 @@ void q_table_position(q_box_t *table_box, float origin_x, float origin_y)
         for (c = 0; c < ncols; c++) {
             col_x[c + 1] = col_x[c] + t->cols[c].final_width + bsp;
         }
+        /* Snap all column boundaries to integers so that the accumulated
+         * floating-point positions never exceed the table's integer pixel
+         * width, which would clip the right-most border line. */
+        for (c = 0; c <= ncols; c++) {
+            col_x[c] = floorf(col_x[c] + 0.5f);
+        }
     }
 
     /* Position each cell using pre-computed spans */
@@ -783,15 +789,12 @@ void q_table_position(q_box_t *table_box, float origin_x, float origin_y)
         q_table_span_t *span = &t->spans[si];
         q_box_t        *cell = span->cell_box;
         float           cell_x, cell_y, cell_w, cell_h;
-        int             dc, dr;
+        int             dr;
 
         cell_x = col_x[span->col];
         cell_y = row_y[span->row];
 
-        cell_w = 0.0f;
-        for (dc = 0; dc < span->colspan; dc++) {
-            cell_w += t->cols[span->col + dc].final_width;
-        }
+        cell_w = col_x[span->col + span->colspan] - col_x[span->col] - t->border_spacing;
         cell_h = 0.0f;
         for (dr = 0; dr < span->rowspan; dr++) {
             cell_h += t->rows[span->row + dr].height;

@@ -1811,11 +1811,14 @@ int main(int argc, char **argv)
         assert(wide_cell != NULL && right_cell != NULL);
         assert(a_cell != NULL && b_cell != NULL && c_cell != NULL);
 
-        /* Combined: wide_cell + right_cell occupy total available column width */
+        /* Combined width: wide_cell (colspan=2) includes the one inter-column
+         * border_spacing between the two spanned columns, so together with
+         * right_cell they total table_width minus col_count spacings
+         * (the two outer spacings are excluded). */
         assert(wide_cell->width > 0.0f);
         assert(right_cell->width > 0.0f);
         assert(fabsf(wide_cell->width + right_cell->width
-                     - (300.0f - (float)(table->table->col_count + 1)
+                     - (300.0f - (float)(table->table->col_count)
                                  * table->table->border_spacing)) < 2.0f);
         /* wide_cell starts at first col offset: table->x + border_spacing */
         assert(fabsf(wide_cell->x - (table->x + table->table->border_spacing)) < 1.0f);
