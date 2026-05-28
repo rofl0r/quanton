@@ -280,6 +280,7 @@ struct q_box {
     float font_size;          /* NaN = inherit / default */
     int font_weight;          /* 0 = inherit / default */
     q_font_style_t font_style; /* Q_FONT_STYLE_NORMAL=0 = inherit / default */
+    const char *font_family;  /* NULL = inherit "sans-serif"; "monospace" = monospace */
     uint32_t text_color;      /* valid when has_text_color != 0 */
     int has_text_color;
     int is_inline_block;
