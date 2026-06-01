@@ -965,6 +965,9 @@ static void q_box_inherit_text_style(q_box_t *box, const q_box_t *parent)
         && parent->font_style != Q_FONT_STYLE_NORMAL) {
         box->font_style = parent->font_style;
     }
+    if (box->font_family == NULL && parent->font_family != NULL) {
+        box->font_family = parent->font_family;
+    }
     if (!box->has_text_color && parent->has_text_color) {
         box->text_color = parent->text_color;
         box->has_text_color = 1;
@@ -1206,6 +1209,37 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
                  * Mark as inline-block so the box flows inline with surrounding
                  * text while carrying the italic font-style for its children. */
                 current->font_style     = Q_FONT_STYLE_ITALIC;
+                current->is_inline_block = 1;
+            }
+
+            if (tag_id == LXB_TAG_CODE || tag_id == LXB_TAG_KBD || tag_id == LXB_TAG_TT) {
+                /* WHATWG UA: code, kbd, tt { font-family: monospace } */
+                current->font_family = "monospace";
+                current->is_inline_block = 1;
+            }
+
+            if (tag_id == LXB_TAG_BLOCKQUOTE) {
+                /* WHATWG UA: blockquote { margin-inline: 40px } */
+                current->margin_left = 40.0f;
+                current->margin_right = 40.0f;
+            }
+
+            if (tag_id == LXB_TAG_S || tag_id == LXB_TAG_DEL) {
+                /* WHATWG UA: s, del { text-decoration: line-through } */
+                current->text_decoration |= Q_TEXT_DECORATION_LINE_THROUGH;
+                current->is_inline_block = 1;
+            }
+
+            if (tag_id == LXB_TAG_SUP || tag_id == LXB_TAG_SUB) {
+                /* WHATWG UA: sup/sub use vertical-align and smaller font-size. */
+                current->vertical_align = (tag_id == LXB_TAG_SUP)
+                                          ? Q_VERTICAL_ALIGN_SUPER
+                                          : Q_VERTICAL_ALIGN_SUB;
+                if (!isnan(current->font_size) && current->font_size > 0.0f) {
+                    current->font_size *= 0.75f;
+                } else {
+                    current->font_size = 12.0f;
+                }
                 current->is_inline_block = 1;
             }
 

@@ -46,6 +46,19 @@ static int q_layout_resolve_font_style(const q_box_t *box)
     return (int) Q_FONT_STYLE_NORMAL;
 }
 
+static const char *q_layout_resolve_font_family(const q_box_t *box)
+{
+    const q_box_t *cur = box;
+
+    while (cur != NULL) {
+        if (cur->font_family != NULL && cur->font_family[0] != '\0') {
+            return cur->font_family;
+        }
+        cur = cur->parent;
+    }
+    return "sans-serif";
+}
+
 static void q_layout_measure_text(q_box_t *box)
 {
     static q_font_cache_t *cache;
@@ -54,6 +67,7 @@ static void q_layout_measure_text(q_box_t *box)
     float font_size = q_layout_resolve_font_size(box);
     int font_weight = q_layout_resolve_font_weight(box);
     int font_style  = q_layout_resolve_font_style(box);
+    const char *font_family = q_layout_resolve_font_family(box);
 
     q_shaped_run_free(box->run);
     box->run = NULL;
@@ -64,7 +78,7 @@ static void q_layout_measure_text(q_box_t *box)
 
     if (cache != NULL) {
         font = q_font_match(cache,
-                            "sans-serif",
+                            font_family,
                             font_size,
                             font_weight,
                             font_style);
