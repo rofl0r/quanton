@@ -1514,6 +1514,10 @@ int main(int argc, char **argv)
         render_html_case_to_png("file://./tests/html/headings.html", "output_headings.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/bold_italic.html", "output_bold_italic.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/hr.html", "output_hr.png", TEST_WIDTH, TEST_HEIGHT);
+        render_html_case_to_png("file://./tests/html/code_kbd_tt.html", "output_code_kbd_tt.png", TEST_WIDTH, TEST_HEIGHT);
+        render_html_case_to_png("file://./tests/html/blockquote.html", "output_blockquote.png", TEST_WIDTH, TEST_HEIGHT);
+        render_html_case_to_png("file://./tests/html/strikethrough.html", "output_strikethrough.png", TEST_WIDTH, TEST_HEIGHT);
+        render_html_case_to_png("file://./tests/html/sup_sub.html", "output_sup_sub.png", TEST_WIDTH, TEST_HEIGHT);
 #else
         q_document_t *interactive_doc = NULL;
         q_box_t *interactive_root = root;
@@ -2149,6 +2153,122 @@ int main(int argc, char **argv)
         q_layout_free_tree(hroot2);
         q_document_destroy(hdoc2);
     }
+
+    /* code/kbd/tt: monospace family defaults */
+    {
+        static const char code_html[] =
+            "<html><body><p><code>a</code><kbd>b</kbd><tt>c</tt></p></body></html>";
+        q_document_t *cdoc = q_document_create();
+        q_box_t *croot = NULL;
+        q_box_t *p, *ic, *kid;
+        int mono_count = 0;
+
+        assert(cdoc != NULL);
+        assert(q_document_load_html(cdoc, code_html, sizeof(code_html) - 1, NULL) == 0);
+        croot = q_layout_build_tree(cdoc);
+        assert(croot != NULL);
+        p = croot->first_child;
+        assert(p != NULL);
+        ic = p->first_child;
+        assert(ic != NULL && ic->type == Q_BOX_INLINE_CONTAINER);
+        for (kid = ic->first_child; kid != NULL; kid = kid->next_sibling) {
+            if (kid->is_inline_block && kid->font_family != NULL
+                && strcmp(kid->font_family, "monospace") == 0) {
+                ++mono_count;
+            }
+        }
+        assert(mono_count == 3);
+
+        q_layout_free_tree(croot);
+        q_document_destroy(cdoc);
+    }
+
+    /* blockquote: UA default horizontal margins */
+    {
+        static const char bq_html[] =
+            "<html><body><blockquote>q</blockquote></body></html>";
+        q_document_t *bqdoc = q_document_create();
+        q_box_t *bqroot = NULL;
+        q_box_t *bq;
+
+        assert(bqdoc != NULL);
+        assert(q_document_load_html(bqdoc, bq_html, sizeof(bq_html) - 1, NULL) == 0);
+        bqroot = q_layout_build_tree(bqdoc);
+        assert(bqroot != NULL);
+        bq = bqroot->first_child;
+        assert(bq != NULL);
+        assert(fabsf(bq->margin_left - 40.0f) < 0.01f);
+        assert(fabsf(bq->margin_right - 40.0f) < 0.01f);
+
+        q_layout_free_tree(bqroot);
+        q_document_destroy(bqdoc);
+    }
+
+    /* s/del: line-through default */
+    {
+        static const char del_html[] =
+            "<html><body><p><s>s</s><del>d</del></p></body></html>";
+        q_document_t *ddoc = q_document_create();
+        q_box_t *droot = NULL;
+        q_box_t *p, *ic, *kid;
+        int strike_count = 0;
+
+        assert(ddoc != NULL);
+        assert(q_document_load_html(ddoc, del_html, sizeof(del_html) - 1, NULL) == 0);
+        droot = q_layout_build_tree(ddoc);
+        assert(droot != NULL);
+        p = droot->first_child;
+        assert(p != NULL);
+        ic = p->first_child;
+        assert(ic != NULL && ic->type == Q_BOX_INLINE_CONTAINER);
+        for (kid = ic->first_child; kid != NULL; kid = kid->next_sibling) {
+            if (kid->is_inline_block
+                && (kid->text_decoration & Q_TEXT_DECORATION_LINE_THROUGH) != 0) {
+                ++strike_count;
+            }
+        }
+        assert(strike_count == 2);
+
+        q_layout_free_tree(droot);
+        q_document_destroy(ddoc);
+    }
+
+    /* sup/sub: vertical-align defaults and reduced font-size */
+    {
+        static const char supsub_html[] =
+            "<html><body><p>x<sup>2</sup>H<sub>2</sub></p></body></html>";
+        q_document_t *sdoc = q_document_create();
+        q_box_t *sroot = NULL;
+        q_box_t *p, *ic, *kid;
+        int saw_sup = 0, saw_sub = 0;
+
+        assert(sdoc != NULL);
+        assert(q_document_load_html(sdoc, supsub_html, sizeof(supsub_html) - 1, NULL) == 0);
+        sroot = q_layout_build_tree(sdoc);
+        assert(sroot != NULL);
+        p = sroot->first_child;
+        assert(p != NULL);
+        ic = p->first_child;
+        assert(ic != NULL && ic->type == Q_BOX_INLINE_CONTAINER);
+        for (kid = ic->first_child; kid != NULL; kid = kid->next_sibling) {
+            if (!kid->is_inline_block) {
+                continue;
+            }
+            if (kid->vertical_align == Q_VERTICAL_ALIGN_SUPER) {
+                saw_sup = 1;
+                assert(kid->font_size < 16.0f);
+            } else if (kid->vertical_align == Q_VERTICAL_ALIGN_SUB) {
+                saw_sub = 1;
+                assert(kid->font_size < 16.0f);
+            }
+        }
+        assert(saw_sup);
+        assert(saw_sub);
+
+        q_layout_free_tree(sroot);
+        q_document_destroy(sdoc);
+    }
+
     cache = q_font_cache_create();
     assert(cache != NULL);
 

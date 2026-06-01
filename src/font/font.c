@@ -11,6 +11,25 @@
 
 #define Q_DEFAULT_FONT_PATH "/usr/share/fonts/dejavu/DejaVuSans.ttf"
 
+static const char *q_probe_font_path_candidates(const char *const *paths)
+{
+    size_t i;
+
+    if (paths == NULL) {
+        return NULL;
+    }
+
+    for (i = 0; paths[i] != NULL; ++i) {
+        FILE *fp = fopen(paths[i], "rb");
+        if (fp != NULL) {
+            fclose(fp);
+            return paths[i];
+        }
+    }
+
+    return NULL;
+}
+
 /* Probe ordered lists of candidate paths and return the first one that
  * exists, or fall back to the primary path when none is found. */
 static const char *q_default_font_path(void)
@@ -19,27 +38,22 @@ static const char *q_default_font_path(void)
         "/usr/share/fonts/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/TTF/DejaVuSans.ttf",
+        NULL
     };
-    size_t i;
+    const char *path = q_probe_font_path_candidates(paths);
 
-    for (i = 0; i < sizeof(paths) / sizeof(paths[0]); ++i) {
-        FILE *fp = fopen(paths[i], "rb");
-        if (fp != NULL) {
-            fclose(fp);
-            return paths[i];
-        }
-    }
-
-    return Q_DEFAULT_FONT_PATH;
+    return (path != NULL) ? path : Q_DEFAULT_FONT_PATH;
 }
 
 /* Return the best-matching DejaVu Sans font path for the given weight and
  * style.  Falls back to the regular face when the specialised file does not
  * exist.  weight >= 600 = bold; style != Q_FONT_STYLE_NORMAL = oblique. */
-static const char *q_select_font_path(int weight, int style)
+static const char *q_select_font_path(const char *family, int weight, int style)
 {
     int bold    = (weight >= 600);
     int oblique = (style != Q_FONT_STYLE_NORMAL);
+    int monospace = (family != NULL && strcmp(family, "monospace") == 0);
+    const char *path = NULL;
 
     /* Candidate lists for each variant, tried in priority order. */
     static const char *bold_oblique_paths[] = {
@@ -60,23 +74,56 @@ static const char *q_select_font_path(int weight, int style)
         "/usr/share/fonts/TTF/DejaVuSans-Oblique.ttf",
         NULL
     };
+    static const char *mono_paths[] = {
+        "/usr/share/fonts/dejavu/DejaVuSansMono.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+        "/usr/share/fonts/TTF/DejaVuSansMono.ttf",
+        NULL
+    };
+    static const char *mono_bold_paths[] = {
+        "/usr/share/fonts/dejavu/DejaVuSansMono-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
+        "/usr/share/fonts/TTF/DejaVuSansMono-Bold.ttf",
+        NULL
+    };
+    static const char *mono_oblique_paths[] = {
+        "/usr/share/fonts/dejavu/DejaVuSansMono-Oblique.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Oblique.ttf",
+        "/usr/share/fonts/TTF/DejaVuSansMono-Oblique.ttf",
+        NULL
+    };
+    static const char *mono_bold_oblique_paths[] = {
+        "/usr/share/fonts/dejavu/DejaVuSansMono-BoldOblique.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-BoldOblique.ttf",
+        "/usr/share/fonts/TTF/DejaVuSansMono-BoldOblique.ttf",
+        NULL
+    };
 
-    const char **candidates = NULL;
-    size_t i;
+    const char *const *candidates = NULL;
 
-    if (bold && oblique)      candidates = bold_oblique_paths;
-    else if (bold)            candidates = bold_paths;
-    else if (oblique)         candidates = oblique_paths;
+    if (monospace) {
+        if (bold && oblique)      candidates = mono_bold_oblique_paths;
+        else if (bold)            candidates = mono_bold_paths;
+        else if (oblique)         candidates = mono_oblique_paths;
+    } else {
+        if (bold && oblique)      candidates = bold_oblique_paths;
+        else if (bold)            candidates = bold_paths;
+        else if (oblique)         candidates = oblique_paths;
+    }
 
     if (candidates != NULL) {
-        for (i = 0; candidates[i] != NULL; ++i) {
-            FILE *fp = fopen(candidates[i], "rb");
-            if (fp != NULL) {
-                fclose(fp);
-                return candidates[i];
-            }
+        path = q_probe_font_path_candidates(candidates);
+        if (path != NULL) {
+            return path;
         }
         /* Variant not installed; fall through to regular face */
+    }
+
+    if (monospace) {
+        path = q_probe_font_path_candidates(mono_paths);
+        if (path != NULL) {
+            return path;
+        }
     }
 
     return q_default_font_path();
@@ -379,7 +426,7 @@ q_font_t *q_font_match(q_font_cache_t *cache,
     }
 
     family = (family_name != NULL) ? family_name : "sans-serif";
-    path = q_select_font_path(weight, style);
+    path = q_select_font_path(family, weight, style);
 
     font = q_find_font(cache, family, path, size_px, weight, style);
     if (font != NULL) {
