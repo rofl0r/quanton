@@ -186,6 +186,9 @@ static const char *section_titles[] = {
 };
 #define NUM_SECTIONS 10
 
+/* Remaining writable bytes in buf[0..cap-1] at current pos, never wrapping. */
+#define BUF_REM(pos, cap) ((pos) < (cap) ? (cap) - (pos) : (size_t)0)
+
 static char *build_ref_panel_html(void)
 {
     char   *buf;
@@ -197,32 +200,32 @@ static char *build_ref_panel_html(void)
     if (buf == NULL) return NULL;
 
     /* Header */
-    pos += (size_t) snprintf(buf + pos, cap - pos,
+    pos += (size_t) snprintf(buf + pos, BUF_REM(pos, cap),
         "<div style=\"width:%dpx;overflow:auto;height:%dpx;"
                     "border-left:2px solid #aaa;padding-left:8px;\">",
         REF_PANEL_W, VP_HEIGHT);
 
     /* Table of contents */
-    pos += (size_t) snprintf(buf + pos, cap - pos,
+    pos += (size_t) snprintf(buf + pos, BUF_REM(pos, cap),
         "<h3 style=\"margin-top:4px;\">Table of Contents</h3>"
         "<ul>");
     for (i = 0; i < NUM_SECTIONS; i++) {
-        int n = snprintf(buf + pos, pos < cap ? cap - pos : 0,
+        int n = snprintf(buf + pos, BUF_REM(pos, cap),
                          "<li><a href=\"#section-%d\">%d. %s</a></li>",
                          i + 1, i + 1, section_titles[i]);
-        if (n > 0 && (size_t)n < cap - pos) pos += (size_t)n;
+        if (n > 0 && (size_t)n < BUF_REM(pos, cap)) pos += (size_t)n;
     }
-    pos += (size_t) snprintf(buf + pos, cap - pos, "</ul>");
+    pos += (size_t) snprintf(buf + pos, BUF_REM(pos, cap), "</ul>");
 
     /* Also add external-link demo */
-    pos += (size_t) snprintf(buf + pos, cap - pos,
+    pos += (size_t) snprintf(buf + pos, BUF_REM(pos, cap),
         "<p>External link example (triggers on_navigate): "
         "<a href=\"https://example.com\">example.com</a></p>"
         "<hr/>");
 
     /* Ten sections, each tall enough to be off-screen initially */
     for (i = 0; i < NUM_SECTIONS; i++) {
-        int n = snprintf(buf + pos, pos < cap ? cap - pos : 0,
+        int n = snprintf(buf + pos, BUF_REM(pos, cap),
                          "<h2 id=\"section-%d\">%d. %s</h2>"
                          "<p style=\"height:160px;\">"
                          "This is the body text for section %d.  It is intentionally given "
@@ -232,10 +235,10 @@ static char *build_ref_panel_html(void)
                          "</p>"
                          "<hr/>",
                          i + 1, i + 1, section_titles[i], i + 1);
-        if (n > 0 && (size_t)n < cap - pos) pos += (size_t)n;
+        if (n > 0 && (size_t)n < BUF_REM(pos, cap)) pos += (size_t)n;
     }
 
-    pos += (size_t) snprintf(buf + pos, cap - pos, "</div>");
+    pos += (size_t) snprintf(buf + pos, BUF_REM(pos, cap), "</div>");
 
     buf[pos] = '\0';
     return buf;
