@@ -249,6 +249,11 @@ static void sdl2_poll_events(quanton_view_t *view)
                               (sev.button.button == SDL_BUTTON_MIDDLE) ? 1 : 2;
             ev.key_mod      = sdl2_mod((SDL_Keymod) SDL_GetModState());
             sdl2_dispatch(view, &ev);
+            if (sev.type == SDL_MOUSEBUTTONUP) {
+                q_event_t click_ev = ev;
+                click_ev.type = Q_EVENT_MOUSE_CLICK;
+                sdl2_dispatch(view, &click_ev);
+            }
             break;
 
         case SDL_MOUSEWHEEL: {

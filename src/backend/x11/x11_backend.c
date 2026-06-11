@@ -309,6 +309,11 @@ static void x11_poll_events(quanton_view_t *view)
                 ev.key_mod      = mod;
             }
             x11_dispatch(view, &ev);
+            if (xev.type == ButtonRelease && btn != Button4 && btn != Button5) {
+                q_event_t click_ev = ev;
+                click_ev.type = Q_EVENT_MOUSE_CLICK;
+                x11_dispatch(view, &click_ev);
+            }
             break;
         }
 

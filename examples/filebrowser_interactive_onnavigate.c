@@ -383,7 +383,7 @@ static void filebrowser_on_event(quanton_view_t *view,
     if (view == NULL || event == NULL || app == NULL || app->tbody == NULL)
         return;
 
-    if (event->type != Q_EVENT_MOUSE_UP || event->mouse_button != 0)
+    if (event->type != Q_EVENT_MOUSE_CLICK || event->mouse_button != 0)
         return;
 
     /* Sort column click — identical to the original filebrowser_interactive */

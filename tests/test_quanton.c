@@ -66,6 +66,26 @@ static lxb_dom_node_t *g_event_target;
 static const char *g_last_set_title;
 static const char *g_navigate_href;
 
+static q_box_t *find_box_for_dom_node(q_box_t *root, const lxb_dom_node_t *node)
+{
+    q_box_t *child;
+    q_box_t *match;
+
+    if (root == NULL) {
+        return NULL;
+    }
+    if (root->dom_node == node) {
+        return root;
+    }
+    for (child = root->first_child; child != NULL; child = child->next_sibling) {
+        match = find_box_for_dom_node(child, node);
+        if (match != NULL) {
+            return match;
+        }
+    }
+    return NULL;
+}
+
 static int nearly_equal(float a, float b)
 {
     return fabsf(a - b) < FLOAT_TOLERANCE;
@@ -2548,14 +2568,67 @@ int main(int argc, char **argv)
     {
         /* Structural: on_navigate is called for non-anchor hrefs and NOT
          * called for named-anchor hrefs. */
+        static const char nested_anchor_html[] =
+            "<html><body style=\"margin:0;display:flex;\">"
+            "<div style=\"width:200px;height:180px;overflow:auto;\">"
+            "<p>left panel</p>"
+            "</div>"
+            "<div id=\"right\" style=\"width:200px;height:180px;overflow:auto;\">"
+            "<p><a href=\"#rsec\">Jump</a></p>"
+            "<div style=\"height:700px;\"></div>"
+            "<h2 id=\"rsec\">Right Section</h2>"
+            "</div>"
+            "</body></html>";
         static const char ext_html[] =
             "<html><body style=\"margin:0;\">"
             "<p><a href=\"https://example.com\">External</a></p>"
             "</body></html>";
+        q_document_t *rdoc;
+        quanton_ctx_t rctx;
+        quanton_view_t rview;
+        lxb_dom_element_t *right_el;
+        q_box_t *right_box;
         q_document_t *edoc;
         quanton_ctx_t ectx;
         quanton_view_t eview;
         q_event_t ev;
+
+        rdoc = q_document_create();
+        assert(rdoc != NULL);
+        assert(q_document_load_html(rdoc, nested_anchor_html, sizeof(nested_anchor_html) - 1, NULL) == 0);
+
+        memset(&rctx, 0, sizeof(rctx));
+        memset(&rview, 0, sizeof(rview));
+        rview.ctx       = &rctx;
+        rview.document  = rdoc;
+        rview.vp_width  = 420;
+        rview.vp_height = 220;
+
+        q_dom_mark_dirty(&rview, NULL, Q_DIRTY_LAYOUT);
+        q_view_update(&rview);
+        assert(rview.layout_root != NULL);
+
+        right_el = q_dom_get_element_by_id(&rview, "right");
+        assert(right_el != NULL);
+        right_box = find_box_for_dom_node(rview.layout_root,
+                                          lxb_dom_interface_node(right_el));
+        assert(right_box != NULL);
+        assert(right_box->scroll_y == 0.0f);
+        assert(rview.scroll_y == 0.0f);
+
+        memset(&ev, 0, sizeof(ev));
+        ev.type         = Q_EVENT_MOUSE_CLICK;
+        ev.mouse_button = 0;
+        ev.mouse_x      = 210;
+        ev.mouse_y      = 12;
+        q_event_dispatch(&rview, &ev);
+
+        assert(right_box->scroll_y > 400.0f);
+        assert(rview.scroll_y == 0.0f);
+
+        q_layout_free_tree(rview.layout_root);
+        free(rview.framebuffer);
+        q_document_destroy(rdoc);
 
         edoc = q_document_create();
         assert(edoc != NULL);
