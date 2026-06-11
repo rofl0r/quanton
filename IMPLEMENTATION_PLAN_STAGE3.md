@@ -468,8 +468,8 @@ typedef struct q_backend_vt {
 | 9 | ~~`text-align` (left/center/right) in line positioning~~ | M | block_layout.c |
 | 10 | ~~`margin: auto` centering~~ | M | block_layout.c |
 | 11 | ~~`min/max-width/height`~~ | M | box_tree.c, block_layout.c |
-| 12 | `<a href>` visual defaults + `on_navigate` callback | M | box_tree.c, event.c, quanton.h |
-| 13 | Named anchor scroll (`href="#id"`) | S | event.c |
+| 12 | ~~ `<a href>` visual defaults + `on_navigate` callback | M | box_tree.c, event.c, quanton.h |
+| 13 | ~~ Named anchor scroll (`href="#id"`) | S | event.c |
 | 14 | ~~`<title>` → window title~~ | S | box_tree.c, backend vtable |
 | 15 | `app://` resource registry | M | resource.c, quanton.h |
 | 16 | External CSS `<link rel="stylesheet">` | M | box_tree.c (or stylesheet.c) |
@@ -480,6 +480,15 @@ typedef struct q_backend_vt {
 | 21 | `<textarea>` multi-line editing | L | event.c, paint.c |
 | 22 | `<select>` dropdown overlay | L | event.c, paint.c, block_layout.c |
 | 23 | `text-align: justify` | M | block_layout.c |
+| 24 | make scrollbar pullable (mouse drag)
+| 25 | improve scrolling performance by accumulating all queued wheel events into a single operation
+| 26 | verify whether SDL2 backend really composes the viewport from box textures to profit from OpenGL
+| 27 | `perf report` shows the following performance numbers with an -O2 build:
+    56.42%  filebrowser_onn  filebrowser_onnavigate_sdl2  [.] q_paint_composite
+    11.75%  filebrowser_onn  filebrowser_onnavigate_sdl2  [.] q_paint_fill_rect
+     6.62%  filebrowser_onn  filebrowser_onnavigate_sdl2  [.] sft_render
+     6.25%  filebrowser_onn  filebrowser_onnavigate_sdl2  [.] q_paint_composite_clipped
+     see whether we can find low-hanging fruit to improve performance.
 
 ---
 
