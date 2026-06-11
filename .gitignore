@@ -6,6 +6,7 @@ output*.png
 test_png
 test_sdl2
 test_x11
+test_asan
 filebrowser_png
 filebrowser_x11
 filebrowser_sdl2
