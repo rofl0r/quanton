@@ -1,5 +1,18 @@
 CC = gcc
-CFLAGS = -std=c99 -Wall -Wextra -O0 -g3 -gdwarf-3 -Iinclude -I. -Ilexbor/source -Ithird_party
+
+# if you want to override CC/CFLAGS_USER..., do so in config.mak
+-include config.mak
+
+CFLAGS = -std=c99 -Wall -Wextra $(CFLAGS_USER) -Iinclude -I. -Ilexbor/source -Ithird_party
+LDFLAGS = -lm $(LDFLAGS_USER)
+
+# SDL2 compile/link flags (auto-detected via sdl2-config; falls back to -lSDL2)
+SDL2_CFLAGS  := $(shell sdl2-config --cflags 2>/dev/null)
+SDL2_LDFLAGS := $(shell sdl2-config --libs 2>/dev/null)
+ifeq ($(SDL2_CFLAGS),)
+SDL2_CFLAGS  := -I/usr/include/SDL2 -D_REENTRANT
+SDL2_LDFLAGS := -lSDL2
+endif
 
 LEXBOR_LIBS = \
 -llexbor-css \
@@ -17,16 +30,7 @@ LEXBOR_LIBS = \
 -llexbor-utils \
 -llexbor-core
 
-LDFLAGS = -lm
 LDFLAGS_LEXBOR = -L build/make/lib $(LEXBOR_LIBS)
-
-# SDL2 compile/link flags (auto-detected via sdl2-config; falls back to -lSDL2)
-SDL2_CFLAGS  := $(shell sdl2-config --cflags 2>/dev/null)
-SDL2_LDFLAGS := $(shell sdl2-config --libs 2>/dev/null)
-ifeq ($(SDL2_CFLAGS),)
-SDL2_CFLAGS  := -I/usr/include/SDL2 -D_REENTRANT
-SDL2_LDFLAGS := -lSDL2
-endif
 
 SRC = \
 src/resource/resource.c \
