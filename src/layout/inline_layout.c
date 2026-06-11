@@ -1,6 +1,7 @@
 #include "quanton.h"
 
 #include <ctype.h>
+#include <math.h>
 #include <stdlib.h>
 
 #define Q_LINE_DEFAULT_FONT_SIZE   16.0f
@@ -38,6 +39,17 @@ static q_box_t *make_line_box(q_box_t *parent)
         return NULL;
     }
     line->type = Q_BOX_LINE;
+    line->style_top = (float) NAN;
+    line->style_right = (float) NAN;
+    line->style_bottom = (float) NAN;
+    line->style_left = (float) NAN;
+    line->style_width = (float) NAN;
+    line->style_width_pct = (float) NAN;
+    line->style_height = (float) NAN;
+    line->style_min_width = (float) NAN;
+    line->style_max_width = (float) NAN;
+    line->style_min_height = (float) NAN;
+    line->style_max_height = (float) NAN;
     line->parent = parent;
     if (parent->last_child != NULL) {
         parent->last_child->next_sibling = line;
@@ -69,6 +81,17 @@ static q_box_t *make_word_box(q_box_t *line_parent,
     word->height = h;
     word->text_decoration = text_decoration;
     word->vertical_align = vertical_align;
+    word->style_top = (float) NAN;
+    word->style_right = (float) NAN;
+    word->style_bottom = (float) NAN;
+    word->style_left = (float) NAN;
+    word->style_width = (float) NAN;
+    word->style_width_pct = (float) NAN;
+    word->style_height = (float) NAN;
+    word->style_min_width = (float) NAN;
+    word->style_max_width = (float) NAN;
+    word->style_min_height = (float) NAN;
+    word->style_max_height = (float) NAN;
     word->parent = line_parent;
     if (line_parent->last_child != NULL) {
         line_parent->last_child->next_sibling = word;

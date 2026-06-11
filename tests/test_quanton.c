@@ -63,6 +63,7 @@ static char *make_url_from_filename(const char *filename)
 static int g_event_called;
 static q_box_t *g_event_target_box;
 static lxb_dom_node_t *g_event_target;
+static const char *g_last_set_title;
 
 static int nearly_equal(float a, float b)
 {
@@ -183,6 +184,37 @@ static void capture_event_handler(quanton_view_t *view, const q_event_t *event, 
     g_event_called = 1;
     g_event_target_box = event->target_box;
     g_event_target = event->target;
+}
+
+static int mock_create_window(quanton_view_t *view, int w, int h, const char *title)
+{
+    (void) title;
+    if (view != NULL) {
+        view->vp_width = w;
+        view->vp_height = h;
+    }
+    return 0;
+}
+
+static void mock_blit(quanton_view_t *view)
+{
+    (void) view;
+}
+
+static void mock_poll_events(quanton_view_t *view)
+{
+    (void) view;
+}
+
+static void mock_destroy_window(quanton_view_t *view)
+{
+    (void) view;
+}
+
+static void mock_set_title(quanton_view_t *view, const char *title)
+{
+    (void) view;
+    g_last_set_title = title;
 }
 
 #if defined(QUANTON_BACKEND_PNG)
@@ -2267,6 +2299,138 @@ int main(int argc, char **argv)
 
         q_layout_free_tree(sroot);
         q_document_destroy(sdoc);
+    }
+
+    /* text-align center/right line placement */
+    {
+        static const char ta_html[] =
+            "<html><body>"
+            "<div style='width:200px;text-align:center;'>aaaa</div>"
+            "<div style='width:200px;text-align:right;'>aaaa</div>"
+            "</body></html>";
+        q_document_t *tadoc = q_document_create();
+        q_box_t *taroot = NULL;
+        q_box_t *center_div;
+        q_box_t *right_div;
+        q_box_t *center_line;
+        q_box_t *right_line;
+        q_box_t *center_text;
+        q_box_t *right_text;
+        float center_offset;
+        float right_offset;
+
+        assert(tadoc != NULL);
+        assert(q_document_load_html(tadoc, ta_html, sizeof(ta_html) - 1, NULL) == 0);
+        taroot = q_layout_build_tree(tadoc);
+        assert(taroot != NULL);
+        q_layout_measure(taroot, 300.0f, 0.0f);
+        q_layout_position(taroot, 0.0f, 0.0f);
+
+        center_div = taroot->first_child;
+        assert(center_div != NULL);
+        right_div = center_div->next_sibling;
+        assert(right_div != NULL);
+        assert(right_div->next_sibling == NULL);
+
+        center_line = center_div->first_child->first_child;
+        right_line = right_div->first_child->first_child;
+        assert(center_line != NULL && right_line != NULL);
+
+        center_text = center_line->first_child;
+        right_text = right_line->first_child;
+        assert(center_text != NULL && right_text != NULL);
+
+        center_offset = center_text->x - center_line->x;
+        right_offset = right_text->x - right_line->x;
+        assert(center_offset > 0.0f);
+        assert(right_offset > center_offset);
+
+        q_layout_free_tree(taroot);
+        q_document_destroy(tadoc);
+    }
+
+    /* margin:auto centering + min/max width/height clamping */
+    {
+        static const char mm_html[] =
+            "<html><body>"
+            "<div id='auto' style='width:100px;margin:0 auto;'>x</div>"
+            "<div id='clampw' style='width:300px;max-width:120px;'>x</div>"
+            "<div id='clampminw' style='width:20px;min-width:80px;'>x</div>"
+            "<div id='clamph' style='height:10px;min-height:30px;max-height:30px;'>x</div>"
+            "</body></html>";
+        q_document_t *mmdoc = q_document_create();
+        q_box_t *mmroot = NULL;
+        q_box_t *auto_div;
+        q_box_t *clampw_div;
+        q_box_t *clampminw_div;
+        q_box_t *clamph_div;
+
+        assert(mmdoc != NULL);
+        assert(q_document_load_html(mmdoc, mm_html, sizeof(mm_html) - 1, NULL) == 0);
+        mmroot = q_layout_build_tree(mmdoc);
+        assert(mmroot != NULL);
+        q_layout_measure(mmroot, 300.0f, 0.0f);
+        q_layout_position(mmroot, 0.0f, 0.0f);
+
+        auto_div = mmroot->first_child;
+        assert(auto_div != NULL);
+        clampw_div = auto_div->next_sibling;
+        assert(clampw_div != NULL);
+        clampminw_div = clampw_div->next_sibling;
+        assert(clampminw_div != NULL);
+        clamph_div = clampminw_div->next_sibling;
+        assert(clamph_div != NULL);
+
+        assert(auto_div->margin_left_auto == 1);
+        assert(auto_div->margin_right_auto == 1);
+        assert(nearly_equal(auto_div->margin_left, auto_div->margin_right));
+        assert(nearly_equal(auto_div->x - mmroot->margin_left, auto_div->margin_left));
+
+        assert(fabsf(clampw_div->width - 120.0f) < 0.01f);
+        assert(fabsf(clampminw_div->width - 80.0f) < 0.01f);
+        assert(fabsf(clamph_div->height - 30.0f) < 0.01f);
+
+        q_layout_free_tree(mmroot);
+        q_document_destroy(mmdoc);
+    }
+
+    /* title extraction + backend set_title callback */
+    {
+        static const char title_html[] =
+            "<html><head><title>Stage 3 Title</title></head><body><div>x</div></body></html>";
+        static const q_backend_vt_t mock_backend = {
+            mock_create_window,
+            mock_blit,
+            mock_poll_events,
+            mock_destroy_window,
+            mock_set_title,
+        };
+        q_document_t *tdoc = q_document_create();
+        quanton_ctx_t tctx;
+        quanton_view_t tview;
+
+        assert(tdoc != NULL);
+        assert(q_document_load_html(tdoc, title_html, sizeof(title_html) - 1, NULL) == 0);
+
+        memset(&tctx, 0, sizeof(tctx));
+        memset(&tview, 0, sizeof(tview));
+        tctx.backend = &mock_backend;
+        tview.ctx = &tctx;
+        tview.document = tdoc;
+        tview.vp_width = 320;
+        tview.vp_height = 200;
+        g_last_set_title = NULL;
+
+        q_dom_mark_dirty(&tview, NULL, Q_DIRTY_LAYOUT);
+        q_view_update(&tview);
+        assert(g_last_set_title != NULL);
+        assert(strcmp(g_last_set_title, "Stage 3 Title") == 0);
+        assert(tview.layout_root != NULL);
+        assert(tview.layout_root->document_title != NULL);
+        assert(strcmp(tview.layout_root->document_title, "Stage 3 Title") == 0);
+
+        q_layout_free_tree(tview.layout_root);
+        q_document_destroy(tdoc);
     }
 
     cache = q_font_cache_create();

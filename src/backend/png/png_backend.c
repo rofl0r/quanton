@@ -122,9 +122,16 @@ static void png_destroy_window(quanton_view_t *view)
     view->window_handle = NULL;
 }
 
+static void png_set_title(quanton_view_t *view, const char *title)
+{
+    (void) view;
+    (void) title;
+}
+
 const q_backend_vt_t q_backend_png = {
     png_create_window,
     png_blit,
     png_poll_events,
     png_destroy_window,
+    png_set_title,
 };

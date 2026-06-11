@@ -77,6 +77,8 @@ typedef struct q_backend_vt {
     void (*poll_events)(quanton_view_t *view);
     /* destroy window */
     void (*destroy_window)(quanton_view_t *view);
+    /* update native window title */
+    void (*set_title)(quanton_view_t *view, const char *title);
 } q_backend_vt_t;
 
 /* task 1: resource loader */
@@ -153,6 +155,12 @@ typedef enum q_vertical_align_type {
     Q_VERTICAL_ALIGN_SUB      = 4,
     Q_VERTICAL_ALIGN_SUPER    = 5,
 } q_vertical_align_type_t;
+
+typedef enum q_text_align_type {
+    Q_TEXT_ALIGN_LEFT   = 0,
+    Q_TEXT_ALIGN_CENTER = 1,
+    Q_TEXT_ALIGN_RIGHT  = 2,
+} q_text_align_type_t;
 
 typedef enum q_background_repeat_type {
     Q_BACKGROUND_REPEAT_REPEAT   = 0,
@@ -261,11 +269,17 @@ struct q_box {
     float style_width;
     float style_width_pct;   /* percentage width (NaN = not set) */
     float style_height;
+    float style_min_width;
+    float style_max_width;
+    float style_min_height;
+    float style_max_height;
     /* CSS box model spacing */
     float margin_top;
     float margin_right;
     float margin_bottom;
     float margin_left;
+    int margin_right_auto;
+    int margin_left_auto;
     float padding_top;
     float padding_right;
     float padding_bottom;
@@ -275,6 +289,7 @@ struct q_box {
     q_float_type_t float_type;
     q_clear_type_t clear_type;
     q_white_space_type_t white_space;
+    q_text_align_type_t text_align;
     q_vertical_align_type_t vertical_align;
     uint8_t text_decoration;
     float font_size;          /* NaN = inherit / default */
@@ -286,6 +301,7 @@ struct q_box {
     int is_inline_block;
     int table_border_collapse;     /* 1 when border-collapse: collapse */
     float table_border_spacing;    /* CSS border-spacing for TABLE boxes (default 2) */
+    char *document_title;          /* only used on root box */
     struct q_table *table;   /* non-NULL for Q_BOX_TABLE after measure */
 };
 

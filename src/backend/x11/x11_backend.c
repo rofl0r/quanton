@@ -366,6 +366,20 @@ static void x11_destroy_window(quanton_view_t *view)
     view->framebuffer = NULL;
 }
 
+static void x11_set_title(quanton_view_t *view, const char *title)
+{
+    q_x11_win_t *win;
+
+    if (view == NULL || view->window_handle == NULL) {
+        return;
+    }
+
+    win = (q_x11_win_t *) view->window_handle;
+    XStoreName(win->display, win->window,
+               (title != NULL && title[0] != '\0') ? title : "quanton");
+    XFlush(win->display);
+}
+
 /* ── Public vtable instance ─────────────────────────────────────────────── */
 
 const q_backend_vt_t q_backend_x11 = {
@@ -373,4 +387,5 @@ const q_backend_vt_t q_backend_x11 = {
     x11_blit,
     x11_poll_events,
     x11_destroy_window,
+    x11_set_title,
 };

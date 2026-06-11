@@ -235,6 +235,26 @@ static float q_layout_maxf(float a, float b)
     return (a > b) ? a : b;
 }
 
+static void q_layout_apply_minmax(q_box_t *box)
+{
+    if (box == NULL) {
+        return;
+    }
+
+    if (!isnan(box->style_max_width) && box->width > box->style_max_width) {
+        box->width = box->style_max_width;
+    }
+    if (!isnan(box->style_min_width) && box->width < box->style_min_width) {
+        box->width = box->style_min_width;
+    }
+    if (!isnan(box->style_max_height) && box->height > box->style_max_height) {
+        box->height = box->style_max_height;
+    }
+    if (!isnan(box->style_min_height) && box->height < box->style_min_height) {
+        box->height = box->style_min_height;
+    }
+}
+
 static float q_layout_resolve_clear_y(const q_float_ctx_t *ctx, float base_y, q_clear_type_t clear_type)
 {
     if (clear_type == Q_CLEAR_NONE) {
@@ -296,11 +316,13 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
 
     if (box->type == Q_BOX_TEXT) {
         q_layout_measure_text(box);
+        q_layout_apply_minmax(box);
         return;
     }
 
     if (box->type == Q_BOX_IMAGE) {
         q_layout_measure_image(box);
+        q_layout_apply_minmax(box);
         return;
     }
 
@@ -330,11 +352,13 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
             box->width = used_w;
         }
         box->height = max_h;
+        q_layout_apply_minmax(box);
         return;
     }
 
     if (box->type == Q_BOX_TABLE) {
         q_table_measure(box, containing_w);
+        q_layout_apply_minmax(box);
         return;
     }
 
@@ -346,6 +370,7 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
     } else {
         box->width = (containing_w > 0.0f) ? containing_w : 0.0f;
     }
+    q_layout_apply_minmax(box);
     box->height = 0.0f;
 
     if (box->is_flex_container) {
@@ -458,6 +483,14 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
                 avail_w -= child->margin_left + child->margin_right;
                 if (avail_w < 0.0f) avail_w = 0.0f;
                 q_layout_measure(child, avail_w, containing_h);
+                if (!isnan(child->style_width) && child->margin_left_auto && child->margin_right_auto) {
+                    float remaining = avail_w - child->width;
+                    if (remaining < 0.0f) {
+                        remaining = 0.0f;
+                    }
+                    child->margin_left = remaining * 0.5f;
+                    child->margin_right = remaining * 0.5f;
+                }
 
                 left  = q_float_ctx_left_edge(&float_ctx, child_y, q_layout_maxf(child->height, 1.0f));
                 right = q_float_ctx_right_edge(&float_ctx, child_y,
@@ -492,6 +525,7 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
     if (!isnan(box->style_height)) {
         box->height = box->style_height;
     }
+    q_layout_apply_minmax(box);
     q_layout_clamp_box_scroll(box, max_w, used_h);
 }
 
@@ -515,7 +549,25 @@ void q_layout_position(q_box_t *box, float origin_x, float origin_y)
     if (box->type == Q_BOX_LINE) {
         /* Position word children left-to-right */
         float line_h = (box->height > 0.0f) ? box->height : 0.0f;
+        q_text_align_type_t align = Q_TEXT_ALIGN_LEFT;
+        float content_w = 0.0f;
+        size_t nchildren = 0;
+        if (box->parent != NULL) {
+            align = box->parent->text_align;
+        }
+        for (child = box->first_child; child != NULL; child = child->next_sibling) {
+            content_w += child->width;
+            ++nchildren;
+        }
+        if (nchildren > 1) {
+            content_w += (float) (nchildren - 1) * Q_LAYOUT_WORD_SPACING;
+        }
         cursor_x = origin_x;
+        if (align == Q_TEXT_ALIGN_CENTER && box->width > content_w) {
+            cursor_x += (box->width - content_w) * 0.5f;
+        } else if (align == Q_TEXT_ALIGN_RIGHT && box->width > content_w) {
+            cursor_x += (box->width - content_w);
+        }
         for (child = box->first_child; child != NULL; child = child->next_sibling) {
             float y = origin_y;
 
