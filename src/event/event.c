@@ -5,7 +5,55 @@
 #include "lexbor/dom/interfaces/node.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
+
+/*
+ * Define QUANTON_DEBUG_EVENTS (e.g. -DQUANTON_DEBUG_EVENTS in CFLAGS) to get
+ * per-event diagnostic output on stderr.  The output shows:
+ *
+ *   WHEEL  x,y  → hit:<ptr>  scroll_box:<ptr>  old_scroll→new_scroll
+ *   CLICK  x,y  → hit:<ptr>  href:<href>  (anchor navigation details)
+ *
+ * This is invaluable for diagnosing why scrolling or anchor links do not work
+ * in layouts that use overflow:auto / overflow:scroll panels.
+ */
+#ifdef QUANTON_DEBUG_EVENTS
+static const char *q_dbg_box_type_name(q_box_type_t t)
+{
+    switch (t) {
+    case Q_BOX_BLOCK:             return "BLOCK";
+    case Q_BOX_IMAGE:             return "IMAGE";
+    case Q_BOX_TEXT:              return "TEXT";
+    case Q_BOX_LINE_BREAK:        return "BR";
+    case Q_BOX_INLINE_CONTAINER:  return "INLINE_CTR";
+    case Q_BOX_LINE:              return "LINE";
+    case Q_BOX_TABLE:             return "TABLE";
+    case Q_BOX_TABLE_SECTION:     return "TSECTION";
+    case Q_BOX_TABLE_ROW:         return "TROW";
+    case Q_BOX_TABLE_CELL:        return "TCELL";
+    case Q_BOX_TABLE_CAPTION:     return "TCAPTION";
+    default:                      return "?";
+    }
+}
+
+static void q_dbg_print_box(const char *label, const q_box_t *box)
+{
+    if (box == NULL) {
+        fprintf(stderr, "  %s: NULL\n", label);
+        return;
+    }
+    fprintf(stderr, "  %s: type=%s x=%.0f y=%.0f w=%.0f h=%.0f"
+                    " scroll_x=%.0f scroll_y=%.0f"
+                    " overflow_x=%d overflow_y=%d\n",
+            label,
+            q_dbg_box_type_name(box->type),
+            (double) box->x, (double) box->y,
+            (double) box->width, (double) box->height,
+            (double) box->scroll_x, (double) box->scroll_y,
+            (int) box->overflow_x, (int) box->overflow_y);
+}
+#endif /* QUANTON_DEBUG_EVENTS */
 
 #define Q_EVENT_WHEEL_SCROLL_PX 40.0f
 
@@ -312,7 +360,14 @@ static int q_scroll_target_in_box(quanton_view_t *view, q_box_t *scroll_box, q_b
     }
 
     if (scroll_box->scroll_x != old_x || scroll_box->scroll_y != old_y) {
-        view->dirty_flags |= Q_DIRTY_SCROLL;
+        /*
+         * An inner scroll box changed position.  Q_DIRTY_SCROLL is only
+         * correct for the root view (it merely re-composites the pre-painted
+         * root tile at a new offset).  For inner panels, the tile must be
+         * repainted so that the new scroll_x/scroll_y is baked in by
+         * q_paint_box_child.  Use Q_DIRTY_PAINT to trigger a full repaint.
+         */
+        view->dirty_flags |= Q_DIRTY_PAINT;
         q_view_update(view);
         return 1;
     }
@@ -359,23 +414,46 @@ static void q_handle_anchor_click(quanton_view_t *view, q_box_t *source_box, con
         }
         target_el = q_dom_get_element_by_id(view, id);
         if (target_el == NULL) {
+#ifdef QUANTON_DEBUG_EVENTS
+            fprintf(stderr, "  anchor \"#%s\": element not found\n", id);
+#endif
             return;
         }
         target_box = q_find_box_for_node(view->layout_root,
                                          lxb_dom_interface_node(target_el));
         if (target_box == NULL) {
+#ifdef QUANTON_DEBUG_EVENTS
+            fprintf(stderr, "  anchor \"#%s\": box not found in layout tree\n", id);
+#endif
             return;
         }
+#ifdef QUANTON_DEBUG_EVENTS
+        fprintf(stderr, "  anchor \"#%s\": target_box x=%.0f y=%.0f w=%.0f h=%.0f\n",
+                id,
+                (double) target_box->x, (double) target_box->y,
+                (double) target_box->width, (double) target_box->height);
+#endif
         if (source_box != NULL) {
             q_box_t *ancestor;
             for (ancestor = source_box->parent; ancestor != NULL; ancestor = ancestor->parent) {
                 if ((q_box_scrolls_x(ancestor) || q_box_scrolls_y(ancestor))
                     && q_scroll_target_in_box(view, ancestor, target_box))
                 {
+#ifdef QUANTON_DEBUG_EVENTS
+                    fprintf(stderr, "  anchor \"#%s\": scrolled inner box"
+                                    " (box x=%.0f y=%.0f scroll_y=%.0f)\n",
+                            id,
+                            (double) ancestor->x, (double) ancestor->y,
+                            (double) ancestor->scroll_y);
+#endif
                     return;
                 }
             }
         }
+#ifdef QUANTON_DEBUG_EVENTS
+        fprintf(stderr, "  anchor \"#%s\": no inner scroll box scrolled;"
+                        " falling back to root scroll\n", id);
+#endif
         q_scroll_target_into_view(view, target_box);
     } else if (view->on_navigate != NULL) {
         /* External or app link: delegate to the host application. */
@@ -423,6 +501,18 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
             }
         }
 
+#ifdef QUANTON_DEBUG_EVENTS
+        fprintf(stderr, "[event] WHEEL delta=%d mouse=(%d,%d) hit_xy=(%d,%d)\n",
+                event->wheel_delta, event->mouse_x, event->mouse_y, hit_x, hit_y);
+        q_dbg_print_box("  hit_box", event->target_box);
+        q_dbg_print_box("  scroll_box", scroll_box);
+        if (scroll_box != NULL) {
+            float dbg_max = q_box_scroll_max_y(scroll_box);
+            fprintf(stderr, "  scroll_max_y=%.0f current_scroll_y=%.0f\n",
+                    (double) dbg_max, (double) scroll_box->scroll_y);
+        }
+#endif
+
         if (scroll_box != NULL && q_box_scrolls_y(scroll_box)) {
             max_scroll = q_box_scroll_max_y(scroll_box);
             old_scroll = scroll_box->scroll_y;
@@ -430,9 +520,19 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
                                                   + ((float) (-event->wheel_delta) * Q_EVENT_WHEEL_SCROLL_PX),
                                                   max_scroll);
             if (scroll_box->scroll_y != old_scroll) {
-                view->dirty_flags |= Q_DIRTY_SCROLL;
+                /*
+                 * Inner scroll box changed: must repaint the tile tree so
+                 * that the new scroll_y is baked in by q_paint_box_child.
+                 * Q_DIRTY_SCROLL alone only re-composites the root tile at
+                 * a new viewport offset and does not repaint inner panels.
+                 */
+                view->dirty_flags |= Q_DIRTY_PAINT;
                 q_view_update(view);
                 scrolled = 1;
+#ifdef QUANTON_DEBUG_EVENTS
+                fprintf(stderr, "  scroll_y: %.0f → %.0f (repaint)\n",
+                        (double) old_scroll, (double) scroll_box->scroll_y);
+#endif
             }
         }
 
@@ -443,13 +543,21 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
                                                   + ((float) (-event->wheel_delta) * Q_EVENT_WHEEL_SCROLL_PX),
                                                   max_scroll);
             if (scroll_box->scroll_x != old_scroll) {
-                view->dirty_flags |= Q_DIRTY_SCROLL;
+                /* Same rationale as above. */
+                view->dirty_flags |= Q_DIRTY_PAINT;
                 q_view_update(view);
                 scrolled = 1;
+#ifdef QUANTON_DEBUG_EVENTS
+                fprintf(stderr, "  scroll_x: %.0f → %.0f (repaint)\n",
+                        (double) old_scroll, (double) scroll_box->scroll_x);
+#endif
             }
         }
 
         if (!scrolled) {
+#ifdef QUANTON_DEBUG_EVENTS
+            fprintf(stderr, "  no inner scroll box found; falling back to root scroll\n");
+#endif
             q_view_scroll_by(view, 0.0f,
                              (float) (-event->wheel_delta) * Q_EVENT_WHEEL_SCROLL_PX);
         }
@@ -461,12 +569,25 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
      * to the host application via view->on_navigate. */
     if (event->type == Q_EVENT_MOUSE_CLICK && event->mouse_button == 0) {
         q_box_t *box;
+#ifdef QUANTON_DEBUG_EVENTS
+        fprintf(stderr, "[event] CLICK mouse=(%d,%d) hit_xy=(%d,%d)\n",
+                event->mouse_x, event->mouse_y, hit_x, hit_y);
+        q_dbg_print_box("  hit_box", event->target_box);
+#endif
         for (box = event->target_box; box != NULL; box = box->parent) {
             if (box->href != NULL) {
+#ifdef QUANTON_DEBUG_EVENTS
+                fprintf(stderr, "  href found: \"%s\"\n", box->href);
+#endif
                 q_handle_anchor_click(view, box, box->href);
                 break;
             }
         }
+#ifdef QUANTON_DEBUG_EVENTS
+        if (box == NULL) {
+            fprintf(stderr, "  no href in ancestor chain\n");
+        }
+#endif
     }
 
     if (view->on_event != NULL) {
