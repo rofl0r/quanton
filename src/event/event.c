@@ -162,6 +162,34 @@ static q_box_t *q_find_deepest_text_descendant(q_box_t *box)
     return NULL;
 }
 
+static q_box_t *q_find_text_descendant_at_point(q_box_t *box, int x, int y)
+{
+    q_box_t *child;
+    int child_x = x;
+    int child_y = y;
+
+    if (box == NULL || !q_box_contains_point(box, x, y)) {
+        return NULL;
+    }
+    if (box->type == Q_BOX_TEXT) {
+        return box;
+    }
+    if (q_box_scrolls_x(box)) {
+        child_x += (int) lroundf(box->scroll_x);
+    }
+    if (q_box_scrolls_y(box)) {
+        child_y += (int) lroundf(box->scroll_y);
+    }
+
+    for (child = box->last_child; child != NULL; child = child->prev_sibling) {
+        q_box_t *hit = q_find_text_descendant_at_point(child, child_x, child_y);
+        if (hit != NULL) {
+            return hit;
+        }
+    }
+    return NULL;
+}
+
 static q_box_t *q_hit_test_deepest(q_box_t *box, int x, int y)
 {
     q_box_t *child;
@@ -376,9 +404,14 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
         hit_x = event->mouse_x + (int) lroundf(view->scroll_x);
         hit_y = event->mouse_y + (int) lroundf(view->scroll_y);
         event->target_box = q_hit_test(view->layout_root, hit_x, hit_y);
-        text_target = q_find_deepest_text_descendant(event->target_box);
-        if (text_target != NULL) {
-            event->target_box = text_target;
+        if (event->type != Q_EVENT_MOUSE_WHEEL) {
+            text_target = q_find_text_descendant_at_point(event->target_box, hit_x, hit_y);
+            if (text_target == NULL) {
+                text_target = q_find_deepest_text_descendant(event->target_box);
+            }
+            if (text_target != NULL) {
+                event->target_box = text_target;
+            }
         }
         event->target = (event->target_box != NULL) ? event->target_box->dom_node : NULL;
     }
