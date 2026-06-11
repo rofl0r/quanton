@@ -266,7 +266,7 @@ static char *build_full_html(const fb_entry_t *ents, int n)
     if (buf == NULL) { free(tbody); free(ref_panel); return NULL; }
 
     snprintf(buf, FULL_HTML_MAX,
-        "<html><body style=\"margin:8px;display:flex;flex-direction:row;gap:8px;overflow:hidden;\">"
+        "<html><body style=\"margin:8px;display:flex;flex-direction:row;gap:8px;\">"
 
         /* Left: sortable file-browser table */
         "<div style=\"width:%dpx;overflow:auto;height:%dpx;\">"
