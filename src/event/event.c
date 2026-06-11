@@ -326,7 +326,8 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
      * hit-tested target to find the nearest ancestor <a> box with an href.
      * Named anchors are scrolled internally; all other hrefs are forwarded
      * to the host application via view->on_navigate. */
-    if (event->type == Q_EVENT_MOUSE_CLICK && event->mouse_button == 0) {
+    if ((event->type == Q_EVENT_MOUSE_CLICK || event->type == Q_EVENT_MOUSE_UP)
+        && event->mouse_button == 0) {
         q_box_t *box;
         for (box = event->target_box; box != NULL; box = box->parent) {
             if (box->href != NULL) {

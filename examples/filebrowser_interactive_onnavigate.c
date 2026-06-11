@@ -51,6 +51,8 @@
 #define FB_PANEL_W      580
 /* Right panel width in px (long anchor demo). */
 #define REF_PANEL_W     (VP_WIDTH - FB_PANEL_W - 8)
+/* Keep panel boxes inside viewport margins to avoid root scrolling. */
+#define PANEL_H         (VP_HEIGHT - 16)
 
 /* ── Sort enum ───────────────────────────────────────────────────────────── */
 
@@ -203,7 +205,7 @@ static char *build_ref_panel_html(void)
     pos += (size_t) snprintf(buf + pos, BUF_REM(pos, cap),
         "<div style=\"width:%dpx;overflow:auto;height:%dpx;"
                     "border-left:2px solid #aaa;padding-left:8px;\">",
-        REF_PANEL_W, VP_HEIGHT);
+        REF_PANEL_W, PANEL_H);
 
     /* Table of contents */
     pos += (size_t) snprintf(buf + pos, BUF_REM(pos, cap),
@@ -264,7 +266,7 @@ static char *build_full_html(const fb_entry_t *ents, int n)
     if (buf == NULL) { free(tbody); free(ref_panel); return NULL; }
 
     snprintf(buf, FULL_HTML_MAX,
-        "<html><body style=\"margin:8px;display:flex;flex-direction:row;gap:8px;\">"
+        "<html><body style=\"margin:8px;display:flex;flex-direction:row;gap:8px;overflow:hidden;\">"
 
         /* Left: sortable file-browser table */
         "<div style=\"width:%dpx;overflow:auto;height:%dpx;\">"
@@ -284,7 +286,7 @@ static char *build_full_html(const fb_entry_t *ents, int n)
 
         "</body></html>",
 
-        FB_PANEL_W, VP_HEIGHT,
+        FB_PANEL_W, PANEL_H,
         FB_PANEL_W - 16,
         tbody,
         ref_panel);
