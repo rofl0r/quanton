@@ -281,6 +281,23 @@ static size_t css_split_tokens(const lxb_char_t *val, size_t vlen,
     return count;
 }
 
+static int css_parse_margin_token(const lxb_char_t *val, size_t len, float *out_value, int *out_auto)
+{
+    if (out_value == NULL || out_auto == NULL) {
+        return 0;
+    }
+
+    if (css_value_is(val, len, "auto")) {
+        *out_value = 0.0f;
+        *out_auto = 1;
+        return 1;
+    }
+
+    *out_value = css_parse_length_pct(val, len, NULL);
+    *out_auto = 0;
+    return 1;
+}
+
 static void css_apply_border_radius_shorthand(const lxb_char_t *val, size_t vlen, q_box_t *box)
 {
     const lxb_char_t *tokens[4];
@@ -578,20 +595,67 @@ static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
             }
         } else if (css_name_eq(prop, prop_len, "height")) {
             box->style_height = css_parse_length_pct(val, val_len, NULL);
+        } else if (css_name_eq(prop, prop_len, "min-width")) {
+            box->style_min_width = css_parse_length_pct(val, val_len, NULL);
+        } else if (css_name_eq(prop, prop_len, "max-width")) {
+            box->style_max_width = css_parse_length_pct(val, val_len, NULL);
+        } else if (css_name_eq(prop, prop_len, "min-height")) {
+            box->style_min_height = css_parse_length_pct(val, val_len, NULL);
+        } else if (css_name_eq(prop, prop_len, "max-height")) {
+            box->style_max_height = css_parse_length_pct(val, val_len, NULL);
         } else if (css_name_eq(prop, prop_len, "margin")) {
-            float v = css_parse_length_pct(val, val_len, NULL);
-            box->margin_top    = v;
-            box->margin_right  = v;
-            box->margin_bottom = v;
-            box->margin_left   = v;
+            const lxb_char_t *tokens[4];
+            size_t token_lens[4];
+            size_t count = css_split_tokens(val, val_len, tokens, token_lens, 4u);
+            float m[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            int a[4] = {0, 0, 0, 0};
+            size_t i;
+
+            if (count == 0u) {
+                continue;
+            }
+
+            for (i = 0; i < count; ++i) {
+                css_parse_margin_token(tokens[i], token_lens[i], &m[i], &a[i]);
+            }
+
+            if (count == 1u) {
+                box->margin_top = m[0];
+                box->margin_right = m[0];
+                box->margin_bottom = m[0];
+                box->margin_left = m[0];
+                box->margin_right_auto = a[0];
+                box->margin_left_auto = a[0];
+            } else if (count == 2u) {
+                box->margin_top = m[0];
+                box->margin_bottom = m[0];
+                box->margin_right = m[1];
+                box->margin_left = m[1];
+                box->margin_right_auto = a[1];
+                box->margin_left_auto = a[1];
+            } else if (count == 3u) {
+                box->margin_top = m[0];
+                box->margin_right = m[1];
+                box->margin_left = m[1];
+                box->margin_bottom = m[2];
+                box->margin_right_auto = a[1];
+                box->margin_left_auto = a[1];
+            } else {
+                box->margin_top = m[0];
+                box->margin_right = m[1];
+                box->margin_bottom = m[2];
+                box->margin_left = m[3];
+                box->margin_right_auto = a[1];
+                box->margin_left_auto = a[3];
+            }
         } else if (css_name_eq(prop, prop_len, "margin-top")) {
             box->margin_top    = css_parse_length_pct(val, val_len, NULL);
         } else if (css_name_eq(prop, prop_len, "margin-right")) {
-            box->margin_right  = css_parse_length_pct(val, val_len, NULL);
+            css_parse_margin_token(val, val_len, &box->margin_right, &box->margin_right_auto);
         } else if (css_name_eq(prop, prop_len, "margin-bottom")) {
             box->margin_bottom = css_parse_length_pct(val, val_len, NULL);
         } else if (css_name_eq(prop, prop_len, "margin-left")) {
-            box->margin_left   = css_parse_length_pct(val, val_len, NULL);
+            css_parse_margin_token(val, val_len, &box->margin_left, &box->margin_left_auto);
         } else if (css_name_eq(prop, prop_len, "padding")) {
             float v = css_parse_length_pct(val, val_len, NULL);
             box->padding_top    = v;
@@ -847,6 +911,14 @@ static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
             } else {
                 box->vertical_align = Q_VERTICAL_ALIGN_BASELINE;
             }
+        } else if (css_name_eq(prop, prop_len, "text-align")) {
+            if (css_value_is(val, val_len, "center")) {
+                box->text_align = Q_TEXT_ALIGN_CENTER;
+            } else if (css_value_is(val, val_len, "right")) {
+                box->text_align = Q_TEXT_ALIGN_RIGHT;
+            } else {
+                box->text_align = Q_TEXT_ALIGN_LEFT;
+            }
         } else if (css_name_eq(prop, prop_len, "text-decoration")
                    || css_name_eq(prop, prop_len, "text-decoration-line")) {
             const lxb_char_t *tokens[8];
@@ -940,6 +1012,10 @@ static q_box_t *q_box_create(q_box_type_t type, lxb_dom_node_t *dom_node,
     box->style_width     = (float) NAN;
     box->style_width_pct = (float) NAN;
     box->style_height    = (float) NAN;
+    box->style_min_width  = (float) NAN;
+    box->style_max_width  = (float) NAN;
+    box->style_min_height = (float) NAN;
+    box->style_max_height = (float) NAN;
 
     /* UA stylesheet defaults for specific element types */
     if (type == Q_BOX_TABLE) {
@@ -971,6 +1047,10 @@ static void q_box_inherit_text_style(q_box_t *box, const q_box_t *parent)
     if (!box->has_text_color && parent->has_text_color) {
         box->text_color = parent->text_color;
         box->has_text_color = 1;
+    }
+    if (box->text_align == Q_TEXT_ALIGN_LEFT
+        && parent->text_align != Q_TEXT_ALIGN_LEFT) {
+        box->text_align = parent->text_align;
     }
 }
 
@@ -1495,6 +1575,17 @@ q_box_t *q_layout_build_tree(q_document_t *doc)
     root->font_weight = 400;
     root->text_color = Q_DEFAULT_TEXT_COLOR;
     root->has_text_color = 1;
+    {
+        size_t title_len = 0;
+        const lxb_char_t *title = lxb_html_document_title(document, &title_len);
+        if (title != NULL && title_len > 0u) {
+            root->document_title = (char *) malloc(title_len + 1u);
+            if (root->document_title != NULL) {
+                memcpy(root->document_title, title, title_len);
+                root->document_title[title_len] = '\0';
+            }
+        }
+    }
 
     if (body != NULL) {
         /* WHATWG UA stylesheet: body { margin: 8px } */
@@ -1549,6 +1640,7 @@ void q_layout_free_tree(q_box_t *root)
     q_image_release(root->image);
     q_image_release(root->background_image);
     free(root->tile);
+    free(root->document_title);
     if (root->table != NULL) {
         q_table_free(root->table);
     }

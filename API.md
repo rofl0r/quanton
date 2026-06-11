@@ -58,15 +58,28 @@ Public API reference for `include/quanton.h`.
 
 ## Backend API
 
-- `q_backend_vt_t` — backend vtable for window creation, blitting, event polling, and teardown.
+- `q_backend_vt_t` — backend vtable for window creation, blitting, event polling, teardown, and runtime title updates (`set_title`).
 - `q_backend_x11`, `q_backend_sdl2`, `q_backend_png` — built-in backend instances.
 
 ## Important enums and flags
 
 - `q_box_type_t`, `q_position_type_t`, `q_overflow_type_t`, `q_float_type_t`, `q_clear_type_t`
-- `q_white_space_type_t`, `q_vertical_align_type_t`, `q_background_repeat_type_t`, `q_list_style_type_t`
+- `q_white_space_type_t`, `q_text_align_type_t`, `q_vertical_align_type_t`, `q_background_repeat_type_t`, `q_list_style_type_t`
 - `q_font_style_t`, `q_dirty_flags_t`
 - `Q_TEXT_DECORATION_*` bit flags
+
+## Internal helpers worth knowing
+
+- `src/layout/box_tree.c`
+  - `parse_style_attribute()` — inline-style parser for layout-relevant CSS (`width/height`, min/max constraints, text-align, margins including `auto`, overflow, typography, borders/background, etc.).
+  - `q_box_inherit_text_style()` — inheritance helper for text style and alignment properties across generated box nodes.
+  - `q_layout_walk_node()` — DOM→box tree builder applying tag defaults and style parsing.
+- `src/layout/block_layout.c`
+  - `q_layout_apply_minmax()` — clamps measured dimensions to `min/max-width/height`.
+  - `q_layout_measure_text()` / `q_layout_measure_image()` — intrinsic measurement helpers.
+  - `q_layout_block_place_float()` / `q_layout_resolve_clear_y()` — float/clear placement logic.
+- `src/dom_api/dom_api.c`
+  - `q_view_update()` — rebuilds layout/paint and now forwards `<title>` changes to `backend->set_title` when available.
 
 ## Notes
 

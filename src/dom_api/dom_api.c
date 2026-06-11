@@ -44,6 +44,13 @@ void q_view_update(quanton_view_t *view)
 
         new_root = q_layout_build_tree(view->document);
         if (new_root != NULL) {
+            if (view->ctx != NULL && view->ctx->backend != NULL
+                && view->ctx->backend->set_title != NULL
+                && new_root->document_title != NULL
+                && new_root->document_title[0] != '\0')
+            {
+                view->ctx->backend->set_title(view, new_root->document_title);
+            }
             q_layout_measure(new_root, (float) view->vp_width,
                              (float) view->vp_height);
             q_layout_position(new_root, 0.0f, 0.0f);

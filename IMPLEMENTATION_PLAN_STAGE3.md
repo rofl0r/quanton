@@ -457,20 +457,20 @@ typedef struct q_backend_vt {
 
 | Phase | What to build | Complexity | Files |
 |-------|---------------|------------|-------|
-| 1 | `font-size` / `font-weight` / `color` CSS reading + inheritance | M | box_tree.c, block_layout.c, font.c, paint.c |
-| 2 | `<h1>`–`<h6>` via tag defaults | S | box_tree.c |
-| 3 | `<b>` / `<strong>` / `<i>` / `<em>` inline font style | S | box_tree.c |
-| 4 | `<hr>` block box default styles | S | box_tree.c |
-| 5 | `<code>` / `<kbd>` / `<tt>` monospace font family | S | box_tree.c |
-| 6 | `<blockquote>` default margins | S | box_tree.c |
-| 7 | `<s>` / `<del>` text-decoration defaults | S | box_tree.c |
-| 8 | `<sup>` / `<sub>` vertical-align defaults | S | box_tree.c |
-| 9 | `text-align` (left/center/right) in line positioning | M | block_layout.c |
-| 10 | `margin: auto` centering | M | block_layout.c |
-| 11 | `min/max-width/height` | M | box_tree.c, block_layout.c |
+| 1 | ~~`font-size` / `font-weight` / `color` CSS reading + inheritance~~ | M | box_tree.c, block_layout.c, font.c, paint.c |
+| 2 | ~~`<h1>`–`<h6>` via tag defaults~~ | S | box_tree.c |
+| 3 | ~~`<b>` / `<strong>` / `<i>` / `<em>` inline font style~~ | S | box_tree.c |
+| 4 | ~~`<hr>` block box default styles~~ | S | box_tree.c |
+| 5 | ~~`<code>` / `<kbd>` / `<tt>` monospace font family~~ | S | box_tree.c |
+| 6 | ~~`<blockquote>` default margins~~ | S | box_tree.c |
+| 7 | ~~`<s>` / `<del>` text-decoration defaults~~ | S | box_tree.c |
+| 8 | ~~`<sup>` / `<sub>` vertical-align defaults~~ | S | box_tree.c |
+| 9 | ~~`text-align` (left/center/right) in line positioning~~ | M | block_layout.c |
+| 10 | ~~`margin: auto` centering~~ | M | block_layout.c |
+| 11 | ~~`min/max-width/height`~~ | M | box_tree.c, block_layout.c |
 | 12 | `<a href>` visual defaults + `on_navigate` callback | M | box_tree.c, event.c, quanton.h |
 | 13 | Named anchor scroll (`href="#id"`) | S | event.c |
-| 14 | `<title>` → window title | S | box_tree.c, backend vtable |
+| 14 | ~~`<title>` → window title~~ | S | box_tree.c, backend vtable |
 | 15 | `app://` resource registry | M | resource.c, quanton.h |
 | 16 | External CSS `<link rel="stylesheet">` | M | box_tree.c (or stylesheet.c) |
 | 17 | Functional `<button>` click + pressed state | M | event.c, paint.c |

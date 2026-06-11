@@ -311,6 +311,18 @@ static void sdl2_destroy_window(quanton_view_t *view)
     SDL_Quit();
 }
 
+static void sdl2_set_title(quanton_view_t *view, const char *title)
+{
+    q_sdl2_win_t *win;
+
+    if (view == NULL || view->window_handle == NULL) {
+        return;
+    }
+    win = (q_sdl2_win_t *) view->window_handle;
+    SDL_SetWindowTitle(win->window,
+                       (title != NULL && title[0] != '\0') ? title : "quanton");
+}
+
 /* ── Public vtable instance ─────────────────────────────────────────────── */
 
 const q_backend_vt_t q_backend_sdl2 = {
@@ -318,4 +330,5 @@ const q_backend_vt_t q_backend_sdl2 = {
     sdl2_blit,
     sdl2_poll_events,
     sdl2_destroy_window,
+    sdl2_set_title,
 };
