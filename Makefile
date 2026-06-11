@@ -105,9 +105,18 @@ filebrowser_sdl2: lexbor_all examples/filebrowser_interactive.c libquanton.a src
 	$(CC) $(CFLAGS) $(SDL2_CFLAGS) -DQUANTON_BACKEND_SDL2 -o $@ examples/filebrowser_interactive.c \
 	    src/backend/sdl2/sdl2_backend.o libquanton.a $(LDFLAGS) $(LDFLAGS_LEXBOR) $(SDL2_LDFLAGS)
 
+filebrowser_onnavigate_x11: lexbor_all examples/filebrowser_interactive_onnavigate.c libquanton.a src/backend/x11/x11_backend.o include/quanton.h
+	$(CC) $(CFLAGS) -DQUANTON_BACKEND_X11 -o $@ examples/filebrowser_interactive_onnavigate.c \
+	    src/backend/x11/x11_backend.o libquanton.a $(LDFLAGS) $(LDFLAGS_LEXBOR) -lX11
+
+filebrowser_onnavigate_sdl2: lexbor_all examples/filebrowser_interactive_onnavigate.c libquanton.a src/backend/sdl2/sdl2_backend.o include/quanton.h
+	$(CC) $(CFLAGS) $(SDL2_CFLAGS) -DQUANTON_BACKEND_SDL2 -o $@ examples/filebrowser_interactive_onnavigate.c \
+	    src/backend/sdl2/sdl2_backend.o libquanton.a $(LDFLAGS) $(LDFLAGS_LEXBOR) $(SDL2_LDFLAGS)
+
 clean:
 	rm -f $(OBJ) libquanton.a \
 	    test test_x11 test_sdl2 test_png filebrowser_png filebrowser_x11 filebrowser_sdl2 \
+	    filebrowser_onnavigate_x11 filebrowser_onnavigate_sdl2 \
 	    output.png filebrowser_name.png filebrowser_size.png filebrowser_date.png
 	rm -f src/backend/x11/x11_backend.o src/backend/sdl2/sdl2_backend.o \
 	    src/backend/png/png_backend.o
@@ -115,4 +124,5 @@ clean:
 clean_lexbor:
 	rm -rf build lexbor/build
 
-.PHONY: all test test_x11 test_sdl2 test_png filebrowser_png filebrowser_x11 filebrowser_sdl2 clean clean_lexbor lexbor_all
+.PHONY: all test test_x11 test_sdl2 test_png filebrowser_png filebrowser_x11 filebrowser_sdl2 \
+        filebrowser_onnavigate_x11 filebrowser_onnavigate_sdl2 clean clean_lexbor lexbor_all
