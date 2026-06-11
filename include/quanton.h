@@ -302,6 +302,7 @@ struct q_box {
     int table_border_collapse;     /* 1 when border-collapse: collapse */
     float table_border_spacing;    /* CSS border-spacing for TABLE boxes (default 2) */
     char *document_title;          /* only used on root box */
+    char *href;                    /* NULL or malloc'd href from <a href="..."> */
     struct q_table *table;   /* non-NULL for Q_BOX_TABLE after measure */
 };
 
@@ -331,6 +332,12 @@ struct quanton_view {
     uint8_t            *framebuffer;        /* RGBA8, vp_width × vp_height */
     q_event_handler_fn  on_event;
     void               *on_event_userdata;
+    /* Called when the user clicks an <a href="..."> that is NOT a named anchor.
+     * Named anchors (href="#id") are handled internally by scrolling. */
+    void              (*on_navigate)(quanton_view_t *view,
+                                     const char *href,
+                                     void *userdata);
+    void               *on_navigate_userdata;
     void               *window_handle;     /* opaque backend-specific handle */
     int                 should_close;
     q_dirty_flags_t     dirty_flags;       /* accumulated dirty bits */

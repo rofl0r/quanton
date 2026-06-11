@@ -46,6 +46,9 @@ third_party/libschrift/schrift.c
 
 OBJ = $(SRC:.c=.o)
 
+# Rebuild all library objects whenever the public header changes.
+$(OBJ): include/quanton.h
+
 all: lexbor_all libquanton.a
 
 # Build lexbor using its own makefile with correct paths

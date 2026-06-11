@@ -1310,6 +1310,27 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
                 current->is_inline_block = 1;
             }
 
+            if (tag_id == LXB_TAG_A) {
+                /* WHATWG UA: a:link { color: #0000EE; text-decoration: underline }
+                 * Read the href attribute and store a copy on the box so that
+                 * event.c can walk up the box tree to find the nearest href. */
+                const lxb_char_t *href_attr;
+                size_t href_len = 0;
+                current->text_color = 0x0000EEFFu;
+                current->has_text_color = 1;
+                current->text_decoration |= Q_TEXT_DECORATION_UNDERLINE;
+                current->is_inline_block = 1;
+                href_attr = lxb_dom_element_get_attribute(
+                    el, (const lxb_char_t *) "href", 4, &href_len);
+                if (href_attr != NULL && href_len > 0) {
+                    current->href = (char *) malloc(href_len + 1u);
+                    if (current->href != NULL) {
+                        memcpy(current->href, href_attr, href_len);
+                        current->href[href_len] = '\0';
+                    }
+                }
+            }
+
             if (tag_id == LXB_TAG_SUP || tag_id == LXB_TAG_SUB) {
                 /* WHATWG UA: sup/sub use vertical-align and smaller font-size. */
                 current->vertical_align = (tag_id == LXB_TAG_SUP)
@@ -1641,6 +1662,7 @@ void q_layout_free_tree(q_box_t *root)
     q_image_release(root->background_image);
     free(root->tile);
     free(root->document_title);
+    free(root->href);
     if (root->table != NULL) {
         q_table_free(root->table);
     }

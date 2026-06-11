@@ -199,6 +199,62 @@ q_box_t *q_hit_test(q_box_t *root, int x, int y)
     return q_hit_test_deepest(root, x, y);
 }
 
+/* Walk the layout tree (depth-first) to find the first box whose dom_node
+ * matches the given node.  Used by the named-anchor scroll handler. */
+static q_box_t *q_find_box_for_node(q_box_t *root, const lxb_dom_node_t *node)
+{
+    q_box_t *child;
+    q_box_t *match;
+
+    if (root == NULL) {
+        return NULL;
+    }
+    if (root->dom_node == node) {
+        return root;
+    }
+    for (child = root->first_child; child != NULL; child = child->next_sibling) {
+        match = q_find_box_for_node(child, node);
+        if (match != NULL) {
+            return match;
+        }
+    }
+    return NULL;
+}
+
+/* Handle a hyperlink click.  Named anchors (href="#id") scroll the view to
+ * the element with the matching id attribute.  All other hrefs are delegated
+ * to view->on_navigate if the callback is set. */
+static void q_handle_anchor_click(quanton_view_t *view, const char *href)
+{
+    if (href == NULL || href[0] == '\0') {
+        return;
+    }
+
+    if (href[0] == '#') {
+        /* Named anchor: find the target element by its id and scroll to it. */
+        const char *id = href + 1;
+        lxb_dom_element_t *target_el;
+        q_box_t *target_box;
+
+        if (id[0] == '\0') {
+            return;
+        }
+        target_el = q_dom_get_element_by_id(view, id);
+        if (target_el == NULL) {
+            return;
+        }
+        target_box = q_find_box_for_node(view->layout_root,
+                                         lxb_dom_interface_node(target_el));
+        if (target_box == NULL) {
+            return;
+        }
+        q_view_scroll_into_view(view, target_box);
+    } else if (view->on_navigate != NULL) {
+        /* External or app link: delegate to the host application. */
+        view->on_navigate(view, href, view->on_navigate_userdata);
+    }
+}
+
 void q_event_dispatch(quanton_view_t *view, q_event_t *event)
 {
     int hit_x;
@@ -263,6 +319,20 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
         if (!scrolled) {
             q_view_scroll_by(view, 0.0f,
                              (float) (-event->wheel_delta) * Q_EVENT_WHEEL_SCROLL_PX);
+        }
+    }
+
+    /* Hyperlink navigation: on a left-click, walk up the box tree from the
+     * hit-tested target to find the nearest ancestor <a> box with an href.
+     * Named anchors are scrolled internally; all other hrefs are forwarded
+     * to the host application via view->on_navigate. */
+    if (event->type == Q_EVENT_MOUSE_CLICK && event->mouse_button == 0) {
+        q_box_t *box;
+        for (box = event->target_box; box != NULL; box = box->parent) {
+            if (box->href != NULL) {
+                q_handle_anchor_click(view, box->href);
+                break;
+            }
         }
     }
 
