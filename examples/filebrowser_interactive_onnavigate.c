@@ -207,9 +207,10 @@ static char *build_ref_panel_html(void)
         "<h3 style=\"margin-top:4px;\">Table of Contents</h3>"
         "<ul>");
     for (i = 0; i < NUM_SECTIONS; i++) {
-        pos += (size_t) snprintf(buf + pos, cap - pos,
-            "<li><a href=\"#section-%d\">%d. %s</a></li>",
-            i + 1, i + 1, section_titles[i]);
+        int n = snprintf(buf + pos, pos < cap ? cap - pos : 0,
+                         "<li><a href=\"#section-%d\">%d. %s</a></li>",
+                         i + 1, i + 1, section_titles[i]);
+        if (n > 0 && (size_t)n < cap - pos) pos += (size_t)n;
     }
     pos += (size_t) snprintf(buf + pos, cap - pos, "</ul>");
 
@@ -221,16 +222,17 @@ static char *build_ref_panel_html(void)
 
     /* Ten sections, each tall enough to be off-screen initially */
     for (i = 0; i < NUM_SECTIONS; i++) {
-        pos += (size_t) snprintf(buf + pos, cap - pos,
-            "<h2 id=\"section-%d\">%d. %s</h2>"
-            "<p style=\"height:160px;\">"
-            "This is the body text for section %d.  It is intentionally given "
-            "a fixed height so that consecutive sections are far apart in the "
-            "document, making the anchor-scroll effect clearly visible when "
-            "you click the corresponding Table of Contents entry above."
-            "</p>"
-            "<hr/>",
-            i + 1, i + 1, section_titles[i], i + 1);
+        int n = snprintf(buf + pos, pos < cap ? cap - pos : 0,
+                         "<h2 id=\"section-%d\">%d. %s</h2>"
+                         "<p style=\"height:160px;\">"
+                         "This is the body text for section %d.  It is intentionally given "
+                         "a fixed height so that consecutive sections are far apart in the "
+                         "document, making the anchor-scroll effect clearly visible when "
+                         "you click the corresponding Table of Contents entry above."
+                         "</p>"
+                         "<hr/>",
+                         i + 1, i + 1, section_titles[i], i + 1);
+        if (n > 0 && (size_t)n < cap - pos) pos += (size_t)n;
     }
 
     pos += (size_t) snprintf(buf + pos, cap - pos, "</div>");

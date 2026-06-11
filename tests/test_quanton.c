@@ -64,6 +64,7 @@ static int g_event_called;
 static q_box_t *g_event_target_box;
 static lxb_dom_node_t *g_event_target;
 static const char *g_last_set_title;
+static const char *g_navigate_href;
 
 static int nearly_equal(float a, float b)
 {
@@ -171,6 +172,13 @@ static int framebuffer_has_ink(const uint8_t *pixels, int width, int height)
     }
 }
 #endif
+
+static void capture_navigate_handler(quanton_view_t *view, const char *href, void *userdata)
+{
+    (void) view;
+    (void) userdata;
+    g_navigate_href = href;
+}
 
 static void capture_event_handler(quanton_view_t *view, const q_event_t *event, void *userdata)
 {
@@ -2544,16 +2552,10 @@ int main(int argc, char **argv)
             "<html><body style=\"margin:0;\">"
             "<p><a href=\"https://example.com\">External</a></p>"
             "</body></html>";
-        static const char *navigate_href = NULL;
-
-        /* Use a local lambda-style helper via a file-scope static.  Declare
-         * the callback inline using a named static function instead. */
         q_document_t *edoc;
         quanton_ctx_t ectx;
         quanton_view_t eview;
         q_event_t ev;
-
-        (void) navigate_href; /* unused; placeholder for future callback test */
 
         edoc = q_document_create();
         assert(edoc != NULL);
@@ -2566,9 +2568,11 @@ int main(int argc, char **argv)
         eview.vp_width   = 400;
         eview.vp_height  = 200;
 
-        /* Verify that clicking a non-anchor link with on_navigate == NULL
-         * does not crash. */
-        eview.on_navigate = NULL;
+        /* Verify that on_navigate is called with the correct href when
+         * the user clicks an external link. */
+        g_navigate_href = NULL;
+        eview.on_navigate = capture_navigate_handler;
+        eview.on_navigate_userdata = NULL;
 
         q_dom_mark_dirty(&eview, NULL, Q_DIRTY_LAYOUT);
         q_view_update(&eview);
@@ -2579,6 +2583,14 @@ int main(int argc, char **argv)
         ev.mouse_button = 0;
         ev.mouse_x      = 5;
         ev.mouse_y      = 5;
+        q_event_dispatch(&eview, &ev);
+
+        assert(g_navigate_href != NULL);
+        assert(strcmp(g_navigate_href, "https://example.com") == 0);
+
+        /* Also verify that clicking the same link with on_navigate == NULL
+         * does not crash. */
+        eview.on_navigate = NULL;
         q_event_dispatch(&eview, &ev); /* must not crash */
 
         q_layout_free_tree(eview.layout_root);
