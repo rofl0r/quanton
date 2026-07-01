@@ -17,6 +17,7 @@
 #define Q_SCROLLBAR_MIN_THUMB 16
 #define Q_SCROLLBAR_TRACK_COLOR 0xA0A0A0FFu
 #define Q_SCROLLBAR_THUMB_COLOR 0x707070FFu
+#define Q_WIDGET_TEXT_CARET_WIDTH 7
 
 static uint8_t q_color_r(uint32_t color) { return (uint8_t) ((color >> 24) & 0xFFu); }
 static uint8_t q_color_g(uint32_t color) { return (uint8_t) ((color >> 16) & 0xFFu); }
@@ -596,6 +597,35 @@ static const lxb_char_t *q_paint_get_attr(const q_box_t *box,
     {
         return NULL;
     }
+
+    if (strcmp(name, "value") == 0
+        && (box->widget_type == Q_WIDGET_INPUT_TEXT
+            || box->widget_type == Q_WIDGET_INPUT_SUBMIT
+            || box->widget_type == Q_WIDGET_BUTTON
+            || box->widget_type == Q_WIDGET_TEXTAREA))
+    {
+        if (out_len != NULL) {
+            *out_len = box->widget_value_len;
+        }
+        if (box->widget_value != NULL) {
+            return (const lxb_char_t *) box->widget_value;
+        }
+        return (const lxb_char_t *) "";
+    }
+
+    if (strcmp(name, "checked") == 0
+        && (box->widget_type == Q_WIDGET_INPUT_CHECK
+            || box->widget_type == Q_WIDGET_INPUT_RADIO))
+    {
+        if (box->widget_checked) {
+            if (out_len != NULL) {
+                *out_len = sizeof("checked") - 1u;
+            }
+            return (const lxb_char_t *) "checked";
+        }
+        return NULL;
+    }
+
     el = lxb_dom_interface_element(box->dom_node);
     return lxb_dom_element_get_attribute(el, (const lxb_char_t *) name, strlen(name), out_len);
 }
@@ -709,16 +739,35 @@ static void q_paint_form_widget(q_box_t *box)
             if (value != NULL && value_len > 0u) {
                 q_paint_render_widget_text(box, (const char *) value, value_len, 4, 4, text_color);
             }
+            if (box->widget_focused && box->widget_type == Q_WIDGET_INPUT_TEXT
+                && box->widget_caret <= box->widget_value_len)
+            {
+                int caret_x = 4 + (int) (box->widget_caret * Q_WIDGET_TEXT_CARET_WIDTH);
+                q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                                  caret_x, 2, 1, box->tile_h - 4, text_color);
+            }
         }
         return;
     }
 
     if (tag == LXB_TAG_BUTTON) {
+        uint32_t top_color = 0xF4F4F4FFu;
+        uint32_t bottom_color = 0xD8D8D8FFu;
+        const lxb_char_t *value;
+        size_t value_len = 0;
+        if (box->widget_pressed) {
+            top_color = 0xD8D8D8FFu;
+            bottom_color = 0xF4F4F4FFu;
+        }
         q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
-                          1, 1, box->tile_w - 2, box->tile_h / 2, 0xF4F4F4FFu);
+                          1, 1, box->tile_w - 2, box->tile_h / 2, top_color);
         q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
                           1, box->tile_h / 2, box->tile_w - 2, box->tile_h - box->tile_h / 2 - 1,
-                          0xD8D8D8FFu);
+                          bottom_color);
+        value = q_paint_get_attr(box, "value", &value_len);
+        if (value != NULL && value_len > 0u) {
+            q_paint_render_widget_text(box, (const char *) value, value_len, 6, 4, text_color);
+        }
         return;
     }
 

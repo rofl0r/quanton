@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "lexbor/core/types.h"
+
 /* Forward declarations for lexbor types used by the shim API. */
 typedef struct lxb_html_document lxb_html_document_t;
 typedef struct lxb_dom_node lxb_dom_node_t;
@@ -49,6 +51,9 @@ typedef enum q_event_type {
     Q_EVENT_RESIZE,
     Q_EVENT_CLOSE,
     Q_EVENT_REDRAW,
+    Q_EVENT_FOCUS,
+    Q_EVENT_BLUR,
+    Q_EVENT_CHANGE,
 } q_event_type_t;
 
 typedef struct q_event {
@@ -133,6 +138,17 @@ typedef enum q_float_type {
     Q_FLOAT_LEFT  = 1,
     Q_FLOAT_RIGHT = 2,
 } q_float_type_t;
+
+typedef enum q_widget_type {
+    Q_WIDGET_NONE         = 0,
+    Q_WIDGET_INPUT_TEXT   = 1,
+    Q_WIDGET_INPUT_SUBMIT = 2,
+    Q_WIDGET_INPUT_CHECK  = 3,
+    Q_WIDGET_INPUT_RADIO  = 4,
+    Q_WIDGET_BUTTON       = 5,
+    Q_WIDGET_SELECT       = 6,
+    Q_WIDGET_TEXTAREA     = 7,
+} q_widget_type_t;
 
 typedef enum q_clear_type {
     Q_CLEAR_NONE  = 0,
@@ -303,6 +319,13 @@ struct q_box {
     float table_border_spacing;    /* CSS border-spacing for TABLE boxes (default 2) */
     char *document_title;          /* only used on root box */
     char *href;                    /* NULL or malloc'd href from <a href="..."> */
+    q_widget_type_t widget_type;
+    int widget_focused;
+    char *widget_value;
+    size_t widget_value_len;
+    size_t widget_caret;
+    int widget_checked;
+    int widget_pressed;
     struct q_table *table;   /* non-NULL for Q_BOX_TABLE after measure */
 };
 
@@ -338,6 +361,7 @@ struct quanton_view {
                                      const char *href,
                                      void *userdata);
     void               *on_navigate_userdata;
+    q_box_t            *focused_widget;   /* currently focused interactive box */
     void               *window_handle;     /* opaque backend-specific handle */
     int                 should_close;
     q_dirty_flags_t     dirty_flags;       /* accumulated dirty bits */
@@ -345,6 +369,10 @@ struct quanton_view {
 
 q_box_t *q_layout_build_tree(q_document_t *doc);
 void q_layout_free_tree(q_box_t *root);
+const lxb_char_t *q_dom_get_attribute(quanton_view_t *view,
+                                      lxb_dom_element_t *el,
+                                      const char *name,
+                                      size_t *out_len);
 void q_layout_measure(q_box_t *box, float containing_w, float containing_h);
 void q_layout_position(q_box_t *box, float origin_x, float origin_y);
 void q_layout_position_absolute(q_box_t *root);

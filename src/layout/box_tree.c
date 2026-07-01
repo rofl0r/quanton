@@ -1177,6 +1177,35 @@ static q_box_t *q_ensure_inline_container(q_box_t *parent)
     return ic;
 }
 
+static void q_box_set_widget_value(q_box_t *box, const lxb_char_t *value, size_t value_len)
+{
+    char *buf;
+
+    if (box == NULL) {
+        return;
+    }
+
+    free(box->widget_value);
+    box->widget_value = NULL;
+    box->widget_value_len = 0;
+    box->widget_caret = 0;
+
+    if (value == NULL || value_len == 0u) {
+        return;
+    }
+
+    buf = (char *) malloc(value_len + 1u);
+    if (buf == NULL) {
+        return;
+    }
+
+    memcpy(buf, value, value_len);
+    buf[value_len] = '\0';
+    box->widget_value = buf;
+    box->widget_value_len = value_len;
+    box->widget_caret = value_len;
+}
+
 static int q_count_preceding_list_items(lxb_dom_node_t *node)
 {
     int index = 1;
@@ -1356,7 +1385,11 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
 
             if (tag_id == LXB_TAG_INPUT) {
                 const lxb_char_t *type_attr;
+                const lxb_char_t *value_attr;
+                const lxb_char_t *checked_attr;
                 size_t type_len = 0;
+                size_t value_len = 0;
+                size_t checked_len = 0;
                 current->is_inline_block = 1;
                 current->background_color = 0xFFFFFFFFu;
                 current->border_width[0] = 1.0f;
@@ -1389,6 +1422,9 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
                         current->border_radius[2] = 7.0f;
                         current->border_radius[3] = 7.0f;
                     }
+                    current->widget_type = css_name_eq(type_attr, type_len, "radio")
+                                          ? Q_WIDGET_INPUT_RADIO
+                                          : Q_WIDGET_INPUT_CHECK;
                 } else if (type_attr != NULL
                            && (css_name_eq(type_attr, type_len, "submit")
                                || css_name_eq(type_attr, type_len, "button")
@@ -1399,11 +1435,24 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
                     current->background_color = 0xE0E0E0FFu;
                     current->padding_left = 8.0f;
                     current->padding_right = 8.0f;
+                    current->widget_type = Q_WIDGET_INPUT_SUBMIT;
                 } else {
                     current->style_width = 140.0f;
                     current->style_height = 22.0f;
+                    current->widget_type = Q_WIDGET_INPUT_TEXT;
+                }
+
+                value_attr = lxb_dom_element_get_attribute(el, (const lxb_char_t *) "value", 5, &value_len);
+                q_box_set_widget_value(current, value_attr, value_len);
+                checked_attr = lxb_dom_element_get_attribute(el, (const lxb_char_t *) "checked", 7, &checked_len);
+                if (current->widget_type == Q_WIDGET_INPUT_CHECK
+                    || current->widget_type == Q_WIDGET_INPUT_RADIO)
+                {
+                    current->widget_checked = (checked_attr != NULL) ? 1 : 0;
                 }
             } else if (tag_id == LXB_TAG_BUTTON) {
+                const lxb_char_t *value_attr;
+                size_t value_len = 0;
                 current->is_inline_block = 1;
                 current->style_height = 24.0f;
                 current->background_color = 0xE0E0E0FFu;
@@ -1419,7 +1468,11 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
                 current->padding_bottom = 2.0f;
                 current->padding_left = 8.0f;
                 current->padding_right = 8.0f;
+                current->widget_type = Q_WIDGET_BUTTON;
+                value_attr = lxb_dom_element_get_attribute(el, (const lxb_char_t *) "value", 5, &value_len);
+                q_box_set_widget_value(current, value_attr, value_len);
             } else if (tag_id == LXB_TAG_SELECT) {
+                current->widget_type = Q_WIDGET_SELECT;
                 current->is_inline_block = 1;
                 current->style_width = 120.0f;
                 current->style_height = 22.0f;
@@ -1443,6 +1496,7 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
                 size_t cols_len = 0;
                 int rows = 2;
                 int cols = 20;
+                current->widget_type = Q_WIDGET_TEXTAREA;
                 current->is_inline_block = 1;
                 current->background_color = 0xFFFFFFFFu;
                 current->border_width[0] = 1.0f;
@@ -1663,6 +1717,7 @@ void q_layout_free_tree(q_box_t *root)
     free(root->tile);
     free(root->document_title);
     free(root->href);
+    free(root->widget_value);
     if (root->table != NULL) {
         q_table_free(root->table);
     }

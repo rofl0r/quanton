@@ -17,6 +17,80 @@
 
 /* ── Dirty-flag marking ────────────────────────────────────────────────── */
 
+static q_box_t *q_dom_find_box_for_node(q_box_t *root, const lxb_dom_node_t *node)
+{
+    q_box_t *child;
+    q_box_t *match;
+
+    if (root == NULL || node == NULL) {
+        return NULL;
+    }
+    if (root->dom_node == node) {
+        return root;
+    }
+
+    for (child = root->first_child; child != NULL; child = child->next_sibling) {
+        match = q_dom_find_box_for_node(child, node);
+        if (match != NULL) {
+            return match;
+        }
+    }
+
+    return NULL;
+}
+
+const lxb_char_t *q_dom_get_attribute(quanton_view_t *view,
+                                     lxb_dom_element_t *el,
+                                     const char *name,
+                                     size_t *out_len)
+{
+    q_box_t *box;
+
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (el == NULL || name == NULL) {
+        return NULL;
+    }
+
+    if (view != NULL && view->layout_root != NULL) {
+        box = q_dom_find_box_for_node(view->layout_root, lxb_dom_interface_node(el));
+        if (box != NULL) {
+            if (strcmp(name, "value") == 0
+                && (box->widget_type == Q_WIDGET_INPUT_TEXT
+                    || box->widget_type == Q_WIDGET_INPUT_SUBMIT
+                    || box->widget_type == Q_WIDGET_BUTTON
+                    || box->widget_type == Q_WIDGET_TEXTAREA))
+            {
+                if (out_len != NULL) {
+                    *out_len = box->widget_value_len;
+                }
+                if (box->widget_value != NULL) {
+                    return (const lxb_char_t *) box->widget_value;
+                }
+                return (const lxb_char_t *) "";
+            }
+            if (strcmp(name, "checked") == 0
+                && (box->widget_type == Q_WIDGET_INPUT_CHECK
+                    || box->widget_type == Q_WIDGET_INPUT_RADIO))
+            {
+                if (box->widget_checked) {
+                    if (out_len != NULL) {
+                       *out_len = sizeof("checked") - 1u;
+                    }
+                    return (const lxb_char_t *) "checked";
+                }
+                return NULL;
+            }
+        }
+    }
+
+    return lxb_dom_element_get_attribute(el,
+                                        (const lxb_char_t *) name,
+                                        strlen(name),
+                                        out_len);
+}
+
 void q_dom_mark_dirty(quanton_view_t *view,
                       lxb_dom_node_t *node,
                       q_dirty_flags_t flags)
