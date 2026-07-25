@@ -117,6 +117,12 @@ filebrowser_onnavigate_sdl2: lexbor_all examples/filebrowser_interactive_onnavig
 	$(CC) $(CFLAGS) $(SDL2_CFLAGS) -DQUANTON_BACKEND_SDL2 -o $@ examples/filebrowser_interactive_onnavigate.c \
 	    src/backend/sdl2/sdl2_backend.o libquanton.a $(LDFLAGS) $(LDFLAGS_LEXBOR) $(SDL2_LDFLAGS)
 
+filebrowser_form_controls_onnavigate_x11: filebrowser_onnavigate_x11
+	@:
+
+filebrowser_form_controls_onnavigate_sdl2: filebrowser_onnavigate_sdl2
+	@:
+
 # Debug builds: add -DQUANTON_DEBUG_EVENTS to get per-event stderr diagnostics
 # (hit-test results, scroll-box search, scroll changes, anchor navigation).
 # Re-links libquanton.a with the debug flag; a full rebuild is needed if the
@@ -135,6 +141,7 @@ clean:
 	rm -f $(OBJ) libquanton.a \
 	    test test_x11 test_sdl2 test_png filebrowser_png filebrowser_x11 filebrowser_sdl2 \
 	    filebrowser_onnavigate_x11 filebrowser_onnavigate_sdl2 \
+	    filebrowser_form_controls_onnavigate_x11 filebrowser_form_controls_onnavigate_sdl2 \
 	    filebrowser_onnavigate_x11_dbg filebrowser_onnavigate_sdl2_dbg \
 	    output.png filebrowser_name.png filebrowser_size.png filebrowser_date.png
 	rm -f src/backend/x11/x11_backend.o src/backend/sdl2/sdl2_backend.o \
@@ -145,5 +152,6 @@ clean_lexbor:
 
 .PHONY: all test test_x11 test_sdl2 test_png filebrowser_png filebrowser_x11 filebrowser_sdl2 \
         filebrowser_onnavigate_x11 filebrowser_onnavigate_sdl2 \
+        filebrowser_form_controls_onnavigate_x11 filebrowser_form_controls_onnavigate_sdl2 \
         filebrowser_onnavigate_x11_dbg filebrowser_onnavigate_sdl2_dbg \
         clean clean_lexbor lexbor_all

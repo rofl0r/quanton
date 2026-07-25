@@ -147,10 +147,16 @@ void q_view_update(quanton_view_t *view)
 
     if (view->dirty_flags & (Q_DIRTY_PAINT | Q_DIRTY_SCROLL | Q_DIRTY_RECOMPOSE)) {
         if (view->layout_root != NULL) {
-            q_composite_frame(view);
-            if (view->ctx != NULL && view->ctx->backend != NULL &&
-                    view->ctx->backend->blit != NULL) {
-                view->ctx->backend->blit(view);
+            if (view->ctx != NULL && view->ctx->backend != NULL
+                && view->ctx->backend->render_view != NULL)
+            {
+                view->ctx->backend->render_view(view);
+            } else {
+                q_composite_frame(view);
+                if (view->ctx != NULL && view->ctx->backend != NULL &&
+                        view->ctx->backend->blit != NULL) {
+                    view->ctx->backend->blit(view);
+                }
             }
         }
     }

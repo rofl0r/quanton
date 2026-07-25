@@ -2514,6 +2514,7 @@ int main(int argc, char **argv)
             "<html><head><title>Stage 3 Title</title></head><body><div>x</div></body></html>";
         static const q_backend_vt_t mock_backend = {
             mock_create_window,
+            NULL,
             mock_blit,
             mock_poll_events,
             mock_destroy_window,

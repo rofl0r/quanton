@@ -482,13 +482,30 @@ typedef struct q_backend_vt {
 | 23 | `text-align: justify` | M | block_layout.c |
 | 24 | make scrollbar pullable (mouse drag)
 | 25 | improve scrolling performance by accumulating all queued wheel events into a single operation
-| 26 | verify whether SDL2 backend really composes the viewport from box textures to profit from OpenGL
+| 26 | ~~verify whether SDL2 backend really composes the viewport from box textures to profit from OpenGL~~ (implemented as backend-driven per-box texture rendering + cache) |
 | 27 | `perf report` shows the following performance numbers with an -O2 build:
     56.42%  filebrowser_onn  filebrowser_onnavigate_sdl2  [.] q_paint_composite
     11.75%  filebrowser_onn  filebrowser_onnavigate_sdl2  [.] q_paint_fill_rect
      6.62%  filebrowser_onn  filebrowser_onnavigate_sdl2  [.] sft_render
      6.25%  filebrowser_onn  filebrowser_onnavigate_sdl2  [.] q_paint_composite_clipped
      see whether we can find low-hanging fruit to improve performance.
+
+### 8.1 Backend rendering API redesign (implemented)
+
+To support one-texture-per-box rendering and avoid re-uploading a full-window
+texture on every small scroll:
+
+- `q_backend_vt_t` gained `render_view(view)` (optional backend-driven present).
+- `q_view_update()` now calls `backend->render_view` when available, otherwise
+  keeps the existing framebuffer path (`q_composite_frame` + `backend->blit`).
+- Each painted box now stores both:
+  - `tile` (composited subtree tile, unchanged behavior for software backends),
+  - `self_tile` (box-only tile before child composition) with
+    `self_tile_revision` for cache invalidation.
+- SDL2 now renders from `self_tile` recursively in paint order and keeps a
+  viewport-aware texture cache keyed by `q_box_t *`, with TTL eviction and
+  per-entry revision checks to avoid unnecessary texture uploads.
+- X11 and PNG keep the software compositing path by leaving `render_view = NULL`.
 
 ---
 

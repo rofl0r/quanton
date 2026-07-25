@@ -19,6 +19,8 @@
 #define Q_SCROLLBAR_THUMB_COLOR 0x707070FFu
 #define Q_WIDGET_TEXT_CARET_WIDTH 7
 
+static uint64_t g_self_tile_revision = 1u;
+
 static uint8_t q_color_r(uint32_t color) { return (uint8_t) ((color >> 24) & 0xFFu); }
 static uint8_t q_color_g(uint32_t color) { return (uint8_t) ((color >> 16) & 0xFFu); }
 static uint8_t q_color_b(uint32_t color) { return (uint8_t) ((color >> 8) & 0xFFu); }
@@ -1215,6 +1217,24 @@ static void q_paint_box_internal(q_box_t *box, int repaint_children)
         q_paint_text_decoration(box, text_color);
     } else if (box->type == Q_BOX_TEXT) {
         q_paint_text_decoration(box, text_color);
+    }
+
+    if (box->self_tile_w != w || box->self_tile_h != h) {
+        free(box->self_tile);
+        box->self_tile = NULL;
+    }
+    if (box->self_tile == NULL) {
+        box->self_tile = (uint8_t *) malloc((size_t) w * (size_t) h * 4u);
+    }
+    if (box->self_tile != NULL) {
+        memcpy(box->self_tile, box->tile, (size_t) w * (size_t) h * 4u);
+        box->self_tile_w = w;
+        box->self_tile_h = h;
+        box->self_tile_revision = g_self_tile_revision++;
+    } else {
+        box->self_tile_w = 0;
+        box->self_tile_h = 0;
+        box->self_tile_revision = 0;
     }
 
     for (child = box->first_child; child != NULL; child = child->next_sibling) {

@@ -58,8 +58,24 @@ Public API reference for `include/quanton.h`.
 
 ## Backend API
 
-- `q_backend_vt_t` — backend vtable for window creation, blitting, event polling, teardown, and runtime title updates (`set_title`).
+- `q_backend_vt_t` — backend vtable for window creation, event polling, teardown, runtime title updates (`set_title`), legacy framebuffer blits (`blit`), and optional backend-driven box-tile presentation (`render_view`).
 - `q_backend_x11`, `q_backend_sdl2`, `q_backend_png` — built-in backend instances.
+
+## Interactive controls API contract
+
+- Widget interaction is reported through `view->on_event`:
+  - `Q_EVENT_FOCUS` / `Q_EVENT_BLUR` for focus changes.
+  - `Q_EVENT_CHANGE` for checkbox/radio value changes.
+  - `Q_EVENT_MOUSE_CLICK` for button-like activation.
+- Event targets:
+  - `event->target_box` points to the hit widget/layout box.
+  - `event->target` points to the corresponding DOM node.
+- Widget state reads:
+  - Use `q_dom_get_attribute(view, el, "value", &len)` for live text/button values.
+  - Use `q_dom_get_attribute(view, el, "checked", &len)` for checkbox/radio state.
+- Link/navigation handling:
+  - Named anchors (`href="#id"`) are handled internally by scrolling.
+  - Non-anchor links call `view->on_navigate(view, href, userdata)` if set.
 
 ## Important enums and flags
 

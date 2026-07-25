@@ -11,6 +11,9 @@
  *      The embedded HTML is intentionally much taller than the 680px
  *      viewport so that the jump is immediately obvious.
  *
+ *   3. Interactive form controls (input/button/checkbox/radio/select/textarea)
+ *      with live event logging via on_event.
+ *
  * The demo shows a two-panel layout:
  *   Left  — a file-browser table (same as filebrowser_interactive.c).
  *   Right — a long reference page with a table-of-contents at the top
@@ -223,6 +226,17 @@ static char *build_ref_panel_html(void)
     pos += (size_t) snprintf(buf + pos, BUF_REM(pos, cap),
         "<p>External link example (triggers on_navigate): "
         "<a href=\"https://example.com\">example.com</a></p>"
+        "<hr/>"
+        "<h3>Interactive controls demo</h3>"
+        "<p><input id=\"demo_text\" type=\"text\" value=\"edit me\"/></p>"
+        "<p><button id=\"demo_btn\" value=\"clicked\">Push button</button></p>"
+        "<p>"
+        "<label><input id=\"demo_chk\" type=\"checkbox\" checked/> enable option</label><br/>"
+        "<label><input type=\"radio\" name=\"mode\" value=\"a\" checked/> mode A</label> "
+        "<label><input type=\"radio\" name=\"mode\" value=\"b\"/> mode B</label>"
+        "</p>"
+        "<p><select id=\"demo_sel\"><option>one</option><option>two</option></select></p>"
+        "<p><textarea id=\"demo_ta\" rows=\"3\" cols=\"24\"></textarea></p>"
         "<hr/>");
 
     /* Ten sections, each tall enough to be off-screen initially */
@@ -383,8 +397,34 @@ static void filebrowser_on_event(quanton_view_t *view,
     if (view == NULL || event == NULL || app == NULL || app->tbody == NULL)
         return;
 
-    if (event->type != Q_EVENT_MOUSE_CLICK || event->mouse_button != 0)
+    if ((event->type == Q_EVENT_CHANGE || event->type == Q_EVENT_FOCUS || event->type == Q_EVENT_BLUR)
+        && event->target != NULL
+        && lxb_dom_node_type(event->target) == LXB_DOM_NODE_TYPE_ELEMENT)
+    {
+        lxb_dom_element_t *evt_el = lxb_dom_interface_element(event->target);
+        size_t id_len = 0;
+        size_t value_len = 0;
+        size_t checked_len = 0;
+        const lxb_char_t *id_attr = q_dom_get_attribute(view, evt_el, "id", &id_len);
+        const lxb_char_t *value_attr = q_dom_get_attribute(view, evt_el, "value", &value_len);
+        const lxb_char_t *checked_attr = q_dom_get_attribute(view, evt_el, "checked", &checked_len);
+        printf("[widget] type=%d id=%.*s value=%.*s checked=%s\n",
+               (int) event->type,
+               (int) id_len, (id_attr != NULL) ? (const char *) id_attr : "",
+               (int) value_len, (value_attr != NULL) ? (const char *) value_attr : "",
+               (checked_attr != NULL) ? "yes" : "no");
+    }
+
+    if (event->type != Q_EVENT_MOUSE_CLICK || event->mouse_button != 0) {
         return;
+    }
+
+    if (event->target_box != NULL
+        && (event->target_box->widget_type == Q_WIDGET_BUTTON
+            || event->target_box->widget_type == Q_WIDGET_INPUT_SUBMIT))
+    {
+        printf("[widget] button-like click\n");
+    }
 
     /* Sort column click — identical to the original filebrowser_interactive */
     delegate = q_event_find_delegate(event->target, "data-sort");
@@ -486,6 +526,7 @@ int main(void)
     puts("  Click a column header to sort the file list.");
     puts("  Click a Table-of-Contents link in the right panel to jump to that section.");
     puts("  Click the 'example.com' link to see the on_navigate callback fire.");
+    puts("  Interact with the form controls in the right panel to see widget events.");
 
     ts.tv_sec  = 0;
     ts.tv_nsec = 16L * 1000L * 1000L;

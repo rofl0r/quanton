@@ -76,6 +76,8 @@ typedef void (*q_event_handler_fn)(quanton_view_t *view,
 typedef struct q_backend_vt {
     /* create native window; fills view->window_handle */
     int  (*create_window)(quanton_view_t *view, int w, int h, const char *title);
+    /* optional direct renderer from box tiles (used by GPU backends) */
+    void (*render_view)(quanton_view_t *view);
     /* blit view->framebuffer to screen */
     void (*blit)(quanton_view_t *view);
     /* non-blocking event poll; calls view->on_event for each event */
@@ -272,6 +274,10 @@ struct q_box {
     uint8_t *tile;
     int tile_w;
     int tile_h;
+    uint8_t *self_tile;            /* box-only tile (without composited children) */
+    int self_tile_w;
+    int self_tile_h;
+    uint64_t self_tile_revision;   /* incremented each time self_tile contents change */
     /* CSS overflow clipping */
     q_overflow_type_t overflow_x;   /* Q_OVERFLOW_VISIBLE = default (calloc zero) */
     q_overflow_type_t overflow_y;

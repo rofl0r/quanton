@@ -1715,6 +1715,7 @@ void q_layout_free_tree(q_box_t *root)
     q_image_release(root->image);
     q_image_release(root->background_image);
     free(root->tile);
+    free(root->self_tile);
     free(root->document_title);
     free(root->href);
     free(root->widget_value);
