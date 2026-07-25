@@ -60,6 +60,24 @@ static void x11_dispatch(quanton_view_t *view, q_event_t *ev)
     q_event_dispatch(view, ev);
 }
 
+/*
+ * Translate an X11 KeySym into the backend-agnostic Q_KEY_* codes (or pass
+ * through printable ASCII unchanged) expected by q_event_dispatch() for text
+ * input navigation/editing.
+ */
+static uint32_t x11_translate_key(KeySym ks)
+{
+    switch (ks) {
+    case XK_Left:      return Q_KEY_LEFT;
+    case XK_Right:     return Q_KEY_RIGHT;
+    case XK_Home:      return Q_KEY_HOME;
+    case XK_End:       return Q_KEY_END;
+    case XK_BackSpace: return Q_KEY_BACKSPACE;
+    case XK_Delete:    return Q_KEY_DELETE;
+    default:           return (uint32_t) ks;
+    }
+}
+
 /* ── Backend vtable functions ───────────────────────────────────────────── */
 
 static int x11_create_window(quanton_view_t *view, int w, int h, const char *title)
@@ -331,7 +349,7 @@ static void x11_poll_events(quanton_view_t *view)
         case KeyRelease: {
             KeySym ks = XLookupKeysym(&xev.xkey, 0);
             ev.type    = (xev.type == KeyPress) ? Q_EVENT_KEY_DOWN : Q_EVENT_KEY_UP;
-            ev.key_sym = (uint32_t) ks;
+            ev.key_sym = x11_translate_key(ks);
             ev.key_mod = ((xev.xkey.state & ShiftMask)   ? 1u : 0u) |
                          ((xev.xkey.state & ControlMask)  ? 2u : 0u) |
                          ((xev.xkey.state & Mod1Mask)     ? 4u : 0u);

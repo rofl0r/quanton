@@ -68,6 +68,19 @@ typedef struct q_event {
     q_box_t        *target_box;
 } q_event_t;
 
+/*
+ * Normalized key codes carried in q_event_t.key_sym for KEY_DOWN/KEY_UP
+ * events. Backends are responsible for translating their own native key
+ * codes (X11 KeySym, SDL_Keycode, ...) into these values before dispatch;
+ * printable ASCII characters (0x20..0x7E) are passed through unchanged.
+ */
+#define Q_KEY_BACKSPACE 0x08u
+#define Q_KEY_DELETE    0x7Fu
+#define Q_KEY_LEFT      0x25u
+#define Q_KEY_RIGHT     0x27u
+#define Q_KEY_HOME      0x24u
+#define Q_KEY_END       0x23u
+
 typedef void (*q_event_handler_fn)(quanton_view_t *view,
                                    const q_event_t *event,
                                    void *userdata);

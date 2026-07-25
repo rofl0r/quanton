@@ -51,6 +51,24 @@ static uint32_t sdl2_mod(SDL_Keymod mod)
            ((mod & KMOD_ALT)   ? 4u : 0u);
 }
 
+/*
+ * Translate an SDL_Keycode into the backend-agnostic Q_KEY_* codes (or pass
+ * through printable ASCII unchanged) expected by q_event_dispatch() for text
+ * input navigation/editing.
+ */
+static uint32_t sdl2_translate_key(SDL_Keycode sym)
+{
+    switch (sym) {
+    case SDLK_LEFT:      return Q_KEY_LEFT;
+    case SDLK_RIGHT:     return Q_KEY_RIGHT;
+    case SDLK_HOME:      return Q_KEY_HOME;
+    case SDLK_END:       return Q_KEY_END;
+    case SDLK_BACKSPACE: return Q_KEY_BACKSPACE;
+    case SDLK_DELETE:    return Q_KEY_DELETE;
+    default:             return (uint32_t) sym;
+    }
+}
+
 static int q_box_scrolls_x(const q_box_t *box)
 {
     return box != NULL
@@ -583,7 +601,7 @@ static void sdl2_poll_events(quanton_view_t *view)
         case SDL_KEYDOWN:
         case SDL_KEYUP:
             ev.type = (sev.type == SDL_KEYDOWN) ? Q_EVENT_KEY_DOWN : Q_EVENT_KEY_UP;
-            ev.key_sym = (uint32_t) sev.key.keysym.sym;
+            ev.key_sym = sdl2_translate_key(sev.key.keysym.sym);
             ev.key_mod = sdl2_mod((SDL_Keymod) sev.key.keysym.mod);
             sdl2_dispatch(view, &ev);
             break;

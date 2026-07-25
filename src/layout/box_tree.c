@@ -1386,10 +1386,8 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
             if (tag_id == LXB_TAG_INPUT) {
                 const lxb_char_t *type_attr;
                 const lxb_char_t *value_attr;
-                const lxb_char_t *checked_attr;
                 size_t type_len = 0;
                 size_t value_len = 0;
-                size_t checked_len = 0;
                 current->is_inline_block = 1;
                 current->background_color = 0xFFFFFFFFu;
                 current->border_width[0] = 1.0f;
@@ -1444,11 +1442,18 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
 
                 value_attr = lxb_dom_element_get_attribute(el, (const lxb_char_t *) "value", 5, &value_len);
                 q_box_set_widget_value(current, value_attr, value_len);
-                checked_attr = lxb_dom_element_get_attribute(el, (const lxb_char_t *) "checked", 7, &checked_len);
                 if (current->widget_type == Q_WIDGET_INPUT_CHECK
                     || current->widget_type == Q_WIDGET_INPUT_RADIO)
                 {
-                    current->widget_checked = (checked_attr != NULL) ? 1 : 0;
+                    /*
+                     * "checked" is a boolean HTML attribute; when written
+                     * without a value (e.g. <input checked>), lxb stores it
+                     * with a NULL value, so lxb_dom_element_get_attribute()
+                     * would incorrectly report it as absent. Use the
+                     * presence check instead.
+                     */
+                    current->widget_checked =
+                        lxb_dom_element_has_attribute(el, (const lxb_char_t *) "checked", 7) ? 1 : 0;
                 }
             } else if (tag_id == LXB_TAG_BUTTON) {
                 const lxb_char_t *value_attr;

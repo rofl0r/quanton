@@ -58,10 +58,6 @@ static void q_dbg_print_box(const char *label, const q_box_t *box)
 #define Q_EVENT_WHEEL_SCROLL_PX 40.0f
 #define Q_WIDGET_TEXT_INPUT_PRINTABLE_MIN 0x20u
 #define Q_WIDGET_TEXT_INPUT_PRINTABLE_MAX 0x7Eu
-#define Q_WIDGET_TEXT_INPUT_BACKSPACE 0x08u
-#define Q_WIDGET_TEXT_INPUT_DELETE 0x7Fu
-#define Q_WIDGET_TEXT_INPUT_LEFT 0x25u
-#define Q_WIDGET_TEXT_INPUT_RIGHT 0x27u
 
 static int q_event_is_mouse_event(q_event_type_t type)
 {
@@ -780,20 +776,26 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
             && (focused_widget->widget_type == Q_WIDGET_INPUT_TEXT
                 || focused_widget->widget_type == Q_WIDGET_TEXTAREA))
         {
-            if (event->key_sym == Q_WIDGET_TEXT_INPUT_BACKSPACE
-                || event->key_sym == Q_WIDGET_TEXT_INPUT_DELETE)
+            if (event->key_sym == Q_KEY_BACKSPACE
+                || event->key_sym == Q_KEY_DELETE)
             {
                 q_widget_delete_char(focused_widget);
                 changed = 1;
-            } else if (event->key_sym == Q_WIDGET_TEXT_INPUT_LEFT) {
+            } else if (event->key_sym == Q_KEY_LEFT) {
                 if (focused_widget->widget_caret > 0u) {
                     focused_widget->widget_caret--;
                 }
                 changed = 1;
-            } else if (event->key_sym == Q_WIDGET_TEXT_INPUT_RIGHT) {
+            } else if (event->key_sym == Q_KEY_RIGHT) {
                 if (focused_widget->widget_caret < focused_widget->widget_value_len) {
                     focused_widget->widget_caret++;
                 }
+                changed = 1;
+            } else if (event->key_sym == Q_KEY_HOME) {
+                focused_widget->widget_caret = 0u;
+                changed = 1;
+            } else if (event->key_sym == Q_KEY_END) {
+                focused_widget->widget_caret = focused_widget->widget_value_len;
                 changed = 1;
             } else if (event->key_sym >= Q_WIDGET_TEXT_INPUT_PRINTABLE_MIN
                        && event->key_sym <= Q_WIDGET_TEXT_INPUT_PRINTABLE_MAX)

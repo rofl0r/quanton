@@ -12,6 +12,7 @@
 - Keep warnings non-fatal: do not add `-Werror`.
 - For ASAN validation, pass `-fsanitize=address` in both `CFLAGS` and `LDFLAGS`.
 - After running `make test_png`, visually inspect the `output*.png` files it writes to verify correct rendering (boxes, text, colors, layout look reasonable).
+- For interactive/headless visual inspection of any HTML page (clicks, key presses, scrolling, box-tree dumps, PNG snapshots), use `tools/visual_inspect.c` (`make visual_inspect`); see `TOOLS.md` for usage.
 - Before committing, make sure you didn't check in binaries.
 - Keep each logical change in a separate commit.
 - Write detailed commit messages that explain the rationale behind each change.
