@@ -1,8 +1,10 @@
 # Quanton Agent Notes (short)
 
 - `lexbor` is a git submodule: run `git submodule update --init --recursive`.
-- Install system dependencies before building: `sudo apt-get install -y libpng-dev libsdl2-dev`
-  (required to compile and run `make test_png` and to evaluate `output*.png` results, and to build the SDL2 backend targets).
+- Install system dependencies before building: run `sudo apt-get update` first, then
+  `sudo apt-get install -y libpng-dev libsdl2-dev` (required to compile and run `make test_png`
+  and to evaluate `output*.png` results, and to build the SDL2 backend targets). Running
+  `apt-get update` first avoids 404s / unmet-dependency-version errors from a stale package index.
 - Read `LEXBOR-API.md` for the bundled lexbor reference and `API.md` for Quanton’s public API; treat `API.md` as a living document that may change as the code evolves.
 - Main commands:
   - `make all`

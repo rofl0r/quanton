@@ -255,6 +255,11 @@ static void q_paint_scrollbar(q_box_t *box, int vertical)
                       track_x, track_y, track_w, track_h, Q_SCROLLBAR_TRACK_COLOR);
     q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
                       thumb_x, thumb_y, thumb_w, thumb_h, Q_SCROLLBAR_THUMB_COLOR);
+#ifdef QUANTON_DEBUG_SCROLLBAR_TMP
+    fprintf(stderr, "[sb] vert=%d box_x=%.1f box_w=%.1f tile_w=%d tile_h=%d track_x=%d track_w=%d self_tile_w=%d self_tile_h=%d\n",
+            vertical, (double) box->x, (double) box->width, box->tile_w, box->tile_h,
+            track_x, track_w, box->self_tile_w, box->self_tile_h);
+#endif
 }
 
 typedef struct q_paint_child_entry {
