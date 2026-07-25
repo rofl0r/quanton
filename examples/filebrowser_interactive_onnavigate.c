@@ -91,9 +91,8 @@ static void load_cwd_entries(void)
     while ((de = readdir(dir)) != NULL && g_nentries < MAX_ENTRIES) {
         if (de->d_name[0] == '.') continue;
         if (stat(de->d_name, &st) != 0) continue;
-        strncpy(g_entries[g_nentries].name, de->d_name,
-                sizeof(g_entries[0].name) - 1);
-        g_entries[g_nentries].name[sizeof(g_entries[0].name) - 1] = '\0';
+        snprintf(g_entries[g_nentries].name, sizeof(g_entries[0].name), "%s",
+                de->d_name);
         g_entries[g_nentries].size   = (long long) st.st_size;
         g_entries[g_nentries].mtime  = st.st_mtime;
         g_entries[g_nentries].is_dir = S_ISDIR(st.st_mode) ? 1 : 0;

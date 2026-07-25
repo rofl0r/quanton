@@ -315,6 +315,8 @@ static int sdl2_create_window(quanton_view_t *view, int w, int h, const char *ti
         return -1;
     }
 
+    SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl");
+
     win = (q_sdl2_win_t *) calloc(1, sizeof(*win));
     if (win == NULL) {
         SDL_Quit();
@@ -325,7 +327,7 @@ static int sdl2_create_window(quanton_view_t *view, int w, int h, const char *ti
         (title != NULL) ? title : "quanton",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         w, h,
-        SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+        SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);
     if (win->window == NULL) {
         fprintf(stderr, "quanton/sdl2: SDL_CreateWindow: %s\n", SDL_GetError());
         free(win);
@@ -440,17 +442,56 @@ static void sdl2_blit(quanton_view_t *view)
     SDL_RenderPresent(win->renderer);
 }
 
+static void sdl2_flush_wheel(quanton_view_t *view, int *pending, int *delta_accum,
+                             int mx, int my, uint32_t mod)
+{
+    q_event_t ev;
+
+    if (!*pending) {
+        return;
+    }
+
+    memset(&ev, 0, sizeof(ev));
+    ev.type = Q_EVENT_MOUSE_WHEEL;
+    ev.mouse_x = mx;
+    ev.mouse_y = my;
+    ev.wheel_delta = *delta_accum;
+    ev.key_mod = mod;
+    sdl2_dispatch(view, &ev);
+
+    *pending = 0;
+    *delta_accum = 0;
+}
+
 static void sdl2_poll_events(quanton_view_t *view)
 {
     SDL_Event sev;
     q_event_t ev;
     int need_render = 0;
+    int wheel_pending = 0;
+    int wheel_delta_accum = 0;
+    int wheel_mx = 0;
+    int wheel_my = 0;
+    uint32_t wheel_mod = 0;
 
     if (view == NULL || view->window_handle == NULL) {
         return;
     }
 
     while (SDL_PollEvent(&sev)) {
+        /*
+         * SDL2 can fire thousands of SDL_MOUSEWHEEL events per real scroll
+         * gesture. Dispatching (and therefore re-rendering) on every single
+         * one is what makes wheel scrolling feel laggy. Instead, accumulate
+         * the scroll distance across consecutive wheel events and only act
+         * on it once we drain the queue or hit a different event type, so a
+         * whole burst of wheel events results in a single scroll + redraw.
+         */
+        if (sev.type != SDL_MOUSEWHEEL) {
+            sdl2_flush_wheel(view, &wheel_pending, &wheel_delta_accum,
+                             wheel_mx, wheel_my, wheel_mod);
+        }
+
         memset(&ev, 0, sizeof(ev));
 
         switch (sev.type) {
@@ -531,12 +572,11 @@ static void sdl2_poll_events(quanton_view_t *view)
             }
 
             SDL_GetMouseState(&mx, &my);
-            ev.type = Q_EVENT_MOUSE_WHEEL;
-            ev.mouse_x = mx;
-            ev.mouse_y = my;
-            ev.wheel_delta = delta;
-            ev.key_mod = sdl2_mod((SDL_Keymod) SDL_GetModState());
-            sdl2_dispatch(view, &ev);
+            wheel_delta_accum += delta;
+            wheel_mx = mx;
+            wheel_my = my;
+            wheel_mod = sdl2_mod((SDL_Keymod) SDL_GetModState());
+            wheel_pending = 1;
             break;
         }
 
@@ -552,6 +592,9 @@ static void sdl2_poll_events(quanton_view_t *view)
             break;
         }
     }
+
+    sdl2_flush_wheel(view, &wheel_pending, &wheel_delta_accum,
+                     wheel_mx, wheel_my, wheel_mod);
 
     if (need_render) {
         if (view->ctx != NULL && view->ctx->backend != NULL

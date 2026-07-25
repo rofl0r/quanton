@@ -17,7 +17,6 @@
 #define Q_SCROLLBAR_MIN_THUMB 16
 #define Q_SCROLLBAR_TRACK_COLOR 0xA0A0A0FFu
 #define Q_SCROLLBAR_THUMB_COLOR 0x707070FFu
-#define Q_WIDGET_TEXT_CARET_WIDTH 7
 
 static uint8_t q_color_r(uint32_t color) { return (uint8_t) ((color >> 24) & 0xFFu); }
 static uint8_t q_color_g(uint32_t color) { return (uint8_t) ((color >> 16) & 0xFFu); }
@@ -720,27 +719,37 @@ static int q_paint_attr_is(const q_box_t *box, const char *name, const char *val
     return memcmp(attr, value, value_len) == 0;
 }
 
+static q_font_t *q_paint_widget_font(const q_box_t *box)
+{
+    static q_font_cache_t *cache;
+
+    if (box == NULL) {
+        return NULL;
+    }
+    if (cache == NULL) {
+        cache = q_font_cache_create();
+    }
+    if (cache == NULL) {
+        return NULL;
+    }
+
+    return q_font_match(cache, "sans-serif",
+                        (!isnan(box->font_size) && box->font_size > 0.0f) ? box->font_size : 16.0f,
+                        (box->font_weight > 0) ? box->font_weight : 400,
+                        (int) box->font_style);
+}
+
 static void q_paint_render_widget_text(q_box_t *box, const char *text, size_t text_len,
                                        int x, int y, uint32_t color)
 {
-    static q_font_cache_t *cache;
     q_font_t *font;
     q_shaped_run_t *run;
 
     if (box == NULL || box->tile == NULL || text == NULL || text_len == 0u) {
         return;
     }
-    if (cache == NULL) {
-        cache = q_font_cache_create();
-    }
-    if (cache == NULL) {
-        return;
-    }
 
-    font = q_font_match(cache, "sans-serif",
-                        (!isnan(box->font_size) && box->font_size > 0.0f) ? box->font_size : 16.0f,
-                        (box->font_weight > 0) ? box->font_weight : 400,
-                        (int) box->font_style);
+    font = q_paint_widget_font(box);
     if (font == NULL) {
         return;
     }
@@ -773,10 +782,12 @@ static void q_paint_form_widget(q_box_t *box)
     if (tag == LXB_TAG_INPUT) {
         if (q_paint_attr_is(box, "type", "checkbox")) {
             if (q_paint_get_attr(box, "checked", NULL) != NULL) {
+                int mark_w = 6;
+                int mark_h = 6;
+                int cx = box->tile_w / 2 - mark_w / 2;
+                int cy = box->tile_h / 2 - mark_h / 2;
                 q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
-                                  3, box->tile_h / 2, 4, 2, text_color);
-                q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
-                                  6, box->tile_h / 2 - 2, 4, 2, text_color);
+                                  cx, cy, mark_w, mark_h, text_color);
             }
             return;
         }
@@ -819,7 +830,14 @@ static void q_paint_form_widget(q_box_t *box)
             if (box->widget_focused && box->widget_type == Q_WIDGET_INPUT_TEXT
                 && box->widget_caret <= box->widget_value_len)
             {
-                int caret_x = 4 + (int) (box->widget_caret * Q_WIDGET_TEXT_CARET_WIDTH);
+                int caret_x = 4;
+                if (box->widget_caret > 0u && box->widget_value != NULL) {
+                    q_font_t *font = q_paint_widget_font(box);
+                    if (font != NULL) {
+                        caret_x += (int) lroundf(q_font_measure(font, box->widget_value,
+                                                                box->widget_caret));
+                    }
+                }
                 q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
                                   caret_x, 2, 1, box->tile_h - 4, text_color);
             }
@@ -830,8 +848,6 @@ static void q_paint_form_widget(q_box_t *box)
     if (tag == LXB_TAG_BUTTON) {
         uint32_t top_color = 0xF4F4F4FFu;
         uint32_t bottom_color = 0xD8D8D8FFu;
-        const lxb_char_t *value;
-        size_t value_len = 0;
         if (box->widget_pressed) {
             top_color = 0xD8D8D8FFu;
             bottom_color = 0xF4F4F4FFu;
@@ -841,10 +857,12 @@ static void q_paint_form_widget(q_box_t *box)
         q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
                           1, box->tile_h / 2, box->tile_w - 2, box->tile_h - box->tile_h / 2 - 1,
                           bottom_color);
-        value = q_paint_get_attr(box, "value", &value_len);
-        if (value != NULL && value_len > 0u) {
-            q_paint_render_widget_text(box, (const char *) value, value_len, 6, 4, text_color);
-        }
+        /*
+         * Unlike <input type=button>, a <button> element's label comes from
+         * its DOM child nodes (rendered separately by the normal box paint
+         * recursion), not its "value" attribute. Rendering "value" here as
+         * well would overlay a second, unrelated text string on the button.
+         */
         return;
     }
 
@@ -1217,6 +1235,19 @@ static void q_paint_box_internal(q_box_t *box, int repaint_children)
         q_paint_text_decoration(box, text_color);
     }
 
+    /*
+     * Scrollbars must be part of this box's own ("self") content, since the
+     * SDL2 backend composites self_tile and children separately and only
+     * ever uploads self_tile as a texture. Painting scrollbars later (after
+     * children, directly onto box->tile) would leave them out of self_tile
+     * entirely, making them invisible under that backend. Painting them here
+     * -- before the self_tile snapshot below -- keeps the previous overlay
+     * look for backends that composite the full box->tile subtree, while
+     * also making them visible for the self_tile based renderer.
+     */
+    q_paint_scrollbar(box, 1);
+    q_paint_scrollbar(box, 0);
+
     if (box->self_tile_w != w || box->self_tile_h != h) {
         free(box->self_tile);
         box->self_tile = NULL;
@@ -1276,8 +1307,6 @@ static void q_paint_box_internal(q_box_t *box, int repaint_children)
         }
     }
 
-    q_paint_scrollbar(box, 1);
-    q_paint_scrollbar(box, 0);
     q_paint_apply_border_radius(box);
 
 #ifdef Q_DEBUG_BOXES
