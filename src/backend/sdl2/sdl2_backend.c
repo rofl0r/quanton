@@ -204,8 +204,7 @@ static void sdl2_cache_prune(q_sdl2_win_t *win)
     it = win->cache;
     while (it != NULL) {
         next = it->next;
-        if (win->frame_id > it->last_used_frame
-            && (win->frame_id - it->last_used_frame) > Q_SDL2_CACHE_TTL_FRAMES)
+        if ((uint64_t) (win->frame_id - it->last_used_frame) > Q_SDL2_CACHE_TTL_FRAMES)
         {
             if (prev != NULL) {
                 prev->next = next;
@@ -245,7 +244,14 @@ static void sdl2_render_box_recursive(q_sdl2_win_t *win,
     box_rect.w = box->self_tile_w;
     box_rect.h = box->self_tile_h;
 
-    local_clip = *clip;
+    if (clip != NULL) {
+        local_clip = *clip;
+    } else {
+        local_clip.x = 0;
+        local_clip.y = 0;
+        local_clip.w = view->vp_width;
+        local_clip.h = view->vp_height;
+    }
     if (box_rect.w > 0 && box_rect.h > 0
         && box->self_tile != NULL
         && rect_intersects_margin(&box_rect, view->vp_width, view->vp_height,

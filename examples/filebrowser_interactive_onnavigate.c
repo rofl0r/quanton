@@ -229,7 +229,7 @@ static char *build_ref_panel_html(void)
         "<hr/>"
         "<h3>Interactive controls demo</h3>"
         "<p><input id=\"demo_text\" type=\"text\" value=\"edit me\"/></p>"
-        "<p><button id=\"demo_btn\" value=\"clicked\">Push button</button></p>"
+        "<p><button id=\"demo_btn\" value=\"action\">Push button</button></p>"
         "<p>"
         "<label><input id=\"demo_chk\" type=\"checkbox\" checked/> enable option</label><br/>"
         "<label><input type=\"radio\" name=\"mode\" value=\"a\" checked/> mode A</label> "

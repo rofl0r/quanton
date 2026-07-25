@@ -19,8 +19,6 @@
 #define Q_SCROLLBAR_THUMB_COLOR 0x707070FFu
 #define Q_WIDGET_TEXT_CARET_WIDTH 7
 
-static uint64_t g_self_tile_revision = 1u;
-
 static uint8_t q_color_r(uint32_t color) { return (uint8_t) ((color >> 24) & 0xFFu); }
 static uint8_t q_color_g(uint32_t color) { return (uint8_t) ((color >> 16) & 0xFFu); }
 static uint8_t q_color_b(uint32_t color) { return (uint8_t) ((color >> 8) & 0xFFu); }
@@ -1230,7 +1228,10 @@ static void q_paint_box_internal(q_box_t *box, int repaint_children)
         memcpy(box->self_tile, box->tile, (size_t) w * (size_t) h * 4u);
         box->self_tile_w = w;
         box->self_tile_h = h;
-        box->self_tile_revision = g_self_tile_revision++;
+        box->self_tile_revision++;
+        if (box->self_tile_revision == 0u) {
+            box->self_tile_revision = 1u;
+        }
     } else {
         box->self_tile_w = 0;
         box->self_tile_h = 0;
