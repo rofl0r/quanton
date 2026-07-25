@@ -77,15 +77,41 @@ static q_box_t *find_box_for_dom_node(q_box_t *root, const lxb_dom_node_t *node)
     if (root->dom_node == node) {
         return root;
     }
+
     for (child = root->first_child; child != NULL; child = child->next_sibling) {
         match = find_box_for_dom_node(child, node);
         if (match != NULL) {
             return match;
         }
     }
+
     return NULL;
 }
 
+static q_box_t *find_scroll_box(q_box_t *root)
+{
+    q_box_t *child;
+
+    if (root == NULL) {
+        return NULL;
+    }
+
+    if ((root->overflow_y == Q_OVERFLOW_AUTO || root->overflow_y == Q_OVERFLOW_SCROLL
+         || root->overflow_x == Q_OVERFLOW_AUTO || root->overflow_x == Q_OVERFLOW_SCROLL)
+        && root->first_child != NULL)
+    {
+        return root;
+    }
+
+    for (child = root->first_child; child != NULL; child = child->next_sibling) {
+        q_box_t *match = find_scroll_box(child);
+        if (match != NULL) {
+            return match;
+        }
+    }
+
+    return NULL;
+}
 static int nearly_equal(float a, float b)
 {
     return fabsf(a - b) < FLOAT_TOLERANCE;
@@ -1326,6 +1352,64 @@ int main(int argc, char **argv)
         scroll_view.framebuffer = NULL;
         q_layout_free_tree(scroll_root);
         q_document_destroy(scroll_doc);
+    }
+
+    /* ── Inner scroll container repaint path (Q_DIRTY_RECOMPOSE) ────────── */
+    {
+        static const char inner_scroll_html[] =
+            "<html><body>"
+            "<div style='width:120px;height:60px;overflow:auto;'>"
+            "<div style='height:60px;'>First</div>"
+            "<div style='height:60px;'>Second</div>"
+            "</div>"
+            "</body></html>";
+        q_document_t *inner_doc;
+        q_box_t *inner_root;
+        q_box_t *inner_scroll;
+        q_box_t *inner_first;
+        q_box_t *inner_second;
+        quanton_view_t inner_view;
+
+        inner_doc = q_document_create();
+        assert(inner_doc != NULL);
+        assert(q_document_load_html(inner_doc, inner_scroll_html, sizeof(inner_scroll_html) - 1,
+                                    "file://./tests/inner_scroll.html") == 0);
+
+        inner_root = q_layout_build_tree(inner_doc);
+        assert(inner_root != NULL);
+        q_layout_measure(inner_root, 160.0f, 0.0f);
+        q_layout_position(inner_root, 0.0f, 0.0f);
+
+        inner_scroll = find_scroll_box(inner_root);
+        assert(inner_scroll != NULL);
+        inner_first = inner_scroll->first_child;
+        inner_second = inner_first->next_sibling;
+        assert(inner_first != NULL);
+        assert(inner_second != NULL);
+
+        inner_first->background_color = 0xFF0000FFu;
+        inner_second->background_color = 0x0000FFFFu;
+
+        memset(&inner_view, 0, sizeof(inner_view));
+        inner_view.layout_root = inner_root;
+        inner_view.vp_width = 120;
+        inner_view.vp_height = 60;
+
+        q_paint_box(inner_root);
+        q_composite_frame(&inner_view);
+        assert_pixel_rgba(inner_view.framebuffer, inner_view.vp_width, inner_view.vp_height,
+                          10, 10, 0xFF, 0x00, 0x00, 0xFF);
+
+        inner_scroll->scroll_y = 60.0f;
+        inner_view.dirty_flags = Q_DIRTY_RECOMPOSE;
+        q_view_update(&inner_view);
+        assert_pixel_rgba(inner_view.framebuffer, inner_view.vp_width, inner_view.vp_height,
+                          10, 10, 0x00, 0x00, 0xFF, 0xFF);
+
+        free(inner_view.framebuffer);
+        inner_view.framebuffer = NULL;
+        q_layout_free_tree(inner_root);
+        q_document_destroy(inner_doc);
     }
 
 #if defined(QUANTON_BACKEND_PNG) || defined(QUANTON_BACKEND_X11) || defined(QUANTON_BACKEND_SDL2)

@@ -416,7 +416,7 @@ static void q_paint_box_child_cached(q_box_t *parent, q_box_t *child)
         return;
     }
 
-    if (child->tile == NULL) {
+    if (child->tile == NULL || q_box_scrolls_x(child) || q_box_scrolls_y(child)) {
         q_paint_box(child);
     }
     if (child->tile == NULL) {
