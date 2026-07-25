@@ -139,9 +139,13 @@ void q_view_update(quanton_view_t *view)
         if (view->layout_root != NULL) {
             q_paint_box(view->layout_root);
         }
+    } else if (view->dirty_flags & Q_DIRTY_RECOMPOSE) {
+        if (view->layout_root != NULL) {
+            q_paint_box_cached(view->layout_root);
+        }
     }
 
-    if (view->dirty_flags & (Q_DIRTY_PAINT | Q_DIRTY_SCROLL)) {
+    if (view->dirty_flags & (Q_DIRTY_PAINT | Q_DIRTY_SCROLL | Q_DIRTY_RECOMPOSE)) {
         if (view->layout_root != NULL) {
             q_composite_frame(view);
             if (view->ctx != NULL && view->ctx->backend != NULL &&

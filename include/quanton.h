@@ -335,6 +335,7 @@ typedef enum q_dirty_flags {
     Q_DIRTY_LAYOUT = 1 << 1,  /* rebuild box tree + measure */
     Q_DIRTY_PAINT  = 1 << 2,  /* repaint tiles */
     Q_DIRTY_SCROLL = 1 << 3,  /* composite-only redraw after scrolling */
+    Q_DIRTY_RECOMPOSE = 1 << 4, /* reuse existing child tiles and repaint only the cached viewport */
 } q_dirty_flags_t;
 
 /* ── Application context (one per process) ── */
@@ -388,6 +389,7 @@ float q_float_ctx_next_y(const q_float_ctx_t *ctx, float y, float line_h);
 int q_float_ctx_add(q_float_ctx_t *ctx, q_box_t *float_box, q_float_type_t side);
 void q_float_ctx_reset(q_float_ctx_t *ctx);
 void q_paint_box(q_box_t *box);
+void q_paint_box_cached(q_box_t *box);
 void q_paint_fill_rect(uint8_t *pixels, int buf_w, int buf_h,
                        int x, int y, int w, int h, uint32_t color);
 void q_paint_borders(q_box_t *box);

@@ -507,11 +507,11 @@ static int q_scroll_target_in_box(quanton_view_t *view, q_box_t *scroll_box, q_b
         /*
          * An inner scroll box changed position.  Q_DIRTY_SCROLL is only
          * correct for the root view (it merely re-composites the pre-painted
-         * root tile at a new offset).  For inner panels, the tile must be
-         * repainted so that the new scroll_x/scroll_y is baked in by
-         * q_paint_box_child.  Use Q_DIRTY_PAINT to trigger a full repaint.
+         * root tile at a new offset).  For inner panels, we reuse the cached
+         * child tiles and recompose the ancestor tiles so the new
+         * scroll_x/scroll_y is baked in without re-rendering text and glyphs.
          */
-        view->dirty_flags |= Q_DIRTY_PAINT;
+        view->dirty_flags |= Q_DIRTY_RECOMPOSE;
         q_view_update(view);
         return 1;
     }
@@ -732,14 +732,13 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
                                                   max_scroll);
             if (scroll_box->scroll_y != old_scroll) {
                 /*
-                 * Inner scroll box changed: must repaint the tile tree so
-                 * that the new scroll_y is baked in by q_paint_box_child.
-                 * Q_DIRTY_SCROLL alone only re-composites the root tile at
-                 * a new viewport offset and does not repaint inner panels.
-                 */
-                view->dirty_flags |= Q_DIRTY_PAINT;
-                q_view_update(view);
-                scrolled = 1;
+                * Inner scroll box changed: reuse the cached child tiles and
+                * recompose the ancestor tiles so the new scroll_y is baked
+                * in without re-rendering text and glyphs.
+                */
+               view->dirty_flags |= Q_DIRTY_RECOMPOSE;
+               q_view_update(view);
+               scrolled = 1;
 #ifdef QUANTON_DEBUG_EVENTS
                 fprintf(stderr, "  scroll_y: %.0f → %.0f (repaint)\n",
                         (double) old_scroll, (double) scroll_box->scroll_y);
@@ -755,7 +754,7 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
                                                   max_scroll);
             if (scroll_box->scroll_x != old_scroll) {
                 /* Same rationale as above. */
-                view->dirty_flags |= Q_DIRTY_PAINT;
+                view->dirty_flags |= Q_DIRTY_RECOMPOSE;
                 q_view_update(view);
                 scrolled = 1;
 #ifdef QUANTON_DEBUG_EVENTS

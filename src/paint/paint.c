@@ -398,6 +398,83 @@ static void q_paint_box_child(q_box_t *parent, q_box_t *child)
     }
 }
 
+static void q_paint_box_child_cached(q_box_t *parent, q_box_t *child)
+{
+    int dx;
+    int dy;
+    int clip_x;
+    int clip_y;
+    int clip_w;
+    int clip_h;
+    int should_clip;
+    float content_w;
+    float content_h;
+    int show_vertical;
+    int show_horizontal;
+
+    if (child == NULL) {
+        return;
+    }
+
+    if (child->tile == NULL) {
+        q_paint_box(child);
+    }
+    if (child->tile == NULL) {
+        return;
+    }
+
+    dx = (int) lroundf(child->x - parent->x);
+    dy = (int) lroundf(child->y - parent->y);
+    if (q_box_scrolls_x(parent)) {
+        dx -= (int) lroundf(parent->scroll_x);
+    }
+    if (q_box_scrolls_y(parent)) {
+        dy -= (int) lroundf(parent->scroll_y);
+    }
+
+    should_clip = q_box_overflow_clips(parent->overflow_x) || q_box_overflow_clips(parent->overflow_y);
+
+    if (should_clip) {
+        int bleft  = (int) ceilf(parent->border_width[3]);
+        int btop   = (int) ceilf(parent->border_width[0]);
+        int bright = (int) ceilf(parent->border_width[1]);
+        int bbottom = (int) ceilf(parent->border_width[2]);
+
+        clip_x = bleft;
+        clip_y = btop;
+        clip_w = parent->tile_w - bleft - bright;
+        clip_h = parent->tile_h - btop  - bbottom;
+
+        q_box_content_extent(parent, &content_w, &content_h);
+        show_vertical = q_box_has_vertical_scrollbar(parent, content_h, (float) clip_h);
+        show_horizontal = q_box_has_horizontal_scrollbar(parent, content_w, (float) clip_w);
+        if (show_vertical) {
+            clip_w -= Q_SCROLLBAR_THICKNESS;
+        }
+        if (show_horizontal) {
+            clip_h -= Q_SCROLLBAR_THICKNESS;
+        }
+
+        if (parent->overflow_x == Q_OVERFLOW_VISIBLE) {
+            clip_x = 0;
+            clip_w = parent->tile_w;
+        }
+        if (parent->overflow_y == Q_OVERFLOW_VISIBLE) {
+            clip_y = 0;
+            clip_h = parent->tile_h;
+        }
+
+        q_paint_composite_clipped(parent->tile, parent->tile_w, parent->tile_h,
+                                  child->tile, child->tile_w, child->tile_h,
+                                  dx, dy,
+                                  clip_x, clip_y, clip_w, clip_h);
+    } else {
+        q_paint_composite(parent->tile, parent->tile_w, parent->tile_h,
+                          child->tile, child->tile_w, child->tile_h,
+                          dx, dy);
+    }
+}
+
 static void q_paint_image(q_box_t *box)
 {
     const uint8_t *src;
@@ -1084,7 +1161,7 @@ void q_paint_composite_clipped(uint8_t *dst, int dst_w, int dst_h,
     }
 }
 
-void q_paint_box(q_box_t *box)
+static void q_paint_box_internal(q_box_t *box, int repaint_children)
 {
     q_box_t *child;
     q_paint_child_entry_t *entries = NULL;
@@ -1162,11 +1239,19 @@ void q_paint_box(q_box_t *box)
 
     if (entries != NULL) {
         for (i = 0; i < child_count; ++i) {
-            q_paint_box_child(box, entries[i].box);
+            if (repaint_children) {
+                q_paint_box_child(box, entries[i].box);
+            } else {
+                q_paint_box_child_cached(box, entries[i].box);
+            }
         }
     } else {
         for (child = box->first_child; child != NULL; child = child->next_sibling) {
-            q_paint_box_child(box, child);
+            if (repaint_children) {
+                q_paint_box_child(box, child);
+            } else {
+                q_paint_box_child_cached(box, child);
+            }
         }
     }
 
@@ -1187,4 +1272,14 @@ void q_paint_box(q_box_t *box)
 #endif
 
     free(entries);
+}
+
+void q_paint_box(q_box_t *box)
+{
+    q_paint_box_internal(box, 1);
+}
+
+void q_paint_box_cached(q_box_t *box)
+{
+    q_paint_box_internal(box, 0);
 }
