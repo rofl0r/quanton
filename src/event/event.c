@@ -732,13 +732,13 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
                                                   max_scroll);
             if (scroll_box->scroll_y != old_scroll) {
                 /*
-                * Inner scroll box changed: reuse the cached child tiles and
-                * recompose the ancestor tiles so the new scroll_y is baked
-                * in without re-rendering text and glyphs.
-                */
-               view->dirty_flags |= Q_DIRTY_RECOMPOSE;
-               q_view_update(view);
-               scrolled = 1;
+                 * Inner scroll box changed: reuse the cached child tiles and
+                 * recompose the ancestor tiles so the new scroll_y is baked
+                 * in without re-rendering text and glyphs.
+                 */
+                view->dirty_flags |= Q_DIRTY_RECOMPOSE;
+                q_view_update(view);
+                scrolled = 1;
 #ifdef QUANTON_DEBUG_EVENTS
                 fprintf(stderr, "  scroll_y: %.0f → %.0f (repaint)\n",
                         (double) old_scroll, (double) scroll_box->scroll_y);

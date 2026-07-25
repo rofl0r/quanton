@@ -76,7 +76,7 @@ const lxb_char_t *q_dom_get_attribute(quanton_view_t *view,
             {
                 if (box->widget_checked) {
                     if (out_len != NULL) {
-                       *out_len = sizeof("checked") - 1u;
+                        *out_len = sizeof("checked") - 1u;
                     }
                     return (const lxb_char_t *) "checked";
                 }
