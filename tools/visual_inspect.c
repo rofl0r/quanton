@@ -58,6 +58,7 @@ static char *read_whole_file(const char *path, size_t *out_len)
     }
     buf = (char *) malloc((size_t) size + 1u);
     if (buf == NULL) {
+        fprintf(stderr, "visual_inspect: out of memory reading '%s'\n", path);
         fclose(fp);
         return NULL;
     }
