@@ -300,6 +300,99 @@ static q_font_t *q_widget_font(const q_box_t *box)
         return lines;
     }
 
+    static size_t q_widget_textarea_line_col_from_offset(const q_box_t *box,
+                                                         size_t offset,
+                                                         size_t *out_line_start)
+    {
+        size_t i;
+        size_t line_start = 0u;
+        if (box == NULL || box->widget_value == NULL) {
+            if (out_line_start != NULL) {
+                *out_line_start = 0u;
+            }
+            return 0u;
+        }
+        if (offset > box->widget_value_len) {
+            offset = box->widget_value_len;
+        }
+        for (i = 0u; i < offset; ++i) {
+            if (box->widget_value[i] == '\n') {
+                line_start = i + 1u;
+            }
+        }
+        if (out_line_start != NULL) {
+            *out_line_start = line_start;
+        }
+        return offset - line_start;
+    }
+
+    static size_t q_widget_textarea_next_line_start(const q_box_t *box, size_t line_start)
+    {
+        size_t i;
+        if (box == NULL || box->widget_value == NULL) {
+            return line_start;
+        }
+        for (i = line_start; i < box->widget_value_len; ++i) {
+            if (box->widget_value[i] == '\n') {
+                return i + 1u;
+            }
+        }
+        return box->widget_value_len;
+    }
+
+    static size_t q_widget_textarea_move_vertical(q_box_t *box, int dir)
+    {
+        size_t line_start;
+        size_t col;
+        size_t prev_start = 0u;
+        size_t cur_end;
+        size_t target_start;
+        size_t target_end;
+        size_t i;
+        size_t target_col;
+
+        if (box == NULL || box->widget_type != Q_WIDGET_TEXTAREA || box->widget_value == NULL) {
+            return 0u;
+        }
+        if (box->widget_caret > box->widget_value_len) {
+            box->widget_caret = box->widget_value_len;
+        }
+        col = q_widget_textarea_line_col_from_offset(box, box->widget_caret, &line_start);
+        cur_end = q_widget_textarea_next_line_start(box, line_start);
+        if (cur_end > line_start && box->widget_value[cur_end - 1u] == '\n') {
+            cur_end--;
+        }
+
+        if (dir < 0) {
+            if (line_start == 0u) {
+                return box->widget_caret;
+            }
+            for (i = 0u; i + 1u < line_start; ++i) {
+                if (box->widget_value[i] == '\n') {
+                    prev_start = i + 1u;
+                }
+            }
+            target_start = prev_start;
+            target_end = line_start - 1u;
+        } else {
+            if (q_widget_textarea_next_line_start(box, line_start) >= box->widget_value_len) {
+                return box->widget_caret;
+            }
+            target_start = q_widget_textarea_next_line_start(box, line_start);
+            target_end = q_widget_textarea_next_line_start(box, target_start);
+            if (target_end > target_start && box->widget_value[target_end - 1u] == '\n') {
+                target_end--;
+            }
+        }
+
+        target_col = target_end - target_start;
+        if (col < target_col) {
+            target_col = col;
+        }
+        box->widget_caret = target_start + target_col;
+        return box->widget_caret;
+    }
+
     static void q_widget_ensure_caret_visible_x(q_box_t *box)
     {
         float inner_w;
@@ -562,11 +655,10 @@ static int q_widget_select_cycle(q_box_t *box)
 {
     lxb_dom_node_t *node;
     lxb_dom_node_t *child;
-    char *first = NULL;
-    size_t first_len = 0u;
-    char *next = NULL;
-    size_t next_len = 0u;
-    int found_current = 0;
+    int count = 0;
+    int current = -1;
+    int idx = 0;
+    int target_idx;
 
     if (box == NULL || box->dom_node == NULL
         || lxb_dom_node_type(box->dom_node) != LXB_DOM_NODE_TYPE_ELEMENT)
@@ -588,53 +680,126 @@ static int q_widget_select_cycle(q_box_t *box)
             free(label);
             continue;
         }
-        if (first == NULL) {
-            first = label;
-            first_len = label_len;
-            if (!found_current
-                && label_len == box->widget_value_len
-                && ((label_len == 0u)
-                    || (box->widget_value != NULL
-                        && memcmp(label, box->widget_value, label_len) == 0)))
-            {
-                found_current = 1;
-            }
-            continue;
-        }
-        if (found_current && next == NULL) {
-            next = label;
-            next_len = label_len;
-            label = NULL;
-            break;
-        }
-        if (!found_current
+        if (current < 0
             && label_len == box->widget_value_len
             && ((label_len == 0u)
                 || (box->widget_value != NULL
                     && memcmp(label, box->widget_value, label_len) == 0)))
         {
-            found_current = 1;
+            current = idx;
         }
+        idx++;
+        count++;
         free(label);
     }
 
-    if (next != NULL) {
-        q_widget_set_value(box, next, next_len);
-        free(next);
-        free(first);
-        return 1;
+    if (count <= 0) {
+        return 0;
     }
-    if (first != NULL) {
-        if (first_len != box->widget_value_len
-            || box->widget_value == NULL
-            || memcmp(first, box->widget_value, first_len) != 0)
+    if (current < 0) {
+        target_idx = 0;
+    } else {
+        target_idx = (current + 1) % count;
+    }
+
+    idx = 0;
+    for (child = node->first_child; child != NULL; child = child->next) {
+        char *label = NULL;
+        size_t label_len = 0u;
+        size_t cap = 0u;
+        if (child->type != LXB_DOM_NODE_TYPE_ELEMENT
+            || lxb_dom_node_tag_id(child) != LXB_TAG_OPTION)
         {
-            q_widget_set_value(box, first, first_len);
-            free(first);
-            return 1;
+            continue;
+        }
+        if (q_collect_text_recursive(child, &label, &label_len, &cap) != 0) {
+            free(label);
+            continue;
+        }
+        if (idx == target_idx) {
+            int changed = (label_len != box->widget_value_len)
+                       || (box->widget_value == NULL)
+                       || (memcmp(label, box->widget_value, label_len) != 0);
+            q_widget_set_value(box, label, label_len);
+            free(label);
+            return changed;
+        }
+        idx++;
+        free(label);
+    }
+
+    return 0;
+}
+
+static int q_widget_select_pick_popup_index(const q_box_t *box, int hit_x, int hit_y)
+{
+    int popup_x;
+    int popup_y;
+    int popup_w;
+    int popup_h;
+    int option_h = 18;
+    int count = 0;
+    lxb_dom_node_t *child;
+
+    if (box == NULL || box->widget_type != Q_WIDGET_SELECT || !box->widget_open) {
+        return -1;
+    }
+    if (box->dom_node == NULL) {
+        return -1;
+    }
+    for (child = box->dom_node->first_child; child != NULL; child = child->next) {
+        if (child->type == LXB_DOM_NODE_TYPE_ELEMENT
+            && lxb_dom_node_tag_id(child) == LXB_TAG_OPTION)
+        {
+            count++;
         }
     }
-    free(first);
+    if (count <= 0) {
+        return -1;
+    }
+    popup_x = (int) lroundf(box->x);
+    popup_y = (int) lroundf(box->y + box->height);
+    popup_w = (int) lroundf(box->width);
+    popup_h = 2 + count * option_h;
+    if (hit_x < popup_x || hit_x >= popup_x + popup_w
+        || hit_y < popup_y || hit_y >= popup_y + popup_h)
+    {
+        return -1;
+    }
+    return (hit_y - popup_y - 1) / option_h;
+}
+
+static int q_widget_select_set_option_index(q_box_t *box, int target_idx)
+{
+    lxb_dom_node_t *child;
+    int idx = 0;
+    if (box == NULL || target_idx < 0 || box->dom_node == NULL) {
+        return 0;
+    }
+    for (child = box->dom_node->first_child; child != NULL; child = child->next) {
+        char *label = NULL;
+        size_t label_len = 0u;
+        size_t cap = 0u;
+        if (child->type != LXB_DOM_NODE_TYPE_ELEMENT
+            || lxb_dom_node_tag_id(child) != LXB_TAG_OPTION)
+        {
+            continue;
+        }
+        if (q_collect_text_recursive(child, &label, &label_len, &cap) != 0) {
+            free(label);
+            continue;
+        }
+        if (idx == target_idx) {
+            int changed = (label_len != box->widget_value_len)
+                       || (box->widget_value == NULL)
+                       || (memcmp(label, box->widget_value, label_len) != 0);
+            q_widget_set_value(box, label, label_len);
+            free(label);
+            return changed;
+        }
+        idx++;
+        free(label);
+    }
     return 0;
 }
 
@@ -1216,11 +1381,8 @@ static int q_scroll_target_in_box(quanton_view_t *view, q_box_t *scroll_box, q_b
     }
 
     if (q_box_scrolls_y(scroll_box)) {
-        if (target_y < scroll_box->scroll_y) {
-            scroll_box->scroll_y = target_y;
-        } else if (target_bottom > scroll_box->scroll_y + viewport_h) {
-            scroll_box->scroll_y = target_bottom - viewport_h;
-        }
+        (void) target_bottom;
+        scroll_box->scroll_y = target_y;
         max_scroll_y = q_box_scroll_max_y(scroll_box);
         scroll_box->scroll_y = q_clamp_scroll(scroll_box->scroll_y, max_scroll_y);
     }
@@ -1412,9 +1574,31 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
     }
 
     if (event->type == Q_EVENT_MOUSE_UP && event->mouse_button == 0) {
+        q_box_t *open_select = (view->focused_widget != NULL
+                                && view->focused_widget->widget_type == Q_WIDGET_SELECT
+                                && view->focused_widget->widget_open)
+                               ? view->focused_widget : NULL;
         if (view->drag_scroll_box != NULL) {
             view->drag_scroll_box = NULL;
             return;
+        }
+        if (open_select != NULL) {
+            int option_idx = q_widget_select_pick_popup_index(open_select, hit_x, hit_y);
+            if (option_idx >= 0) {
+                int changed = q_widget_select_set_option_index(open_select, option_idx);
+                open_select->widget_open = 0;
+                view->dirty_flags |= Q_DIRTY_PAINT;
+                q_event_maybe_update(view);
+                if (changed && view->on_event != NULL) {
+                    q_event_t change_event;
+                    memset(&change_event, 0, sizeof(change_event));
+                    change_event.type = Q_EVENT_CHANGE;
+                    change_event.target_box = open_select;
+                    change_event.target = open_select->dom_node;
+                    view->on_event(view, &change_event, view->on_event_userdata);
+                }
+                return;
+            }
         }
         q_box_t *widget_box = q_widget_box_from_target(event->target_box);
         if (widget_box != NULL) {
@@ -1461,19 +1645,30 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
                     view->on_event(view, &change_event, view->on_event_userdata);
                 }
             } else if (widget_box->widget_type == Q_WIDGET_SELECT) {
-                int changed = q_widget_select_cycle(widget_box);
-                widget_box->widget_open = 0;
-                view->dirty_flags |= Q_DIRTY_PAINT;
-                q_event_maybe_update(view);
-                if (changed && view->on_event != NULL) {
-                    q_event_t change_event;
-                    memset(&change_event, 0, sizeof(change_event));
-                    change_event.type = Q_EVENT_CHANGE;
-                    change_event.target_box = widget_box;
-                    change_event.target = widget_box->dom_node;
-                    view->on_event(view, &change_event, view->on_event_userdata);
+                if (open_select != NULL && widget_box == open_select) {
+                    /* keep it open after click; option pick happens on popup clicks */
+                    view->dirty_flags |= Q_DIRTY_PAINT;
+                    q_event_maybe_update(view);
+                } else {
+                    int changed = q_widget_select_cycle(widget_box);
+                    widget_box->widget_open = 0;
+                    view->dirty_flags |= Q_DIRTY_PAINT;
+                    q_event_maybe_update(view);
+                    if (changed && view->on_event != NULL) {
+                        q_event_t change_event;
+                        memset(&change_event, 0, sizeof(change_event));
+                        change_event.type = Q_EVENT_CHANGE;
+                        change_event.target_box = widget_box;
+                        change_event.target = widget_box->dom_node;
+                        view->on_event(view, &change_event, view->on_event_userdata);
+                    }
                 }
             }
+        }
+        if (open_select != NULL && (widget_box == NULL || widget_box != open_select)) {
+            open_select->widget_open = 0;
+            view->dirty_flags |= Q_DIRTY_PAINT;
+            q_event_maybe_update(view);
         }
     }
 
@@ -1593,6 +1788,16 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
                         focused_widget->widget_caret++;
                     }
                     changed = 1;
+                } else if (event->key_sym == Q_KEY_UP) {
+                    if (focused_widget->widget_type == Q_WIDGET_TEXTAREA) {
+                        q_widget_textarea_move_vertical(focused_widget, -1);
+                        changed = 1;
+                    }
+                } else if (event->key_sym == Q_KEY_DOWN) {
+                    if (focused_widget->widget_type == Q_WIDGET_TEXTAREA) {
+                        q_widget_textarea_move_vertical(focused_widget, +1);
+                        changed = 1;
+                    }
                 } else if (event->key_sym == Q_KEY_HOME) {
                     focused_widget->widget_caret = 0u;
                     changed = 1;

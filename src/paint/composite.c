@@ -173,3 +173,19 @@ void q_view_scroll_into_view(quanton_view_t *view, const q_box_t *box)
 
     q_view_scroll_to(view, target_x, target_y);
 }
+
+void q_view_set_texture_cache_limit(quanton_view_t *view, size_t bytes)
+{
+    if (view == NULL) {
+        return;
+    }
+    view->texture_cache_limit_bytes = bytes;
+}
+
+size_t q_view_get_texture_cache_limit(const quanton_view_t *view)
+{
+    if (view == NULL) {
+        return 0u;
+    }
+    return view->texture_cache_limit_bytes;
+}

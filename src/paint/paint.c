@@ -18,6 +18,8 @@
 #define Q_SCROLLBAR_TRACK_COLOR 0xA0A0A0FFu
 #define Q_SCROLLBAR_THUMB_COLOR 0x707070FFu
 
+static void q_paint_draw_select_popup(q_box_t *parent, q_box_t *child, int dx, int dy);
+
 static uint8_t q_color_r(uint32_t color) { return (uint8_t) ((color >> 24) & 0xFFu); }
 static uint8_t q_color_g(uint32_t color) { return (uint8_t) ((color >> 16) & 0xFFu); }
 static uint8_t q_color_b(uint32_t color) { return (uint8_t) ((color >> 8) & 0xFFu); }
@@ -390,10 +392,12 @@ static void q_paint_box_child(q_box_t *parent, q_box_t *child)
                                   child->tile, child->tile_w, child->tile_h,
                                   dx, dy,
                                   clip_x, clip_y, clip_w, clip_h);
+        q_paint_draw_select_popup(parent, child, dx, dy);
     } else {
         q_paint_composite(parent->tile, parent->tile_w, parent->tile_h,
                           child->tile, child->tile_w, child->tile_h,
                           dx, dy);
+        q_paint_draw_select_popup(parent, child, dx, dy);
     }
 }
 
@@ -467,10 +471,12 @@ static void q_paint_box_child_cached(q_box_t *parent, q_box_t *child)
                                   child->tile, child->tile_w, child->tile_h,
                                   dx, dy,
                                   clip_x, clip_y, clip_w, clip_h);
+        q_paint_draw_select_popup(parent, child, dx, dy);
     } else {
         q_paint_composite(parent->tile, parent->tile_w, parent->tile_h,
                           child->tile, child->tile_w, child->tile_h,
                           dx, dy);
+        q_paint_draw_select_popup(parent, child, dx, dy);
     }
 }
 
@@ -761,6 +767,132 @@ static void q_paint_render_widget_text(q_box_t *box, const char *text, size_t te
     run->font = font;
     q_font_render_run(run, color, box->tile, box->tile_w, box->tile_h, x, y);
     q_shaped_run_free(run);
+}
+
+static int q_paint_collect_text_recursive(lxb_dom_node_t *node, char **buf, size_t *len, size_t *cap)
+{
+    lxb_dom_node_t *child;
+    if (node == NULL || buf == NULL || len == NULL || cap == NULL) {
+        return -1;
+    }
+    if (node->type == LXB_DOM_NODE_TYPE_TEXT) {
+        lxb_dom_character_data_t *text = (lxb_dom_character_data_t *) node;
+        size_t add = text->data.length;
+        if (add > 0u) {
+            if (*len + add + 1u > *cap) {
+                size_t new_cap = (*cap == 0u) ? 32u : *cap;
+                while (*len + add + 1u > new_cap) {
+                    new_cap *= 2u;
+                }
+                {
+                    char *new_buf = (char *) realloc(*buf, new_cap);
+                    if (new_buf == NULL) {
+                        return -1;
+                    }
+                    *buf = new_buf;
+                    *cap = new_cap;
+                }
+            }
+            memcpy(*buf + *len, text->data.data, add);
+            *len += add;
+            (*buf)[*len] = '\0';
+        }
+    }
+    for (child = node->first_child; child != NULL; child = child->next) {
+        if (q_paint_collect_text_recursive(child, buf, len, cap) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static void q_paint_draw_select_popup(q_box_t *parent, q_box_t *child, int dx, int dy)
+{
+    lxb_dom_node_t *opt;
+    int count = 0;
+    int option_h = 18;
+    int popup_x;
+    int popup_y;
+    int popup_w;
+    int popup_h;
+    int y;
+
+    if (parent == NULL || child == NULL || !child->widget_open
+        || child->widget_type != Q_WIDGET_SELECT || child->dom_node == NULL
+        || parent->tile == NULL)
+    {
+        return;
+    }
+    for (opt = child->dom_node->first_child; opt != NULL; opt = opt->next) {
+        if (opt->type == LXB_DOM_NODE_TYPE_ELEMENT && lxb_dom_node_tag_id(opt) == LXB_TAG_OPTION) {
+            count++;
+        }
+    }
+    if (count <= 0) {
+        return;
+    }
+    popup_x = dx;
+    popup_y = dy + child->tile_h;
+    popup_w = child->tile_w;
+    popup_h = 2 + count * option_h;
+    if (popup_x >= parent->tile_w || popup_y >= parent->tile_h) {
+        return;
+    }
+    if (popup_w <= 0 || popup_h <= 0) {
+        return;
+    }
+    if (popup_x + popup_w > parent->tile_w) {
+        popup_w = parent->tile_w - popup_x;
+    }
+    if (popup_y + popup_h > parent->tile_h) {
+        popup_h = parent->tile_h - popup_y;
+    }
+    if (popup_w <= 0 || popup_h <= 0) {
+        return;
+    }
+
+    q_paint_fill_rect(parent->tile, parent->tile_w, parent->tile_h,
+                      popup_x, popup_y, popup_w, popup_h, 0xF8FAFCFFu);
+    q_paint_fill_rect(parent->tile, parent->tile_w, parent->tile_h,
+                      popup_x, popup_y, popup_w, 1, 0x334155FFu);
+    q_paint_fill_rect(parent->tile, parent->tile_w, parent->tile_h,
+                      popup_x, popup_y + popup_h - 1, popup_w, 1, 0x334155FFu);
+    q_paint_fill_rect(parent->tile, parent->tile_w, parent->tile_h,
+                      popup_x, popup_y, 1, popup_h, 0x334155FFu);
+    q_paint_fill_rect(parent->tile, parent->tile_w, parent->tile_h,
+                      popup_x + popup_w - 1, popup_y, 1, popup_h, 0x334155FFu);
+
+    y = popup_y + 1;
+    for (opt = child->dom_node->first_child; opt != NULL; opt = opt->next) {
+        char *label = NULL;
+        size_t label_len = 0u;
+        size_t cap = 0u;
+        if (opt->type != LXB_DOM_NODE_TYPE_ELEMENT || lxb_dom_node_tag_id(opt) != LXB_TAG_OPTION) {
+            continue;
+        }
+        if (q_paint_collect_text_recursive(opt, &label, &label_len, &cap) == 0) {
+            if (label_len > 0u) {
+                q_font_t *font = q_paint_widget_font(child);
+                if (font != NULL) {
+                    q_shaped_run_t *run = q_font_shape_run(font, label, label_len);
+                    if (run != NULL) {
+                        run->font = font;
+                        q_font_render_run(run, 0x111827FFu,
+                                          parent->tile, parent->tile_w, parent->tile_h,
+                                          popup_x + 4, y + 2);
+                        q_shaped_run_free(run);
+                    }
+                }
+            }
+        }
+        free(label);
+        q_paint_fill_rect(parent->tile, parent->tile_w, parent->tile_h,
+                          popup_x + 1, y + option_h - 1, popup_w - 2, 1, 0xCBD5E1FFu);
+        y += option_h;
+        if (y >= popup_y + popup_h) {
+            break;
+        }
+    }
 }
 
 static size_t q_paint_textarea_line_count(const q_box_t *box)
