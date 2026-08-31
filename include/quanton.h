@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "lexbor/core/types.h"
+
 /* Forward declarations for lexbor types used by the shim API. */
 typedef struct lxb_html_document lxb_html_document_t;
 typedef struct lxb_dom_node lxb_dom_node_t;
@@ -49,6 +51,9 @@ typedef enum q_event_type {
     Q_EVENT_RESIZE,
     Q_EVENT_CLOSE,
     Q_EVENT_REDRAW,
+    Q_EVENT_FOCUS,
+    Q_EVENT_BLUR,
+    Q_EVENT_CHANGE,
 } q_event_type_t;
 
 typedef struct q_event {
@@ -58,10 +63,29 @@ typedef struct q_event {
     int             wheel_delta;
     uint32_t        key_sym;
     uint32_t        key_mod;        /* shift=1 ctrl=2 alt=4 */
+    int             key_repeat;     /* >=1 for coalesced keydown repeats */
     int             new_width, new_height;
     lxb_dom_node_t *target;         /* deepest DOM node at mouse pos */
     q_box_t        *target_box;
 } q_event_t;
+
+/*
+ * Normalized key codes carried in q_event_t.key_sym for KEY_DOWN/KEY_UP
+ * events. Backends are responsible for translating their own native key
+ * codes (X11 KeySym, SDL_Keycode, ...) into these values before dispatch;
+ * printable ASCII characters (0x20..0x7E) are passed through unchanged.
+ */
+#define Q_KEY_BACKSPACE 0x08u
+#define Q_KEY_DELETE    0x7Fu
+#define Q_KEY_LEFT      0x1001u
+#define Q_KEY_RIGHT     0x1002u
+#define Q_KEY_UP        0x1003u
+#define Q_KEY_DOWN      0x1004u
+#define Q_KEY_PAGEUP    0x1005u
+#define Q_KEY_PAGEDOWN  0x1006u
+#define Q_KEY_HOME      0x1007u
+#define Q_KEY_END       0x1008u
+#define Q_KEY_ENTER     0x0Du
 
 typedef void (*q_event_handler_fn)(quanton_view_t *view,
                                    const q_event_t *event,
@@ -71,6 +95,8 @@ typedef void (*q_event_handler_fn)(quanton_view_t *view,
 typedef struct q_backend_vt {
     /* create native window; fills view->window_handle */
     int  (*create_window)(quanton_view_t *view, int w, int h, const char *title);
+    /* optional direct renderer from box tiles (used by GPU backends) */
+    void (*render_view)(quanton_view_t *view);
     /* blit view->framebuffer to screen */
     void (*blit)(quanton_view_t *view);
     /* non-blocking event poll; calls view->on_event for each event */
@@ -133,6 +159,17 @@ typedef enum q_float_type {
     Q_FLOAT_LEFT  = 1,
     Q_FLOAT_RIGHT = 2,
 } q_float_type_t;
+
+typedef enum q_widget_type {
+    Q_WIDGET_NONE         = 0,
+    Q_WIDGET_INPUT_TEXT   = 1,
+    Q_WIDGET_INPUT_SUBMIT = 2,
+    Q_WIDGET_INPUT_CHECK  = 3,
+    Q_WIDGET_INPUT_RADIO  = 4,
+    Q_WIDGET_BUTTON       = 5,
+    Q_WIDGET_SELECT       = 6,
+    Q_WIDGET_TEXTAREA     = 7,
+} q_widget_type_t;
 
 typedef enum q_clear_type {
     Q_CLEAR_NONE  = 0,
@@ -256,6 +293,10 @@ struct q_box {
     uint8_t *tile;
     int tile_w;
     int tile_h;
+    uint8_t *self_tile;            /* box-only tile (without composited children) */
+    int self_tile_w;
+    int self_tile_h;
+    uint64_t self_tile_revision;   /* incremented each time self_tile contents change */
     /* CSS overflow clipping */
     q_overflow_type_t overflow_x;   /* Q_OVERFLOW_VISIBLE = default (calloc zero) */
     q_overflow_type_t overflow_y;
@@ -284,6 +325,7 @@ struct q_box {
     float padding_right;
     float padding_bottom;
     float padding_left;
+    float flex_gap;
     q_list_style_type_t list_style_type;
     int list_item_index;
     q_float_type_t float_type;
@@ -303,6 +345,20 @@ struct q_box {
     float table_border_spacing;    /* CSS border-spacing for TABLE boxes (default 2) */
     char *document_title;          /* only used on root box */
     char *href;                    /* NULL or malloc'd href from <a href="..."> */
+    q_widget_type_t widget_type;
+    int widget_focused;
+    char *widget_value;
+    size_t widget_value_len;
+    size_t widget_caret;
+    size_t widget_sel_anchor;
+    size_t widget_sel_focus;
+    size_t text_sel_anchor;
+    size_t text_sel_focus;
+    float widget_scroll_x;
+    float widget_scroll_y;
+    int widget_checked;
+    int widget_pressed;
+    int widget_open;
     struct q_table *table;   /* non-NULL for Q_BOX_TABLE after measure */
 };
 
@@ -312,6 +368,7 @@ typedef enum q_dirty_flags {
     Q_DIRTY_LAYOUT = 1 << 1,  /* rebuild box tree + measure */
     Q_DIRTY_PAINT  = 1 << 2,  /* repaint tiles */
     Q_DIRTY_SCROLL = 1 << 3,  /* composite-only redraw after scrolling */
+    Q_DIRTY_RECOMPOSE = 1 << 4, /* reuse existing child tiles and repaint only the cached viewport */
 } q_dirty_flags_t;
 
 /* ── Application context (one per process) ── */
@@ -338,13 +395,28 @@ struct quanton_view {
                                      const char *href,
                                      void *userdata);
     void               *on_navigate_userdata;
+    q_box_t            *focused_widget;   /* currently focused interactive box */
+    q_box_t            *active_scroll_box; /* last activated scrollable pane */
+    q_box_t            *mouse_select_box;  /* active text-selection drag source */
+    q_box_t            *mouse_text_select_box; /* read-only text selection drag source */
+    int                 mouse_text_cursor; /* 1 when pointer should be I-beam */
+    char               *clipboard_text;    /* internal clipboard buffer */
+    size_t              texture_cache_limit_bytes; /* 0 = backend default */
     void               *window_handle;     /* opaque backend-specific handle */
+    q_box_t            *drag_scroll_box;   /* active scrollbar-drag target */
+    int                 drag_scroll_vertical;
+    int                 drag_scroll_last_mouse;
+    int                 defer_updates;      /* when set, event dispatch only marks dirty */
     int                 should_close;
     q_dirty_flags_t     dirty_flags;       /* accumulated dirty bits */
 };
 
 q_box_t *q_layout_build_tree(q_document_t *doc);
 void q_layout_free_tree(q_box_t *root);
+const lxb_char_t *q_dom_get_attribute(quanton_view_t *view,
+                                      lxb_dom_element_t *el,
+                                      const char *name,
+                                      size_t *out_len);
 void q_layout_measure(q_box_t *box, float containing_w, float containing_h);
 void q_layout_position(q_box_t *box, float origin_x, float origin_y);
 void q_layout_position_absolute(q_box_t *root);
@@ -360,6 +432,7 @@ float q_float_ctx_next_y(const q_float_ctx_t *ctx, float y, float line_h);
 int q_float_ctx_add(q_float_ctx_t *ctx, q_box_t *float_box, q_float_type_t side);
 void q_float_ctx_reset(q_float_ctx_t *ctx);
 void q_paint_box(q_box_t *box);
+void q_paint_box_cached(q_box_t *box);
 void q_paint_fill_rect(uint8_t *pixels, int buf_w, int buf_h,
                        int x, int y, int w, int h, uint32_t color);
 void q_paint_borders(q_box_t *box);
@@ -424,6 +497,8 @@ void q_composite_frame(quanton_view_t *view);
 void q_view_scroll_by(quanton_view_t *view, float dx, float dy);
 void q_view_scroll_to(quanton_view_t *view, float x, float y);
 void q_view_scroll_into_view(quanton_view_t *view, const q_box_t *box);
+void q_view_set_texture_cache_limit(quanton_view_t *view, size_t bytes);
+size_t q_view_get_texture_cache_limit(const quanton_view_t *view);
 
 /* ── View update (dirty-flag processing) ── */
 

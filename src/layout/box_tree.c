@@ -865,6 +865,14 @@ static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
             }
             box->overflow_x = ov;
             box->overflow_y = ov;
+        } else if (css_name_eq(prop, prop_len, "gap")
+                   || css_name_eq(prop, prop_len, "column-gap")) {
+            float v = css_parse_length_pct(val, val_len, NULL);
+            if (!isnan(v) && v > 0.0f) {
+                box->flex_gap = v;
+            } else {
+                box->flex_gap = 0.0f;
+            }
         } else if (css_name_eq(prop, prop_len, "float")) {
             if (css_value_is(val, val_len, "left")) {
                 box->float_type = Q_FLOAT_LEFT;
@@ -1177,6 +1185,135 @@ static q_box_t *q_ensure_inline_container(q_box_t *parent)
     return ic;
 }
 
+static void q_box_set_widget_value(q_box_t *box, const lxb_char_t *value, size_t value_len)
+{
+    char *buf;
+
+    if (box == NULL) {
+        return;
+    }
+
+    free(box->widget_value);
+    box->widget_value = NULL;
+    box->widget_value_len = 0;
+    box->widget_caret = 0;
+
+    if (value == NULL || value_len == 0u) {
+        return;
+    }
+
+    buf = (char *) malloc(value_len + 1u);
+    if (buf == NULL) {
+        return;
+    }
+
+    memcpy(buf, value, value_len);
+    buf[value_len] = '\0';
+    box->widget_value = buf;
+    box->widget_value_len = value_len;
+    box->widget_caret = value_len;
+}
+
+static int q_collect_text_recursive(lxb_dom_node_t *node, char **buf, size_t *len, size_t *cap)
+{
+    lxb_dom_node_t *child;
+
+    if (node == NULL || buf == NULL || len == NULL || cap == NULL) {
+        return -1;
+    }
+
+    if (node->type == LXB_DOM_NODE_TYPE_TEXT) {
+        lxb_dom_character_data_t *text = (lxb_dom_character_data_t *) node;
+        size_t add = text->data.length;
+        if (add > 0u) {
+            if (*len + add + 1u > *cap) {
+                size_t new_cap = (*cap == 0u) ? 32u : *cap;
+                while (*len + add + 1u > new_cap) {
+                    new_cap *= 2u;
+                }
+                {
+                    char *new_buf = (char *) realloc(*buf, new_cap);
+                    if (new_buf == NULL) {
+                        return -1;
+                    }
+                    *buf = new_buf;
+                    *cap = new_cap;
+                }
+            }
+            memcpy(*buf + *len, text->data.data, add);
+            *len += add;
+            (*buf)[*len] = '\0';
+        }
+    }
+
+    for (child = node->first_child; child != NULL; child = child->next) {
+        if (q_collect_text_recursive(child, buf, len, cap) != 0) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static void q_box_init_select_value(q_box_t *box, lxb_dom_node_t *select_node)
+{
+    lxb_dom_node_t *child;
+    lxb_dom_node_t *fallback_option = NULL;
+    lxb_dom_node_t *selected_option = NULL;
+    char *text_buf = NULL;
+    size_t text_len = 0;
+    size_t text_cap = 0;
+
+    if (box == NULL || select_node == NULL) {
+        return;
+    }
+
+    for (child = select_node->first_child; child != NULL; child = child->next) {
+        if (child->type == LXB_DOM_NODE_TYPE_ELEMENT
+            && lxb_dom_node_tag_id(child) == LXB_TAG_OPTION)
+        {
+            if (fallback_option == NULL) {
+                fallback_option = child;
+            }
+            if (lxb_dom_element_has_attribute(lxb_dom_interface_element(child),
+                                              (const lxb_char_t *) "selected",
+                                              sizeof("selected") - 1))
+            {
+                selected_option = child;
+                break;
+            }
+        }
+    }
+
+    if (selected_option == NULL) {
+        selected_option = fallback_option;
+    }
+    if (selected_option == NULL) {
+        return;
+    }
+
+    if (q_collect_text_recursive(selected_option, &text_buf, &text_len, &text_cap) == 0) {
+        q_box_set_widget_value(box, (const lxb_char_t *) text_buf, text_len);
+    }
+    free(text_buf);
+}
+
+static void q_box_init_textarea_value(q_box_t *box, lxb_dom_node_t *textarea_node)
+{
+    char *text_buf = NULL;
+    size_t text_len = 0;
+    size_t text_cap = 0;
+
+    if (box == NULL || textarea_node == NULL) {
+        return;
+    }
+
+    if (q_collect_text_recursive(textarea_node, &text_buf, &text_len, &text_cap) == 0) {
+        q_box_set_widget_value(box, (const lxb_char_t *) text_buf, text_len);
+    }
+    free(text_buf);
+}
+
 static int q_count_preceding_list_items(lxb_dom_node_t *node)
 {
     int index = 1;
@@ -1356,7 +1493,9 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
 
             if (tag_id == LXB_TAG_INPUT) {
                 const lxb_char_t *type_attr;
+                const lxb_char_t *value_attr;
                 size_t type_len = 0;
+                size_t value_len = 0;
                 current->is_inline_block = 1;
                 current->background_color = 0xFFFFFFFFu;
                 current->border_width[0] = 1.0f;
@@ -1389,6 +1528,9 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
                         current->border_radius[2] = 7.0f;
                         current->border_radius[3] = 7.0f;
                     }
+                    current->widget_type = css_name_eq(type_attr, type_len, "radio")
+                                          ? Q_WIDGET_INPUT_RADIO
+                                          : Q_WIDGET_INPUT_CHECK;
                 } else if (type_attr != NULL
                            && (css_name_eq(type_attr, type_len, "submit")
                                || css_name_eq(type_attr, type_len, "button")
@@ -1399,11 +1541,31 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
                     current->background_color = 0xE0E0E0FFu;
                     current->padding_left = 8.0f;
                     current->padding_right = 8.0f;
+                    current->widget_type = Q_WIDGET_INPUT_SUBMIT;
                 } else {
                     current->style_width = 140.0f;
                     current->style_height = 22.0f;
+                    current->widget_type = Q_WIDGET_INPUT_TEXT;
+                }
+
+                value_attr = lxb_dom_element_get_attribute(el, (const lxb_char_t *) "value", 5, &value_len);
+                q_box_set_widget_value(current, value_attr, value_len);
+                if (current->widget_type == Q_WIDGET_INPUT_CHECK
+                    || current->widget_type == Q_WIDGET_INPUT_RADIO)
+                {
+                    /*
+                     * "checked" is a boolean HTML attribute; when written
+                     * without a value (e.g. <input checked>), lxb stores it
+                     * with a NULL value, so lxb_dom_element_get_attribute()
+                     * would incorrectly report it as absent. Use the
+                     * presence check instead.
+                     */
+                    current->widget_checked =
+                        lxb_dom_element_has_attribute(el, (const lxb_char_t *) "checked", 7) ? 1 : 0;
                 }
             } else if (tag_id == LXB_TAG_BUTTON) {
+                const lxb_char_t *value_attr;
+                size_t value_len = 0;
                 current->is_inline_block = 1;
                 current->style_height = 24.0f;
                 current->background_color = 0xE0E0E0FFu;
@@ -1419,7 +1581,11 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
                 current->padding_bottom = 2.0f;
                 current->padding_left = 8.0f;
                 current->padding_right = 8.0f;
+                current->widget_type = Q_WIDGET_BUTTON;
+                value_attr = lxb_dom_element_get_attribute(el, (const lxb_char_t *) "value", 5, &value_len);
+                q_box_set_widget_value(current, value_attr, value_len);
             } else if (tag_id == LXB_TAG_SELECT) {
+                current->widget_type = Q_WIDGET_SELECT;
                 current->is_inline_block = 1;
                 current->style_width = 120.0f;
                 current->style_height = 22.0f;
@@ -1443,6 +1609,7 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
                 size_t cols_len = 0;
                 int rows = 2;
                 int cols = 20;
+                current->widget_type = Q_WIDGET_TEXTAREA;
                 current->is_inline_block = 1;
                 current->background_color = 0xFFFFFFFFu;
                 current->border_width[0] = 1.0f;
@@ -1556,9 +1723,22 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
 
     child_parent = (current != NULL) ? current : parent;
 
-    for (child = node->first_child; child != NULL; child = child->next) {
-        if (q_layout_walk_node(doc, child, child_parent) != 0) {
-            return -1;
+    if (current == NULL
+        || (current->widget_type != Q_WIDGET_SELECT
+            && current->widget_type != Q_WIDGET_TEXTAREA))
+    {
+        for (child = node->first_child; child != NULL; child = child->next) {
+            if (q_layout_walk_node(doc, child, child_parent) != 0) {
+                return -1;
+            }
+        }
+    }
+
+    if (current != NULL) {
+        if (current->widget_type == Q_WIDGET_SELECT) {
+            q_box_init_select_value(current, node);
+        } else if (current->widget_type == Q_WIDGET_TEXTAREA) {
+            q_box_init_textarea_value(current, node);
         }
     }
 
@@ -1661,8 +1841,10 @@ void q_layout_free_tree(q_box_t *root)
     q_image_release(root->image);
     q_image_release(root->background_image);
     free(root->tile);
+    free(root->self_tile);
     free(root->document_title);
     free(root->href);
+    free(root->widget_value);
     if (root->table != NULL) {
         q_table_free(root->table);
     }

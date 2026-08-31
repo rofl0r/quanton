@@ -13,3 +13,12 @@ filebrowser_sdl2
 filebrowser_name.png
 filebrowser_size.png
 filebrowser_date.png
+filebrowser_onnavigate_x11
+filebrowser_onnavigate_sdl2
+filebrowser_form_controls_onnavigate_x11
+filebrowser_form_controls_onnavigate_sdl2
+filebrowser_onnavigate_x11_dbg
+filebrowser_onnavigate_sdl2_dbg
+visual_inspect
+visual_inspect_initial.png
+

@@ -291,6 +291,7 @@ void q_layout_line_wrap(q_box_t *ic)
             /* Free the original (unsplit) text box; text pointer is DOM-owned */
             q_shaped_run_free(orig->run);
             free(orig->tile);
+            free(orig->self_tile);
             free(orig);
             continue;
         }
@@ -378,6 +379,7 @@ cleanup:
         if (orig->type == Q_BOX_TEXT) {
             q_shaped_run_free(orig->run);
             free(orig->tile);
+            free(orig->self_tile);
             free(orig);
         } else {
             q_layout_free_tree(orig);

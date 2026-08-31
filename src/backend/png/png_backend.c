@@ -130,6 +130,7 @@ static void png_set_title(quanton_view_t *view, const char *title)
 
 const q_backend_vt_t q_backend_png = {
     png_create_window,
+    NULL,
     png_blit,
     png_poll_events,
     png_destroy_window,

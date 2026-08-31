@@ -19,6 +19,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
+#include <X11/cursorfont.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,6 +35,9 @@ typedef struct {
     uint8_t *xbuf;       /* BGRX conversion buffer, vp_width × vp_height × 4 */
     int      buf_w;
     int      buf_h;
+    Cursor   arrow_cursor;
+    Cursor   ibeam_cursor;
+    int      last_cursor_text;
 } q_x11_win_t;
 
 /* ── Pixel format conversion ────────────────────────────────────────────── */
@@ -58,6 +62,30 @@ static void rgba_to_bgrx(const uint8_t *src, uint8_t *dst, int npixels)
 static void x11_dispatch(quanton_view_t *view, q_event_t *ev)
 {
     q_event_dispatch(view, ev);
+}
+
+/*
+ * Translate an X11 KeySym into the backend-agnostic Q_KEY_* codes (or pass
+ * through printable ASCII unchanged) expected by q_event_dispatch() for text
+ * input navigation/editing.
+ */
+static uint32_t x11_translate_key(KeySym ks)
+{
+    switch (ks) {
+    case XK_Left:      return Q_KEY_LEFT;
+    case XK_Right:     return Q_KEY_RIGHT;
+    case XK_Up:        return Q_KEY_UP;
+    case XK_Down:      return Q_KEY_DOWN;
+    case XK_Page_Up:   return Q_KEY_PAGEUP;
+    case XK_Page_Down: return Q_KEY_PAGEDOWN;
+    case XK_Home:      return Q_KEY_HOME;
+    case XK_End:       return Q_KEY_END;
+    case XK_BackSpace: return Q_KEY_BACKSPACE;
+    case XK_Delete:    return Q_KEY_DELETE;
+    case XK_Return:
+    case XK_KP_Enter:  return Q_KEY_ENTER;
+    default:           return (uint32_t) ks;
+    }
 }
 
 /* ── Backend vtable functions ───────────────────────────────────────────── */
@@ -134,6 +162,12 @@ static int x11_create_window(quanton_view_t *view, int w, int h, const char *tit
     }
 
     win->display = dpy;
+    win->arrow_cursor = XCreateFontCursor(dpy, XC_left_ptr);
+    win->ibeam_cursor = XCreateFontCursor(dpy, XC_xterm);
+    win->last_cursor_text = -1;
+    if (win->arrow_cursor != None) {
+        XDefineCursor(dpy, win->window, win->arrow_cursor);
+    }
 
     XMapWindow(dpy, win->window);
     XFlush(dpy);
@@ -325,17 +359,47 @@ static void x11_poll_events(quanton_view_t *view)
                          ((xev.xmotion.state & ControlMask)  ? 2u : 0u) |
                          ((xev.xmotion.state & Mod1Mask)     ? 4u : 0u);
             x11_dispatch(view, &ev);
+            if (win->last_cursor_text != view->mouse_text_cursor) {
+                Cursor c = view->mouse_text_cursor ? win->ibeam_cursor : win->arrow_cursor;
+                if (c != None) {
+                    XDefineCursor(win->display, win->window, c);
+                }
+                win->last_cursor_text = view->mouse_text_cursor;
+            }
             break;
 
         case KeyPress:
         case KeyRelease: {
             KeySym ks = XLookupKeysym(&xev.xkey, 0);
             ev.type    = (xev.type == KeyPress) ? Q_EVENT_KEY_DOWN : Q_EVENT_KEY_UP;
-            ev.key_sym = (uint32_t) ks;
+            ev.key_sym = x11_translate_key(ks);
             ev.key_mod = ((xev.xkey.state & ShiftMask)   ? 1u : 0u) |
                          ((xev.xkey.state & ControlMask)  ? 2u : 0u) |
                          ((xev.xkey.state & Mod1Mask)     ? 4u : 0u);
+            if (ev.type == Q_EVENT_KEY_DOWN && (ev.key_mod & 2u)
+                && (ev.key_sym == 'v' || ev.key_sym == 'V'))
+            {
+                int nbytes = 0;
+                char *clip = XFetchBuffer(win->display, &nbytes, 0);
+                if (clip != NULL && nbytes > 0) {
+                    free(view->clipboard_text);
+                    view->clipboard_text = (char *) malloc((size_t) nbytes + 1u);
+                    if (view->clipboard_text != NULL) {
+                        memcpy(view->clipboard_text, clip, (size_t) nbytes);
+                        view->clipboard_text[nbytes] = '\0';
+                    }
+                    XFree(clip);
+                }
+            }
             x11_dispatch(view, &ev);
+            if (ev.type == Q_EVENT_KEY_DOWN && (ev.key_mod & 2u)
+                && (ev.key_sym == 'c' || ev.key_sym == 'C'
+                    || ev.key_sym == 'x' || ev.key_sym == 'X')
+                && view->clipboard_text != NULL)
+            {
+                XStoreBuffer(win->display, view->clipboard_text,
+                             (int) strlen(view->clipboard_text), 0);
+            }
             break;
         }
 
@@ -361,6 +425,12 @@ static void x11_destroy_window(quanton_view_t *view)
     win = (q_x11_win_t *) view->window_handle;
 
     free(win->xbuf);
+    if (win->arrow_cursor != None) {
+        XFreeCursor(win->display, win->arrow_cursor);
+    }
+    if (win->ibeam_cursor != None) {
+        XFreeCursor(win->display, win->ibeam_cursor);
+    }
     XFreeGC(win->display, win->gc);
     XDestroyWindow(win->display, win->window);
     XCloseDisplay(win->display);
@@ -389,6 +459,7 @@ static void x11_set_title(quanton_view_t *view, const char *title)
 
 const q_backend_vt_t q_backend_x11 = {
     x11_create_window,
+    NULL,
     x11_blit,
     x11_poll_events,
     x11_destroy_window,
