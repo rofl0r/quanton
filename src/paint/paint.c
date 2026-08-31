@@ -763,6 +763,21 @@ static void q_paint_render_widget_text(q_box_t *box, const char *text, size_t te
     q_shaped_run_free(run);
 }
 
+static size_t q_paint_textarea_line_count(const q_box_t *box)
+{
+    size_t i;
+    size_t lines = 1u;
+    if (box == NULL || box->widget_value == NULL || box->widget_value_len == 0u) {
+        return 1u;
+    }
+    for (i = 0u; i < box->widget_value_len; ++i) {
+        if (box->widget_value[i] == '\n') {
+            lines++;
+        }
+    }
+    return lines;
+}
+
 static void q_paint_render_textarea(q_box_t *box, uint32_t text_color)
 {
     size_t i;
@@ -773,6 +788,9 @@ static void q_paint_render_textarea(q_box_t *box, uint32_t text_color)
     float font_px;
     int line_h;
     int base_y = 4;
+    float scroll_y = 0.0f;
+    int show_scrollbar = 0;
+    float total_h = 0.0f;
     q_font_t *font;
     int caret_x = 4;
     int caret_y = base_y;
@@ -783,6 +801,13 @@ static void q_paint_render_textarea(q_box_t *box, uint32_t text_color)
 
     if (box->widget_caret > box->widget_value_len) {
         box->widget_caret = box->widget_value_len;
+    }
+    if (box->widget_scroll_y > 0.0f) {
+        scroll_y = box->widget_scroll_y;
+    }
+    total_h = ((float) q_paint_textarea_line_count(box)) * 18.0f;
+    if (total_h > (float) (box->tile_h - 8)) {
+        show_scrollbar = 1;
     }
 
     for (i = 0u; i < box->widget_caret; ++i) {
@@ -800,7 +825,8 @@ static void q_paint_render_textarea(q_box_t *box, uint32_t text_color)
                 size_t seg_len = i - line_start;
                 if (seg_len > 0u) {
                     q_paint_render_widget_text(box, box->widget_value + line_start, seg_len,
-                                               4, base_y + (int) line_index * 18, text_color);
+                                               4, base_y + (int) line_index * 18
+                                               - (int) lroundf(scroll_y), text_color);
                 }
                 line_start = i + 1u;
                 line_index++;
@@ -825,7 +851,7 @@ static void q_paint_render_textarea(q_box_t *box, uint32_t text_color)
                                                         box->widget_caret - line_off));
             }
         }
-        caret_y = base_y + (int) caret_line * 18;
+        caret_y = base_y + (int) caret_line * 18 - (int) lroundf(scroll_y);
         font_px = (!isnan(box->font_size) && box->font_size > 0.0f) ? box->font_size : 16.0f;
         line_h = (int) lroundf(font_px);
         if (line_h < 8) {
@@ -838,6 +864,33 @@ static void q_paint_render_textarea(q_box_t *box, uint32_t text_color)
             q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
                               caret_x, caret_y, 1, line_h, text_color);
         }
+    }
+    if (show_scrollbar) {
+        int track_w = Q_SCROLLBAR_VISUAL_THICKNESS;
+        int track_h = box->tile_h - 2;
+        int track_x = box->tile_w - track_w - 1;
+        int track_y = 1;
+        float inner_h = (float) (box->tile_h - 8);
+        float max_scroll = total_h - inner_h;
+        int thumb_h;
+        int thumb_y;
+        if (max_scroll < 1.0f) {
+            max_scroll = 1.0f;
+        }
+        thumb_h = (int) lroundf(inner_h * (inner_h / total_h));
+        if (thumb_h < 12) {
+            thumb_h = 12;
+        }
+        if (thumb_h > track_h) {
+            thumb_h = track_h;
+        }
+        thumb_y = track_y + (int) lroundf((scroll_y / max_scroll) * (float) (track_h - thumb_h));
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                          track_x, track_y, track_w, track_h, 0xE5E7EBFFu);
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                          track_x, thumb_y, track_w, thumb_h, 0x9CA3AFFFu);
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                          track_x, track_y, 1, track_h, 0x707070FFu);
     }
 }
 

@@ -347,6 +347,7 @@ struct q_box {
     size_t widget_value_len;
     size_t widget_caret;
     float widget_scroll_x;
+    float widget_scroll_y;
     int widget_checked;
     int widget_pressed;
     int widget_open;
@@ -391,6 +392,7 @@ struct quanton_view {
     q_box_t            *drag_scroll_box;   /* active scrollbar-drag target */
     int                 drag_scroll_vertical;
     int                 drag_scroll_last_mouse;
+    int                 defer_updates;      /* when set, event dispatch only marks dirty */
     int                 should_close;
     q_dirty_flags_t     dirty_flags;       /* accumulated dirty bits */
 };
