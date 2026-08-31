@@ -79,6 +79,8 @@ typedef struct q_event {
 #define Q_KEY_DELETE    0x7Fu
 #define Q_KEY_LEFT      0x25u
 #define Q_KEY_RIGHT     0x27u
+#define Q_KEY_UP        0x26u
+#define Q_KEY_DOWN      0x28u
 #define Q_KEY_HOME      0x24u
 #define Q_KEY_END       0x23u
 #define Q_KEY_ENTER     0x0Du
@@ -388,6 +390,7 @@ struct quanton_view {
                                      void *userdata);
     void               *on_navigate_userdata;
     q_box_t            *focused_widget;   /* currently focused interactive box */
+    size_t              texture_cache_limit_bytes; /* 0 = backend default */
     void               *window_handle;     /* opaque backend-specific handle */
     q_box_t            *drag_scroll_box;   /* active scrollbar-drag target */
     int                 drag_scroll_vertical;
@@ -483,6 +486,8 @@ void q_composite_frame(quanton_view_t *view);
 void q_view_scroll_by(quanton_view_t *view, float dx, float dy);
 void q_view_scroll_to(quanton_view_t *view, float x, float y);
 void q_view_scroll_into_view(quanton_view_t *view, const q_box_t *box);
+void q_view_set_texture_cache_limit(quanton_view_t *view, size_t bytes);
+size_t q_view_get_texture_cache_limit(const quanton_view_t *view);
 
 /* ── View update (dirty-flag processing) ── */
 

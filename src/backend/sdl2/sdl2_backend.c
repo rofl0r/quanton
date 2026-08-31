@@ -62,6 +62,8 @@ static uint32_t sdl2_translate_key(SDL_Keycode sym)
     switch (sym) {
     case SDLK_LEFT:      return Q_KEY_LEFT;
     case SDLK_RIGHT:     return Q_KEY_RIGHT;
+    case SDLK_UP:        return Q_KEY_UP;
+    case SDLK_DOWN:      return Q_KEY_DOWN;
     case SDLK_HOME:      return Q_KEY_HOME;
     case SDLK_END:       return Q_KEY_END;
     case SDLK_BACKSPACE: return Q_KEY_BACKSPACE;
@@ -75,6 +77,7 @@ static uint32_t sdl2_translate_key(SDL_Keycode sym)
 static int sdl2_key_is_repeat_coalescible(uint32_t key_sym)
 {
     if (key_sym == Q_KEY_LEFT || key_sym == Q_KEY_RIGHT
+        || key_sym == Q_KEY_UP || key_sym == Q_KEY_DOWN
         || key_sym == Q_KEY_HOME || key_sym == Q_KEY_END
         || key_sym == Q_KEY_BACKSPACE || key_sym == Q_KEY_DELETE
         || key_sym == Q_KEY_ENTER)
@@ -270,7 +273,7 @@ static q_sdl2_tex_entry_t *sdl2_cache_ensure(q_sdl2_win_t *win,
     return entry;
 }
 
-static void sdl2_cache_prune(q_sdl2_win_t *win)
+static void sdl2_cache_prune(q_sdl2_win_t *win, const quanton_view_t *view)
 {
     q_sdl2_tex_entry_t *oldest;
     q_sdl2_tex_entry_t *oldest_prev;
@@ -289,7 +292,12 @@ static void sdl2_cache_prune(q_sdl2_win_t *win)
         }
     }
 
-    while (total_bytes > Q_SDL2_CACHE_MAX_BYTES) {
+    size_t limit = Q_SDL2_CACHE_MAX_BYTES;
+    if (view != NULL && view->texture_cache_limit_bytes > 0u) {
+        limit = view->texture_cache_limit_bytes;
+    }
+
+    while (total_bytes > limit) {
         oldest = NULL;
         oldest_prev = NULL;
         prev = NULL;
@@ -535,7 +543,7 @@ static void sdl2_render_view(quanton_view_t *view)
 
     SDL_RenderSetClipRect(win->renderer, NULL);
     SDL_RenderPresent(win->renderer);
-    sdl2_cache_prune(win);
+    sdl2_cache_prune(win, view);
 }
 
 static void sdl2_blit(quanton_view_t *view)

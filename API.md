@@ -39,6 +39,7 @@ Public API reference for `include/quanton.h`.
 - `q_dom_mark_dirty()` — mark DOM subtrees dirty.
 - `q_view_update()` / `q_view_refresh()` — incremental or full refresh.
 - `q_view_scroll_by()` / `q_view_scroll_to()` / `q_view_scroll_into_view()` — scrolling.
+- `q_view_set_texture_cache_limit()` / `q_view_get_texture_cache_limit()` — per-view backend texture-cache cap control (bytes, `0` = backend default).
 
 ## DOM mutation helpers
 

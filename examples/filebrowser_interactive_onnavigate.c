@@ -53,9 +53,8 @@
 /* Left panel width in px (file browser table). */
 #define FB_PANEL_W      580
 /* Right panel width in px (long anchor demo). */
-#define REF_PANEL_W     (VP_WIDTH - FB_PANEL_W - 24)
-/* Keep panel boxes inside viewport margins to avoid root scrolling. */
-#define PANEL_H         (VP_HEIGHT - 16)
+#define REF_PANEL_W     (VP_WIDTH - FB_PANEL_W - 32)
+#define PANEL_H         (VP_HEIGHT)
 
 /* ── Sort enum ───────────────────────────────────────────────────────────── */
 
@@ -206,7 +205,7 @@ static char *build_ref_panel_html(void)
     /* Header */
     pos += (size_t) snprintf(buf + pos, BUF_REM(pos, cap),
         "<div style=\"width:%dpx;overflow:auto;height:%dpx;"
-                    "border-left:2px solid #aaa;padding-left:8px;\">",
+                    "border-left:2px solid #aaa;padding-left:8px;padding-right:14px;\">",
         REF_PANEL_W, PANEL_H);
 
     /* Table of contents */
@@ -279,7 +278,7 @@ static char *build_full_html(const fb_entry_t *ents, int n)
     if (buf == NULL) { free(tbody); free(ref_panel); return NULL; }
 
     snprintf(buf, FULL_HTML_MAX,
-        "<html><body style=\"margin:8px;display:flex;flex-direction:row;gap:8px;\">"
+        "<html><body style=\"margin:0;display:flex;flex-direction:row;gap:8px;\">"
 
         /* Left: sortable file-browser table */
         "<div style=\"width:%dpx;overflow:auto;height:%dpx;\">"
