@@ -399,6 +399,10 @@ struct quanton_view {
     q_box_t            *active_scroll_box; /* last activated scrollable pane */
     q_box_t            *mouse_select_box;  /* active text-selection drag source */
     q_box_t            *mouse_text_select_box; /* read-only text selection drag source */
+    q_box_t            *text_sel_anchor_box;   /* read-only text selection anchor box */
+    q_box_t            *text_sel_focus_box;    /* read-only text selection focus box */
+    size_t              text_sel_anchor_off;   /* byte offset in anchor box */
+    size_t              text_sel_focus_off;    /* byte offset in focus box */
     int                 mouse_text_cursor; /* 1 when pointer should be I-beam */
     char               *clipboard_text;    /* internal clipboard buffer */
     size_t              texture_cache_limit_bytes; /* 0 = backend default */
