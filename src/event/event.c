@@ -63,6 +63,8 @@ static void q_dbg_print_box(const char *label, const q_box_t *box)
 #define Q_SCROLLBAR_THICKNESS 14
 #define Q_SCROLLBAR_MIN_THUMB 16
 
+static void q_event_maybe_update(quanton_view_t *view);
+
 static int q_event_is_mouse_event(q_event_type_t type)
 {
     return type == Q_EVENT_MOUSE_MOVE
@@ -1330,7 +1332,7 @@ static void q_event_maybe_update(quanton_view_t *view)
     if (view == NULL || view->defer_updates) {
         return;
     }
-    q_event_maybe_update(view);
+    q_view_update(view);
 }
 
 void q_event_dispatch(quanton_view_t *view, q_event_t *event)
