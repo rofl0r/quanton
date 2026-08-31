@@ -617,9 +617,18 @@ static void sdl2_poll_events(quanton_view_t *view)
     uint32_t key_sym = 0;
     uint32_t key_mod = 0;
     int key_repeat = 0;
+    static SDL_Cursor *arrow_cursor = NULL;
+    static SDL_Cursor *ibeam_cursor = NULL;
+    static int last_cursor_text = -1;
 
     if (view == NULL || view->window_handle == NULL) {
         return;
+    }
+    if (arrow_cursor == NULL) {
+        arrow_cursor = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
+    }
+    if (ibeam_cursor == NULL) {
+        ibeam_cursor = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_IBEAM);
     }
     view->defer_updates = 1;
 
@@ -642,6 +651,11 @@ static void sdl2_poll_events(quanton_view_t *view)
         ev.key_mod = key_mod; \
         ev.key_repeat = (key_repeat > 0) ? key_repeat : 1; \
         sdl2_dispatch(view, &ev); \
+        if ((key_mod & 2u) != 0u \
+            && (key_sym == 'c' || key_sym == 'C' || key_sym == 'x' || key_sym == 'X') \
+            && view->clipboard_text != NULL) { \
+            SDL_SetClipboardText(view->clipboard_text); \
+        } \
         key_pending = 0; \
         key_repeat = 0; \
     } \
@@ -758,6 +772,20 @@ static void sdl2_poll_events(quanton_view_t *view)
             {
                 uint32_t sym = sdl2_translate_key(sev.key.keysym.sym);
                 uint32_t mod = sdl2_mod((SDL_Keymod) sev.key.keysym.mod);
+                int ctrl = (mod & 2u) != 0u;
+                if (ctrl && (sym == 'v' || sym == 'V')) {
+                    char *clip = SDL_GetClipboardText();
+                    if (clip != NULL) {
+                        size_t n = strlen(clip);
+                        char *dup = (char *) malloc(n + 1u);
+                        if (dup != NULL) {
+                            memcpy(dup, clip, n + 1u);
+                        }
+                        free(view->clipboard_text);
+                        view->clipboard_text = dup;
+                        SDL_free(clip);
+                    }
+                }
                 if (sdl2_key_is_repeat_coalescible(sym)) {
                     if (key_pending && key_sym == sym && key_mod == mod) {
                         key_repeat++;
@@ -775,6 +803,11 @@ static void sdl2_poll_events(quanton_view_t *view)
                     ev.key_mod = mod;
                     ev.key_repeat = 1;
                     sdl2_dispatch(view, &ev);
+                    if (ctrl && (sym == 'c' || sym == 'C' || sym == 'x' || sym == 'X')
+                        && view->clipboard_text != NULL)
+                    {
+                        SDL_SetClipboardText(view->clipboard_text);
+                    }
                 }
             }
             break;
@@ -799,6 +832,14 @@ static void sdl2_poll_events(quanton_view_t *view)
     SDL2_FLUSH_KEYDOWN();
 #undef SDL2_FLUSH_MOTION
 #undef SDL2_FLUSH_KEYDOWN
+    if (last_cursor_text != view->mouse_text_cursor) {
+        if (view->mouse_text_cursor && ibeam_cursor != NULL) {
+            SDL_SetCursor(ibeam_cursor);
+        } else if (arrow_cursor != NULL) {
+            SDL_SetCursor(arrow_cursor);
+        }
+        last_cursor_text = view->mouse_text_cursor;
+    }
     view->defer_updates = 0;
     if (view->dirty_flags != 0u) {
         q_view_update(view);

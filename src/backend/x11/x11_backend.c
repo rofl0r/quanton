@@ -19,6 +19,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
+#include <X11/cursorfont.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,6 +35,9 @@ typedef struct {
     uint8_t *xbuf;       /* BGRX conversion buffer, vp_width × vp_height × 4 */
     int      buf_w;
     int      buf_h;
+    Cursor   arrow_cursor;
+    Cursor   ibeam_cursor;
+    int      last_cursor_text;
 } q_x11_win_t;
 
 /* ── Pixel format conversion ────────────────────────────────────────────── */
@@ -158,6 +162,12 @@ static int x11_create_window(quanton_view_t *view, int w, int h, const char *tit
     }
 
     win->display = dpy;
+    win->arrow_cursor = XCreateFontCursor(dpy, XC_left_ptr);
+    win->ibeam_cursor = XCreateFontCursor(dpy, XC_xterm);
+    win->last_cursor_text = -1;
+    if (win->arrow_cursor != None) {
+        XDefineCursor(dpy, win->window, win->arrow_cursor);
+    }
 
     XMapWindow(dpy, win->window);
     XFlush(dpy);
@@ -349,6 +359,13 @@ static void x11_poll_events(quanton_view_t *view)
                          ((xev.xmotion.state & ControlMask)  ? 2u : 0u) |
                          ((xev.xmotion.state & Mod1Mask)     ? 4u : 0u);
             x11_dispatch(view, &ev);
+            if (win->last_cursor_text != view->mouse_text_cursor) {
+                Cursor c = view->mouse_text_cursor ? win->ibeam_cursor : win->arrow_cursor;
+                if (c != None) {
+                    XDefineCursor(win->display, win->window, c);
+                }
+                win->last_cursor_text = view->mouse_text_cursor;
+            }
             break;
 
         case KeyPress:
@@ -359,7 +376,30 @@ static void x11_poll_events(quanton_view_t *view)
             ev.key_mod = ((xev.xkey.state & ShiftMask)   ? 1u : 0u) |
                          ((xev.xkey.state & ControlMask)  ? 2u : 0u) |
                          ((xev.xkey.state & Mod1Mask)     ? 4u : 0u);
+            if (ev.type == Q_EVENT_KEY_DOWN && (ev.key_mod & 2u)
+                && (ev.key_sym == 'v' || ev.key_sym == 'V'))
+            {
+                int nbytes = 0;
+                char *clip = XFetchBuffer(win->display, &nbytes, 0);
+                if (clip != NULL && nbytes > 0) {
+                    free(view->clipboard_text);
+                    view->clipboard_text = (char *) malloc((size_t) nbytes + 1u);
+                    if (view->clipboard_text != NULL) {
+                        memcpy(view->clipboard_text, clip, (size_t) nbytes);
+                        view->clipboard_text[nbytes] = '\0';
+                    }
+                    XFree(clip);
+                }
+            }
             x11_dispatch(view, &ev);
+            if (ev.type == Q_EVENT_KEY_DOWN && (ev.key_mod & 2u)
+                && (ev.key_sym == 'c' || ev.key_sym == 'C'
+                    || ev.key_sym == 'x' || ev.key_sym == 'X')
+                && view->clipboard_text != NULL)
+            {
+                XStoreBuffer(win->display, view->clipboard_text,
+                             (int) strlen(view->clipboard_text), 0);
+            }
             break;
         }
 
@@ -385,6 +425,12 @@ static void x11_destroy_window(quanton_view_t *view)
     win = (q_x11_win_t *) view->window_handle;
 
     free(win->xbuf);
+    if (win->arrow_cursor != None) {
+        XFreeCursor(win->display, win->arrow_cursor);
+    }
+    if (win->ibeam_cursor != None) {
+        XFreeCursor(win->display, win->ibeam_cursor);
+    }
     XFreeGC(win->display, win->gc);
     XDestroyWindow(win->display, win->window);
     XCloseDisplay(win->display);

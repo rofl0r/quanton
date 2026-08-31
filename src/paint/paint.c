@@ -413,12 +413,10 @@ static void q_paint_box_child(q_box_t *parent, q_box_t *child)
                                   child->tile, child->tile_w, child->tile_h,
                                   dx, dy,
                                   clip_x, clip_y, clip_w, clip_h);
-        q_paint_draw_select_popup(parent, child, dx, dy);
     } else {
         q_paint_composite(parent->tile, parent->tile_w, parent->tile_h,
                           child->tile, child->tile_w, child->tile_h,
                           dx, dy);
-        q_paint_draw_select_popup(parent, child, dx, dy);
     }
 }
 
@@ -492,12 +490,10 @@ static void q_paint_box_child_cached(q_box_t *parent, q_box_t *child)
                                   child->tile, child->tile_w, child->tile_h,
                                   dx, dy,
                                   clip_x, clip_y, clip_w, clip_h);
-        q_paint_draw_select_popup(parent, child, dx, dy);
     } else {
         q_paint_composite(parent->tile, parent->tile_w, parent->tile_h,
                           child->tile, child->tile_w, child->tile_h,
                           dx, dy);
-        q_paint_draw_select_popup(parent, child, dx, dy);
     }
 }
 
@@ -849,6 +845,7 @@ static void q_paint_draw_select_popup(q_box_t *parent, q_box_t *child, int dx, i
             count++;
         }
     }
+
     if (count <= 0) {
         return;
     }
@@ -913,6 +910,23 @@ static void q_paint_draw_select_popup(q_box_t *parent, q_box_t *child, int dx, i
         if (y >= popup_y + popup_h) {
             break;
         }
+    }
+
+}
+
+static void q_paint_draw_open_selects_on_root(q_box_t *root, q_box_t *node)
+{
+    q_box_t *child;
+    if (root == NULL || node == NULL) {
+        return;
+    }
+    if (node->widget_type == Q_WIDGET_SELECT && node->widget_open) {
+        int dx = (int) lroundf(node->x - root->x);
+        int dy = (int) lroundf(node->y - root->y);
+        q_paint_draw_select_popup(root, node, dx, dy);
+    }
+    for (child = node->first_child; child != NULL; child = child->next_sibling) {
+        q_paint_draw_open_selects_on_root(root, child);
     }
 }
 
@@ -1588,6 +1602,28 @@ static void q_paint_box_internal(q_box_t *box, int repaint_children)
     } else if (box->type == Q_BOX_IMAGE) {
         q_paint_image(box);
     } else if (box->type == Q_BOX_TEXT && box->run != NULL) {
+        if (box->text != NULL && box->text_sel_anchor != box->text_sel_focus) {
+            size_t a = box->text_sel_anchor;
+            size_t b = box->text_sel_focus;
+            int x1 = 0;
+            int x2 = 0;
+            q_font_t *font = q_paint_widget_font(box);
+            if (a > b) {
+                size_t t = a; a = b; b = t;
+            }
+            if (a > box->text_len) a = box->text_len;
+            if (b > box->text_len) b = box->text_len;
+            if (font != NULL) {
+                x1 = (int) lroundf(q_font_measure(font, box->text, a));
+                x2 = (int) lroundf(q_font_measure(font, box->text, b));
+            } else {
+                x1 = (int) (a * 8u);
+                x2 = (int) (b * 8u);
+            }
+            if (x2 > x1) {
+                q_paint_fill_rect(box->tile, w, h, x1, 0, x2 - x1, h, 0x93C5FDFFu);
+            }
+        }
         q_font_render_run(box->run, text_color, box->tile, w, h, 0, 0);
         q_paint_text_decoration(box, text_color);
     } else if (box->type == Q_BOX_TEXT) {
@@ -1664,6 +1700,10 @@ static void q_paint_box_internal(q_box_t *box, int repaint_children)
                 q_paint_box_child_cached(box, child);
             }
         }
+    }
+
+    if (box->parent == NULL) {
+        q_paint_draw_open_selects_on_root(box, box);
     }
 
     q_paint_apply_border_radius(box);
