@@ -763,6 +763,84 @@ static void q_paint_render_widget_text(q_box_t *box, const char *text, size_t te
     q_shaped_run_free(run);
 }
 
+static void q_paint_render_textarea(q_box_t *box, uint32_t text_color)
+{
+    size_t i;
+    size_t line_start = 0u;
+    size_t line_index = 0u;
+    size_t caret_line = 0u;
+    size_t caret_col = 0u;
+    float font_px;
+    int line_h;
+    int base_y = 4;
+    q_font_t *font;
+    int caret_x = 4;
+    int caret_y = base_y;
+
+    if (box == NULL) {
+        return;
+    }
+
+    if (box->widget_caret > box->widget_value_len) {
+        box->widget_caret = box->widget_value_len;
+    }
+
+    for (i = 0u; i < box->widget_caret; ++i) {
+        if (box->widget_value != NULL && box->widget_value[i] == '\n') {
+            caret_line++;
+            caret_col = 0u;
+        } else {
+            caret_col++;
+        }
+    }
+
+    if (box->widget_value != NULL && box->widget_value_len > 0u) {
+        for (i = 0u; i <= box->widget_value_len; ++i) {
+            if (i == box->widget_value_len || box->widget_value[i] == '\n') {
+                size_t seg_len = i - line_start;
+                if (seg_len > 0u) {
+                    q_paint_render_widget_text(box, box->widget_value + line_start, seg_len,
+                                               4, base_y + (int) line_index * 18, text_color);
+                }
+                line_start = i + 1u;
+                line_index++;
+            }
+        }
+    }
+
+    if (box->widget_focused) {
+        font = q_paint_widget_font(box);
+        if (font != NULL && box->widget_value != NULL && caret_col > 0u) {
+            size_t line_off = 0u;
+            size_t cur_line = 0u;
+            for (i = 0u; i < box->widget_caret; ++i) {
+                if (box->widget_value[i] == '\n') {
+                    cur_line++;
+                    line_off = i + 1u;
+                }
+            }
+            if (cur_line == caret_line && box->widget_caret >= line_off) {
+                caret_x += (int) lroundf(q_font_measure(font,
+                                                        box->widget_value + line_off,
+                                                        box->widget_caret - line_off));
+            }
+        }
+        caret_y = base_y + (int) caret_line * 18;
+        font_px = (!isnan(box->font_size) && box->font_size > 0.0f) ? box->font_size : 16.0f;
+        line_h = (int) lroundf(font_px);
+        if (line_h < 8) {
+            line_h = 8;
+        }
+        if (caret_y + line_h > box->tile_h - 2) {
+            line_h = box->tile_h - caret_y - 2;
+        }
+        if (line_h > 0) {
+            q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                              caret_x, caret_y, 1, line_h, text_color);
+        }
+    }
+}
+
 static void q_paint_form_widget(q_box_t *box)
 {
     lxb_tag_id_t tag;
@@ -900,37 +978,7 @@ static void q_paint_form_widget(q_box_t *box)
     }
 
     if (tag == LXB_TAG_TEXTAREA) {
-        const lxb_char_t *value;
-        size_t value_len = 0;
-        value = q_paint_get_attr(box, "value", &value_len);
-        if (value != NULL && value_len > 0u) {
-            q_paint_render_widget_text(box, (const char *) value, value_len, 4, 4, text_color);
-        }
-        if (box->widget_focused && box->widget_caret <= box->widget_value_len) {
-            int caret_x = 4;
-            int caret_h;
-            int caret_top = 4;
-            if (box->widget_caret > 0u && box->widget_value != NULL) {
-                q_font_t *font = q_paint_widget_font(box);
-                if (font != NULL) {
-                    caret_x += (int) lroundf(q_font_measure(font, box->widget_value,
-                                                            box->widget_caret));
-                }
-            }
-            caret_h = (int) lroundf((!isnan(box->font_size) && box->font_size > 0.0f)
-                                    ? box->font_size : 16.0f);
-            if (caret_h < 8) {
-                caret_h = 8;
-            }
-            if (caret_top + caret_h > box->tile_h - 2) {
-                caret_h = box->tile_h - caret_top - 2;
-            }
-            if (caret_h < 1) {
-                caret_h = 1;
-            }
-            q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
-                              caret_x, caret_top, 1, caret_h, text_color);
-        }
+        q_paint_render_textarea(box, text_color);
         return;
     }
 }

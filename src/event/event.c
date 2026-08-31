@@ -844,6 +844,8 @@ static void q_widget_insert_newline(q_box_t *box)
     box->widget_caret = caret + 1u;
 }
 
+
+
 static void q_widget_delete_char(q_box_t *box)
 {
     size_t caret;
@@ -1342,41 +1344,47 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
     if (event->type == Q_EVENT_KEY_DOWN) {
         q_box_t *focused_widget = view->focused_widget;
         int changed = 0;
+        int repeat_count = (event->key_repeat > 0) ? event->key_repeat : 1;
+        int rep;
         if (focused_widget != NULL
             && (focused_widget->widget_type == Q_WIDGET_INPUT_TEXT
                 || focused_widget->widget_type == Q_WIDGET_TEXTAREA))
         {
-            if (event->key_sym == Q_KEY_BACKSPACE
-                || event->key_sym == Q_KEY_DELETE)
-            {
-                q_widget_delete_char(focused_widget);
-                changed = 1;
-            } else if (event->key_sym == Q_KEY_LEFT) {
-                if (focused_widget->widget_caret > 0u) {
-                    focused_widget->widget_caret--;
-                }
-                changed = 1;
-            } else if (event->key_sym == Q_KEY_RIGHT) {
-                if (focused_widget->widget_caret < focused_widget->widget_value_len) {
-                    focused_widget->widget_caret++;
-                }
-                changed = 1;
-            } else if (event->key_sym == Q_KEY_HOME) {
-                focused_widget->widget_caret = 0u;
-                changed = 1;
-            } else if (event->key_sym == Q_KEY_END) {
-                focused_widget->widget_caret = focused_widget->widget_value_len;
-                changed = 1;
-            } else if (event->key_sym == Q_KEY_ENTER) {
-                if (focused_widget->widget_type == Q_WIDGET_TEXTAREA) {
-                    q_widget_insert_newline(focused_widget);
+            for (rep = 0; rep < repeat_count; ++rep) {
+                if (event->key_sym == Q_KEY_BACKSPACE
+                    || event->key_sym == Q_KEY_DELETE)
+                {
+                    q_widget_delete_char(focused_widget);
+                    changed = 1;
+                } else if (event->key_sym == Q_KEY_LEFT) {
+                    if (focused_widget->widget_caret > 0u) {
+                        focused_widget->widget_caret--;
+                    }
+                    changed = 1;
+                } else if (event->key_sym == Q_KEY_RIGHT) {
+                    if (focused_widget->widget_caret < focused_widget->widget_value_len) {
+                        focused_widget->widget_caret++;
+                    }
+                    changed = 1;
+                } else if (event->key_sym == Q_KEY_HOME) {
+                    focused_widget->widget_caret = 0u;
+                    changed = 1;
+                    break;
+                } else if (event->key_sym == Q_KEY_END) {
+                    focused_widget->widget_caret = focused_widget->widget_value_len;
+                    changed = 1;
+                    break;
+                } else if (event->key_sym == Q_KEY_ENTER) {
+                    if (focused_widget->widget_type == Q_WIDGET_TEXTAREA) {
+                        q_widget_insert_newline(focused_widget);
+                        changed = 1;
+                    }
+                } else if (event->key_sym >= Q_WIDGET_TEXT_INPUT_PRINTABLE_MIN
+                           && event->key_sym <= Q_WIDGET_TEXT_INPUT_PRINTABLE_MAX)
+                {
+                    q_widget_insert_char(focused_widget, event->key_sym);
                     changed = 1;
                 }
-            } else if (event->key_sym >= Q_WIDGET_TEXT_INPUT_PRINTABLE_MIN
-                       && event->key_sym <= Q_WIDGET_TEXT_INPUT_PRINTABLE_MAX)
-            {
-                q_widget_insert_char(focused_widget, event->key_sym);
-                changed = 1;
             }
 
             if (changed) {
