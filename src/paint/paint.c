@@ -866,7 +866,7 @@ static void q_paint_render_textarea(q_box_t *box, uint32_t text_color)
         }
     }
     if (show_scrollbar) {
-        int track_w = Q_SCROLLBAR_VISUAL_THICKNESS;
+        int track_w = Q_SCROLLBAR_THICKNESS;
         int track_h = box->tile_h - 2;
         int track_x = box->tile_w - track_w - 1;
         int track_y = 1;

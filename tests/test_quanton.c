@@ -2883,6 +2883,11 @@ int main(int argc, char **argv)
         txt_box->widget_value = strdup("abc");
         assert(txt_box->widget_value != NULL);
         txt_box->widget_value_len = 3u;
+        if (wview.focused_widget != NULL) {
+            wview.focused_widget->widget_focused = 0;
+        }
+        wview.focused_widget = txt_box;
+        txt_box->widget_focused = 1;
         txt_box->widget_caret = 1u;
         ev.type = Q_EVENT_KEY_DOWN;
         ev.key_sym = Q_KEY_DELETE;
