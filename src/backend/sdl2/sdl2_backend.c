@@ -72,6 +72,18 @@ static uint32_t sdl2_translate_key(SDL_Keycode sym)
     }
 }
 
+static int sdl2_key_is_repeat_coalescible(uint32_t key_sym)
+{
+    if (key_sym == Q_KEY_LEFT || key_sym == Q_KEY_RIGHT
+        || key_sym == Q_KEY_HOME || key_sym == Q_KEY_END
+        || key_sym == Q_KEY_BACKSPACE || key_sym == Q_KEY_DELETE
+        || key_sym == Q_KEY_ENTER)
+    {
+        return 1;
+    }
+    return key_sym >= 0x20u && key_sym <= 0x7Eu;
+}
+
 static int q_box_scrolls_x(const q_box_t *box)
 {
     return box != NULL
@@ -387,16 +399,18 @@ static void sdl2_render_box_recursive(q_sdl2_win_t *win,
         q_box_content_extent(box, &content_w, &content_h);
         show_vertical = q_box_has_vertical_scrollbar(box, content_h, (float) content_rect.h);
         show_horizontal = q_box_has_horizontal_scrollbar(box, content_w, (float) content_rect.w);
-        if (show_vertical) {
-            content_rect.w -= Q_SCROLLBAR_THICKNESS;
-            if (content_rect.w < 0) {
-                content_rect.w = 0;
+        if (box->parent != NULL) {
+            if (show_vertical) {
+                content_rect.w -= Q_SCROLLBAR_THICKNESS;
+                if (content_rect.w < 0) {
+                    content_rect.w = 0;
+                }
             }
-        }
-        if (show_horizontal) {
-            content_rect.h -= Q_SCROLLBAR_THICKNESS;
-            if (content_rect.h < 0) {
-                content_rect.h = 0;
+            if (show_horizontal) {
+                content_rect.h -= Q_SCROLLBAR_THICKNESS;
+                if (content_rect.h < 0) {
+                    content_rect.h = 0;
+                }
             }
         }
         if (clip == NULL) {
@@ -588,6 +602,10 @@ static void sdl2_poll_events(quanton_view_t *view)
     int motion_mx = 0;
     int motion_my = 0;
     uint32_t motion_mod = 0;
+    int key_pending = 0;
+    uint32_t key_sym = 0;
+    uint32_t key_mod = 0;
+    int key_repeat = 0;
 
     if (view == NULL || view->window_handle == NULL) {
         return;
@@ -602,6 +620,18 @@ static void sdl2_poll_events(quanton_view_t *view)
         ev.key_mod = motion_mod; \
         sdl2_dispatch(view, &ev); \
         motion_pending = 0; \
+    } \
+} while (0)
+#define SDL2_FLUSH_KEYDOWN() do { \
+    if (key_pending) { \
+        memset(&ev, 0, sizeof(ev)); \
+        ev.type = Q_EVENT_KEY_DOWN; \
+        ev.key_sym = key_sym; \
+        ev.key_mod = key_mod; \
+        ev.key_repeat = (key_repeat > 0) ? key_repeat : 1; \
+        sdl2_dispatch(view, &ev); \
+        key_pending = 0; \
+        key_repeat = 0; \
     } \
 } while (0)
 
@@ -620,6 +650,9 @@ static void sdl2_poll_events(quanton_view_t *view)
         }
         if (sev.type != SDL_MOUSEMOTION) {
             SDL2_FLUSH_MOTION();
+        }
+        if (sev.type != SDL_KEYDOWN) {
+            SDL2_FLUSH_KEYDOWN();
         }
 
         memset(&ev, 0, sizeof(ev));
@@ -710,10 +743,36 @@ static void sdl2_poll_events(quanton_view_t *view)
         }
 
         case SDL_KEYDOWN:
+            {
+                uint32_t sym = sdl2_translate_key(sev.key.keysym.sym);
+                uint32_t mod = sdl2_mod((SDL_Keymod) sev.key.keysym.mod);
+                if (sdl2_key_is_repeat_coalescible(sym)) {
+                    if (key_pending && key_sym == sym && key_mod == mod) {
+                        key_repeat++;
+                    } else {
+                        SDL2_FLUSH_KEYDOWN();
+                        key_pending = 1;
+                        key_sym = sym;
+                        key_mod = mod;
+                        key_repeat = 1;
+                    }
+                } else {
+                    SDL2_FLUSH_KEYDOWN();
+                    ev.type = Q_EVENT_KEY_DOWN;
+                    ev.key_sym = sym;
+                    ev.key_mod = mod;
+                    ev.key_repeat = 1;
+                    sdl2_dispatch(view, &ev);
+                }
+            }
+            break;
+
         case SDL_KEYUP:
-            ev.type = (sev.type == SDL_KEYDOWN) ? Q_EVENT_KEY_DOWN : Q_EVENT_KEY_UP;
+            SDL2_FLUSH_KEYDOWN();
+            ev.type = Q_EVENT_KEY_UP;
             ev.key_sym = sdl2_translate_key(sev.key.keysym.sym);
             ev.key_mod = sdl2_mod((SDL_Keymod) sev.key.keysym.mod);
+            ev.key_repeat = 1;
             sdl2_dispatch(view, &ev);
             break;
 
@@ -725,7 +784,9 @@ static void sdl2_poll_events(quanton_view_t *view)
     sdl2_flush_wheel(view, &wheel_pending, &wheel_delta_accum,
                      wheel_mx, wheel_my, wheel_mod);
     SDL2_FLUSH_MOTION();
+    SDL2_FLUSH_KEYDOWN();
 #undef SDL2_FLUSH_MOTION
+#undef SDL2_FLUSH_KEYDOWN
 
     if (need_render) {
         if (view->ctx != NULL && view->ctx->backend != NULL

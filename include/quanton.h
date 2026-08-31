@@ -63,6 +63,7 @@ typedef struct q_event {
     int             wheel_delta;
     uint32_t        key_sym;
     uint32_t        key_mod;        /* shift=1 ctrl=2 alt=4 */
+    int             key_repeat;     /* >=1 for coalesced keydown repeats */
     int             new_width, new_height;
     lxb_dom_node_t *target;         /* deepest DOM node at mouse pos */
     q_box_t        *target_box;

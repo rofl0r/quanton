@@ -1723,9 +1723,14 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
 
     child_parent = (current != NULL) ? current : parent;
 
-    for (child = node->first_child; child != NULL; child = child->next) {
-        if (q_layout_walk_node(doc, child, child_parent) != 0) {
-            return -1;
+    if (current == NULL
+        || (current->widget_type != Q_WIDGET_SELECT
+            && current->widget_type != Q_WIDGET_TEXTAREA))
+    {
+        for (child = node->first_child; child != NULL; child = child->next) {
+            if (q_layout_walk_node(doc, child, child_parent) != 0) {
+                return -1;
+            }
         }
     }
 
