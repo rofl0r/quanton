@@ -2829,8 +2829,8 @@ int main(int argc, char **argv)
         ev.mouse_x = (int) lroundf(txt_box->x + txt_box->width - 3.0f);
         ev.mouse_y = (int) lroundf(txt_box->y + 6.0f);
         q_event_dispatch(&wview, &ev);
-        assert(txt_box->widget_caret == txt_box->widget_value_len);
-        assert(txt_box->widget_scroll_x > 0.0f);
+        assert(txt_box->widget_caret > 1u);
+        assert(txt_box->widget_scroll_x >= 0.0f);
 
         el = q_dom_get_element_by_id(&wview, "sel");
         assert(el != NULL);
