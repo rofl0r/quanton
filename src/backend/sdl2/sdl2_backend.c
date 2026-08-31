@@ -16,8 +16,8 @@
 #include <string.h>
 
 #define Q_SDL2_CACHE_MARGIN_PX 256
-#define Q_SDL2_CACHE_TTL_FRAMES 180u
-#define Q_SCROLLBAR_THICKNESS 12
+#define Q_SDL2_CACHE_MAX_BYTES (100u * 1024u * 1024u)
+#define Q_SCROLLBAR_THICKNESS 14
 
 typedef struct q_sdl2_tex_entry {
     const q_box_t *box;
@@ -66,6 +66,8 @@ static uint32_t sdl2_translate_key(SDL_Keycode sym)
     case SDLK_END:       return Q_KEY_END;
     case SDLK_BACKSPACE: return Q_KEY_BACKSPACE;
     case SDLK_DELETE:    return Q_KEY_DELETE;
+    case SDLK_RETURN:
+    case SDLK_KP_ENTER:  return Q_KEY_ENTER;
     default:             return (uint32_t) sym;
     }
 }
@@ -258,31 +260,55 @@ static q_sdl2_tex_entry_t *sdl2_cache_ensure(q_sdl2_win_t *win,
 
 static void sdl2_cache_prune(q_sdl2_win_t *win)
 {
+    q_sdl2_tex_entry_t *oldest;
+    q_sdl2_tex_entry_t *oldest_prev;
     q_sdl2_tex_entry_t *it;
     q_sdl2_tex_entry_t *prev;
-    q_sdl2_tex_entry_t *next;
+    size_t total_bytes = 0;
+    size_t tex_bytes;
 
     if (win == NULL) {
         return;
     }
 
-    prev = NULL;
-    it = win->cache;
-    while (it != NULL) {
-        next = it->next;
-        if ((uint64_t) (win->frame_id - it->last_used_frame) > Q_SDL2_CACHE_TTL_FRAMES)
-        {
-            if (prev != NULL) {
-                prev->next = next;
-            } else {
-                win->cache = next;
+    for (it = win->cache; it != NULL; it = it->next) {
+        if (it->w > 0 && it->h > 0) {
+            total_bytes += (size_t) it->w * (size_t) it->h * 4u;
+        }
+    }
+
+    while (total_bytes > Q_SDL2_CACHE_MAX_BYTES) {
+        oldest = NULL;
+        oldest_prev = NULL;
+        prev = NULL;
+        for (it = win->cache; it != NULL; it = it->next) {
+            if (oldest == NULL || it->last_used_frame < oldest->last_used_frame) {
+                oldest = it;
+                oldest_prev = prev;
             }
-            SDL_DestroyTexture(it->texture);
-            free(it);
-        } else {
             prev = it;
         }
-        it = next;
+
+        if (oldest == NULL) {
+            break;
+        }
+
+        tex_bytes = 0;
+        if (oldest->w > 0 && oldest->h > 0) {
+            tex_bytes = (size_t) oldest->w * (size_t) oldest->h * 4u;
+        }
+        if (oldest_prev != NULL) {
+            oldest_prev->next = oldest->next;
+        } else {
+            win->cache = oldest->next;
+        }
+        SDL_DestroyTexture(oldest->texture);
+        free(oldest);
+        if (tex_bytes > total_bytes) {
+            total_bytes = 0;
+        } else {
+            total_bytes -= tex_bytes;
+        }
     }
 }
 
@@ -558,10 +584,26 @@ static void sdl2_poll_events(quanton_view_t *view)
     int wheel_mx = 0;
     int wheel_my = 0;
     uint32_t wheel_mod = 0;
+    int motion_pending = 0;
+    int motion_mx = 0;
+    int motion_my = 0;
+    uint32_t motion_mod = 0;
 
     if (view == NULL || view->window_handle == NULL) {
         return;
     }
+
+#define SDL2_FLUSH_MOTION() do { \
+    if (motion_pending) { \
+        memset(&ev, 0, sizeof(ev)); \
+        ev.type = Q_EVENT_MOUSE_MOVE; \
+        ev.mouse_x = motion_mx; \
+        ev.mouse_y = motion_my; \
+        ev.key_mod = motion_mod; \
+        sdl2_dispatch(view, &ev); \
+        motion_pending = 0; \
+    } \
+} while (0)
 
     while (SDL_PollEvent(&sev)) {
         /*
@@ -575,6 +617,9 @@ static void sdl2_poll_events(quanton_view_t *view)
         if (sev.type != SDL_MOUSEWHEEL) {
             sdl2_flush_wheel(view, &wheel_pending, &wheel_delta_accum,
                              wheel_mx, wheel_my, wheel_mod);
+        }
+        if (sev.type != SDL_MOUSEMOTION) {
+            SDL2_FLUSH_MOTION();
         }
 
         memset(&ev, 0, sizeof(ev));
@@ -623,11 +668,10 @@ static void sdl2_poll_events(quanton_view_t *view)
             break;
 
         case SDL_MOUSEMOTION:
-            ev.type = Q_EVENT_MOUSE_MOVE;
-            ev.mouse_x = sev.motion.x;
-            ev.mouse_y = sev.motion.y;
-            ev.key_mod = sdl2_mod((SDL_Keymod) SDL_GetModState());
-            sdl2_dispatch(view, &ev);
+            motion_mx = sev.motion.x;
+            motion_my = sev.motion.y;
+            motion_mod = sdl2_mod((SDL_Keymod) SDL_GetModState());
+            motion_pending = 1;
             break;
 
         case SDL_MOUSEBUTTONDOWN:
@@ -680,6 +724,8 @@ static void sdl2_poll_events(quanton_view_t *view)
 
     sdl2_flush_wheel(view, &wheel_pending, &wheel_delta_accum,
                      wheel_mx, wheel_my, wheel_mod);
+    SDL2_FLUSH_MOTION();
+#undef SDL2_FLUSH_MOTION
 
     if (need_render) {
         if (view->ctx != NULL && view->ctx->backend != NULL

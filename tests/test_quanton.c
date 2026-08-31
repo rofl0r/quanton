@@ -2847,6 +2847,14 @@ int main(int argc, char **argv)
         q_event_dispatch(&wview, &ev);
         ev.type = Q_EVENT_MOUSE_UP;
         q_event_dispatch(&wview, &ev);
+        assert(sel_box->widget_open == 1);
+        assert(sel_box->widget_value != NULL);
+        assert(strcmp(sel_box->widget_value, "one") == 0);
+
+        ev.type = Q_EVENT_MOUSE_DOWN;
+        q_event_dispatch(&wview, &ev);
+        ev.type = Q_EVENT_MOUSE_UP;
+        q_event_dispatch(&wview, &ev);
         assert(sel_box->widget_value != NULL);
         assert(strcmp(sel_box->widget_value, "two") == 0);
         assert(sel_box->widget_open == 0);
@@ -2864,6 +2872,12 @@ int main(int argc, char **argv)
         q_event_dispatch(&wview, &ev);
         assert(wview.focused_widget == ta_box);
         assert(ta_box->widget_caret <= 1u);
+
+        ev.type = Q_EVENT_KEY_DOWN;
+        ev.key_sym = Q_KEY_ENTER;
+        q_event_dispatch(&wview, &ev);
+        assert(ta_box->widget_value_len > 0u);
+        assert(strchr(ta_box->widget_value, '\n') != NULL);
 
         q_layout_free_tree(wview.layout_root);
         free(wview.framebuffer);
