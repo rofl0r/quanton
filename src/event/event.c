@@ -1093,6 +1093,40 @@ static int q_widget_has_selection(const q_box_t *box)
     return box != NULL && box->widget_sel_anchor != box->widget_sel_focus;
 }
 
+static void q_text_selection_clear(q_box_t *box)
+{
+    if (box == NULL) return;
+    box->text_sel_anchor = 0u;
+    box->text_sel_focus = 0u;
+}
+
+static int q_text_has_selection(const q_box_t *box)
+{
+    return box != NULL && box->text_sel_anchor != box->text_sel_focus;
+}
+
+static size_t q_text_caret_from_click(const q_box_t *box, int hit_x)
+{
+    size_t i;
+    float local_x;
+    float prev = 0.0f;
+    q_font_t *font;
+    if (box == NULL || box->type != Q_BOX_TEXT || box->text == NULL) {
+        return 0u;
+    }
+    local_x = (float) hit_x - box->x;
+    if (local_x <= 0.0f) return 0u;
+    font = q_widget_font(box);
+    for (i = 1u; i <= box->text_len; ++i) {
+        float cur = (font != NULL) ? q_font_measure(font, box->text, i) : (float) i * 8.0f;
+        if (local_x < (prev + cur) * 0.5f) {
+            return i - 1u;
+        }
+        prev = cur;
+    }
+    return box->text_len;
+}
+
 static void q_widget_selection_bounds(const q_box_t *box, size_t *start, size_t *end)
 {
     size_t a;
@@ -1202,6 +1236,28 @@ static char *q_widget_selection_text(const q_box_t *box)
     }
     memcpy(buf, box->widget_value + start, end - start);
     buf[end - start] = '\0';
+    return buf;
+}
+
+static char *q_text_selection_text(const q_box_t *box)
+{
+    size_t a, b, t;
+    char *buf;
+    if (box == NULL || box->text == NULL || !q_text_has_selection(box)) {
+        return NULL;
+    }
+    a = box->text_sel_anchor;
+    b = box->text_sel_focus;
+    if (a > b) {
+        t = a; a = b; b = t;
+    }
+    if (a > box->text_len) a = box->text_len;
+    if (b > box->text_len) b = box->text_len;
+    if (b <= a) return NULL;
+    buf = (char *) malloc((b - a) + 1u);
+    if (buf == NULL) return NULL;
+    memcpy(buf, box->text + a, b - a);
+    buf[b - a] = '\0';
     return buf;
 }
 
@@ -1700,6 +1756,16 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
         q_event_maybe_update(view);
         return;
     }
+    if (event->type == Q_EVENT_MOUSE_MOVE && view->mouse_text_select_box != NULL) {
+        q_box_t *b = view->mouse_text_select_box;
+        hit_x = event->mouse_x + (int) lroundf(view->scroll_x);
+        hit_y = event->mouse_y + (int) lroundf(view->scroll_y);
+        (void) hit_y;
+        b->text_sel_focus = q_text_caret_from_click(b, hit_x);
+        view->dirty_flags |= Q_DIRTY_PAINT;
+        q_event_maybe_update(view);
+        return;
+    }
 
     scroll_box = NULL;
     scrolled = 0;
@@ -1723,6 +1789,14 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
             if (active != NULL) {
                 view->active_scroll_box = active;
             }
+        }
+        if (event->type == Q_EVENT_MOUSE_MOVE) {
+            q_box_t *w = q_widget_box_from_target(event->target_box);
+            int is_text = (event->target_box != NULL && event->target_box->type == Q_BOX_TEXT);
+            int is_edit = (w != NULL
+                           && (w->widget_type == Q_WIDGET_INPUT_TEXT
+                               || w->widget_type == Q_WIDGET_TEXTAREA));
+            view->mouse_text_cursor = (is_text || is_edit) ? 1 : 0;
         }
     }
 
@@ -1756,7 +1830,6 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
                 if (view->focused_widget != widget_box) {
                     q_widget_set_focus(view, widget_box);
                 }
-                widget_box->widget_open = !widget_box->widget_open;
                 view->dirty_flags |= Q_DIRTY_PAINT;
                 q_event_maybe_update(view);
             } else if (widget_box->widget_type == Q_WIDGET_BUTTON) {
@@ -1764,6 +1837,20 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
                 view->dirty_flags |= Q_DIRTY_PAINT;
                 q_event_maybe_update(view);
             }
+        } else if (event->target_box != NULL && event->target_box->type == Q_BOX_TEXT) {
+            if (view->mouse_text_select_box != NULL && view->mouse_text_select_box != event->target_box) {
+                q_text_selection_clear(view->mouse_text_select_box);
+            }
+            view->mouse_text_select_box = event->target_box;
+            view->mouse_text_select_box->text_sel_anchor =
+                q_text_caret_from_click(view->mouse_text_select_box, hit_x);
+            view->mouse_text_select_box->text_sel_focus =
+                view->mouse_text_select_box->text_sel_anchor;
+            view->dirty_flags |= Q_DIRTY_PAINT;
+            q_event_maybe_update(view);
+        } else if (view->mouse_text_select_box != NULL) {
+            q_text_selection_clear(view->mouse_text_select_box);
+            view->mouse_text_select_box = NULL;
         }
     }
 
@@ -1777,6 +1864,7 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
             return;
         }
         view->mouse_select_box = NULL;
+        view->mouse_text_select_box = NULL;
         if (open_select != NULL) {
             int option_idx = q_widget_select_pick_popup_index(open_select, hit_x, hit_y);
             if (option_idx >= 0) {
@@ -1840,6 +1928,11 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
                     view->on_event(view, &change_event, view->on_event_userdata);
                 }
             } else if (widget_box->widget_type == Q_WIDGET_SELECT) {
+                if (open_select != NULL && widget_box == open_select) {
+                    widget_box->widget_open = 0;
+                } else {
+                    widget_box->widget_open = 1;
+                }
                 view->dirty_flags |= Q_DIRTY_PAINT;
                 q_event_maybe_update(view);
             }
@@ -1948,6 +2041,15 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
         int extend = (event->key_mod & Q_KEYMOD_SHIFT) != 0u;
         int ctrl = (event->key_mod & Q_KEYMOD_CTRL) != 0u;
         int rep;
+        if (ctrl && (event->key_sym == 'c' || event->key_sym == 'C')
+            && view->mouse_text_select_box != NULL)
+        {
+            char *sel = q_text_selection_text(view->mouse_text_select_box);
+            if (sel != NULL) {
+                free(view->clipboard_text);
+                view->clipboard_text = sel;
+            }
+        }
         if (focused_widget != NULL
             && (focused_widget->widget_type == Q_WIDGET_INPUT_TEXT
                 || focused_widget->widget_type == Q_WIDGET_TEXTAREA))

@@ -77,14 +77,14 @@ typedef struct q_event {
  */
 #define Q_KEY_BACKSPACE 0x08u
 #define Q_KEY_DELETE    0x7Fu
-#define Q_KEY_LEFT      0x25u
-#define Q_KEY_RIGHT     0x27u
-#define Q_KEY_UP        0x26u
-#define Q_KEY_DOWN      0x28u
-#define Q_KEY_PAGEUP    0x21u
-#define Q_KEY_PAGEDOWN  0x22u
-#define Q_KEY_HOME      0x24u
-#define Q_KEY_END       0x23u
+#define Q_KEY_LEFT      0x1001u
+#define Q_KEY_RIGHT     0x1002u
+#define Q_KEY_UP        0x1003u
+#define Q_KEY_DOWN      0x1004u
+#define Q_KEY_PAGEUP    0x1005u
+#define Q_KEY_PAGEDOWN  0x1006u
+#define Q_KEY_HOME      0x1007u
+#define Q_KEY_END       0x1008u
 #define Q_KEY_ENTER     0x0Du
 
 typedef void (*q_event_handler_fn)(quanton_view_t *view,
@@ -352,6 +352,8 @@ struct q_box {
     size_t widget_caret;
     size_t widget_sel_anchor;
     size_t widget_sel_focus;
+    size_t text_sel_anchor;
+    size_t text_sel_focus;
     float widget_scroll_x;
     float widget_scroll_y;
     int widget_checked;
@@ -396,6 +398,8 @@ struct quanton_view {
     q_box_t            *focused_widget;   /* currently focused interactive box */
     q_box_t            *active_scroll_box; /* last activated scrollable pane */
     q_box_t            *mouse_select_box;  /* active text-selection drag source */
+    q_box_t            *mouse_text_select_box; /* read-only text selection drag source */
+    int                 mouse_text_cursor; /* 1 when pointer should be I-beam */
     char               *clipboard_text;    /* internal clipboard buffer */
     size_t              texture_cache_limit_bytes; /* 0 = backend default */
     void               *window_handle;     /* opaque backend-specific handle */
