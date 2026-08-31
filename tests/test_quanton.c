@@ -2847,16 +2847,16 @@ int main(int argc, char **argv)
         q_event_dispatch(&wview, &ev);
         ev.type = Q_EVENT_MOUSE_UP;
         q_event_dispatch(&wview, &ev);
-        assert(sel_box->widget_open == 1);
         assert(sel_box->widget_value != NULL);
-        assert(strcmp(sel_box->widget_value, "one") == 0);
+        assert(strcmp(sel_box->widget_value, "two") == 0);
+        assert(sel_box->widget_open == 0);
 
         ev.type = Q_EVENT_MOUSE_DOWN;
         q_event_dispatch(&wview, &ev);
         ev.type = Q_EVENT_MOUSE_UP;
         q_event_dispatch(&wview, &ev);
         assert(sel_box->widget_value != NULL);
-        assert(strcmp(sel_box->widget_value, "two") == 0);
+        assert(strcmp(sel_box->widget_value, "one") == 0);
         assert(sel_box->widget_open == 0);
 
         el = q_dom_get_element_by_id(&wview, "ta");
@@ -2878,6 +2878,22 @@ int main(int argc, char **argv)
         q_event_dispatch(&wview, &ev);
         assert(ta_box->widget_value_len > 0u);
         assert(strchr(ta_box->widget_value, '\n') != NULL);
+
+        free(txt_box->widget_value);
+        txt_box->widget_value = strdup("abc");
+        assert(txt_box->widget_value != NULL);
+        txt_box->widget_value_len = 3u;
+        txt_box->widget_caret = 1u;
+        ev.type = Q_EVENT_KEY_DOWN;
+        ev.key_sym = Q_KEY_DELETE;
+        q_event_dispatch(&wview, &ev);
+        assert(strcmp(txt_box->widget_value, "ac") == 0);
+        assert(txt_box->widget_caret == 1u);
+
+        ev.key_sym = Q_KEY_BACKSPACE;
+        q_event_dispatch(&wview, &ev);
+        assert(strcmp(txt_box->widget_value, "c") == 0);
+        assert(txt_box->widget_caret == 0u);
 
         q_layout_free_tree(wview.layout_root);
         free(wview.framebuffer);

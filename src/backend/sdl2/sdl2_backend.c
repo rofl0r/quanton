@@ -610,6 +610,7 @@ static void sdl2_poll_events(quanton_view_t *view)
     if (view == NULL || view->window_handle == NULL) {
         return;
     }
+    view->defer_updates = 1;
 
 #define SDL2_FLUSH_MOTION() do { \
     if (motion_pending) { \
@@ -787,6 +788,10 @@ static void sdl2_poll_events(quanton_view_t *view)
     SDL2_FLUSH_KEYDOWN();
 #undef SDL2_FLUSH_MOTION
 #undef SDL2_FLUSH_KEYDOWN
+    view->defer_updates = 0;
+    if (view->dirty_flags != 0u) {
+        q_view_update(view);
+    }
 
     if (need_render) {
         if (view->ctx != NULL && view->ctx->backend != NULL

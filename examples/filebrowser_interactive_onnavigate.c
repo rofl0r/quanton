@@ -53,7 +53,7 @@
 /* Left panel width in px (file browser table). */
 #define FB_PANEL_W      580
 /* Right panel width in px (long anchor demo). */
-#define REF_PANEL_W     (VP_WIDTH - FB_PANEL_W - 8)
+#define REF_PANEL_W     (VP_WIDTH - FB_PANEL_W - 24)
 /* Keep panel boxes inside viewport margins to avoid root scrolling. */
 #define PANEL_H         (VP_HEIGHT - 16)
 
