@@ -72,6 +72,8 @@ static uint32_t x11_translate_key(KeySym ks)
     case XK_Right:     return Q_KEY_RIGHT;
     case XK_Up:        return Q_KEY_UP;
     case XK_Down:      return Q_KEY_DOWN;
+    case XK_Page_Up:   return Q_KEY_PAGEUP;
+    case XK_Page_Down: return Q_KEY_PAGEDOWN;
     case XK_Home:      return Q_KEY_HOME;
     case XK_End:       return Q_KEY_END;
     case XK_BackSpace: return Q_KEY_BACKSPACE;

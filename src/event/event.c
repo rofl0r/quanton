@@ -62,6 +62,8 @@ static void q_dbg_print_box(const char *label, const q_box_t *box)
 #define Q_WIDGET_TEXT_INPUT_PRINTABLE_MAX 0x7Eu
 #define Q_SCROLLBAR_THICKNESS 14
 #define Q_SCROLLBAR_MIN_THUMB 16
+#define Q_KEYMOD_SHIFT 1u
+#define Q_KEYMOD_CTRL  2u
 
 static void q_event_maybe_update(quanton_view_t *view);
 
@@ -633,6 +635,8 @@ static void q_widget_set_value(q_box_t *box, const char *text, size_t len)
     box->widget_value = NULL;
     box->widget_value_len = 0u;
     box->widget_caret = 0u;
+    box->widget_sel_anchor = 0u;
+    box->widget_sel_focus = 0u;
     box->widget_scroll_x = 0.0f;
     box->widget_scroll_y = 0.0f;
 
@@ -649,6 +653,8 @@ static void q_widget_set_value(q_box_t *box, const char *text, size_t len)
     box->widget_value = buf;
     box->widget_value_len = len;
     box->widget_caret = len;
+    box->widget_sel_anchor = len;
+    box->widget_sel_focus = len;
 }
 
 static int q_widget_select_cycle(q_box_t *box)
@@ -1072,6 +1078,133 @@ static q_box_t *q_widget_box_from_target(q_box_t *box)
     return box;
 }
 
+static q_box_t *q_find_scroll_ancestor(q_box_t *box)
+{
+    for (; box != NULL; box = box->parent) {
+        if (q_box_scrolls_x(box) || q_box_scrolls_y(box)) {
+            return box;
+        }
+    }
+    return NULL;
+}
+
+static int q_widget_has_selection(const q_box_t *box)
+{
+    return box != NULL && box->widget_sel_anchor != box->widget_sel_focus;
+}
+
+static void q_widget_selection_bounds(const q_box_t *box, size_t *start, size_t *end)
+{
+    size_t a;
+    size_t b;
+    if (start == NULL || end == NULL) {
+        return;
+    }
+    if (box == NULL) {
+        *start = 0u;
+        *end = 0u;
+        return;
+    }
+    a = box->widget_sel_anchor;
+    b = box->widget_sel_focus;
+    if (a > b) {
+        size_t t = a;
+        a = b;
+        b = t;
+    }
+    if (a > box->widget_value_len) {
+        a = box->widget_value_len;
+    }
+    if (b > box->widget_value_len) {
+        b = box->widget_value_len;
+    }
+    *start = a;
+    *end = b;
+}
+
+static void q_widget_selection_clear(q_box_t *box)
+{
+    if (box == NULL) {
+        return;
+    }
+    if (box->widget_caret > box->widget_value_len) {
+        box->widget_caret = box->widget_value_len;
+    }
+    box->widget_sel_anchor = box->widget_caret;
+    box->widget_sel_focus = box->widget_caret;
+}
+
+static int q_widget_selection_delete(q_box_t *box)
+{
+    size_t start;
+    size_t end;
+    char *buf;
+    size_t new_len;
+    if (box == NULL || box->widget_value == NULL || !q_widget_has_selection(box)) {
+        return 0;
+    }
+    q_widget_selection_bounds(box, &start, &end);
+    if (end <= start) {
+        return 0;
+    }
+    new_len = box->widget_value_len - (end - start);
+    buf = (char *) malloc(new_len + 1u);
+    if (buf == NULL) {
+        return 0;
+    }
+    if (start > 0u) {
+        memcpy(buf, box->widget_value, start);
+    }
+    if (end < box->widget_value_len) {
+        memcpy(buf + start, box->widget_value + end, box->widget_value_len - end);
+    }
+    buf[new_len] = '\0';
+    free(box->widget_value);
+    box->widget_value = buf;
+    box->widget_value_len = new_len;
+    box->widget_caret = start;
+    q_widget_selection_clear(box);
+    return 1;
+}
+
+static void q_widget_selection_move_or_extend(q_box_t *box, size_t new_caret, int extend)
+{
+    if (box == NULL) {
+        return;
+    }
+    if (new_caret > box->widget_value_len) {
+        new_caret = box->widget_value_len;
+    }
+    if (!extend) {
+        box->widget_caret = new_caret;
+        q_widget_selection_clear(box);
+    } else {
+        box->widget_caret = new_caret;
+        box->widget_sel_focus = new_caret;
+    }
+}
+
+static char *q_widget_selection_text(const q_box_t *box)
+{
+    size_t start;
+    size_t end;
+    char *buf;
+    if (box == NULL || box->widget_value == NULL || !q_widget_has_selection(box)) {
+        return NULL;
+    }
+    q_widget_selection_bounds(box, &start, &end);
+    if (end <= start) {
+        return NULL;
+    }
+    buf = (char *) malloc((end - start) + 1u);
+    if (buf == NULL) {
+        return NULL;
+    }
+    memcpy(buf, box->widget_value + start, end - start);
+    buf[end - start] = '\0';
+    return buf;
+}
+
 static void q_widget_set_focus(quanton_view_t *view, q_box_t *box)
 {
     q_box_t *old_focus;
@@ -1096,6 +1229,7 @@ static void q_widget_set_focus(quanton_view_t *view, q_box_t *box)
     view->focused_widget = box;
     if (box != NULL) {
         box->widget_focused = 1;
+        q_widget_selection_clear(box);
         if (old_focus != box && view->on_event != NULL) {
             q_event_t focus_event;
             memset(&focus_event, 0, sizeof(focus_event));
@@ -1118,6 +1252,7 @@ static void q_widget_insert_char(q_box_t *box, uint32_t ch)
     {
         return;
     }
+    (void) q_widget_selection_delete(box);
 
     len = box->widget_value_len;
     caret = (box->widget_caret > len) ? len : box->widget_caret;
@@ -1139,6 +1274,7 @@ static void q_widget_insert_char(q_box_t *box, uint32_t ch)
     box->widget_value = buf;
     box->widget_value_len = len + 1u;
     box->widget_caret = caret + 1u;
+    q_widget_selection_clear(box);
 }
 
 static void q_widget_insert_newline(q_box_t *box)
@@ -1150,6 +1286,7 @@ static void q_widget_insert_newline(q_box_t *box)
     if (box == NULL || box->widget_type != Q_WIDGET_TEXTAREA) {
         return;
     }
+    (void) q_widget_selection_delete(box);
 
     len = box->widget_value_len;
     caret = (box->widget_caret > len) ? len : box->widget_caret;
@@ -1171,6 +1308,7 @@ static void q_widget_insert_newline(q_box_t *box)
     box->widget_value = buf;
     box->widget_value_len = len + 1u;
     box->widget_caret = caret + 1u;
+    q_widget_selection_clear(box);
 }
 
 
@@ -1182,6 +1320,9 @@ static void q_widget_delete_prev_char(q_box_t *box)
     char *buf;
 
     if (box == NULL) {
+        return;
+    }
+    if (q_widget_selection_delete(box)) {
         return;
     }
 
@@ -1208,6 +1349,7 @@ static void q_widget_delete_prev_char(q_box_t *box)
     box->widget_value = buf;
     box->widget_value_len = len - 1u;
     box->widget_caret = caret - 1u;
+    q_widget_selection_clear(box);
 }
 
 static void q_widget_delete_next_char(q_box_t *box)
@@ -1217,6 +1359,9 @@ static void q_widget_delete_next_char(q_box_t *box)
     char *buf;
 
     if (box == NULL) {
+        return;
+    }
+    if (q_widget_selection_delete(box)) {
         return;
     }
 
@@ -1241,6 +1386,7 @@ static void q_widget_delete_next_char(q_box_t *box)
     free(box->widget_value);
     box->widget_value = buf;
     box->widget_value_len = len - 1u;
+    q_widget_selection_clear(box);
 }
 
 static void q_widget_clear_radio_group(q_box_t *box, const lxb_char_t *name, size_t name_len,
@@ -1497,10 +1643,28 @@ static void q_event_maybe_update(quanton_view_t *view)
     q_view_update(view);
 }
 
+static int q_scroll_box_by(quanton_view_t *view, q_box_t *box, float dy)
+{
+    float old;
+    float max_scroll;
+    if (view == NULL || box == NULL || !q_box_scrolls_y(box)) {
+        return 0;
+    }
+    old = box->scroll_y;
+    max_scroll = q_box_scroll_max_y(box);
+    box->scroll_y = q_clamp_scroll(box->scroll_y + dy, max_scroll);
+    if (box->scroll_y != old) {
+        view->dirty_flags |= Q_DIRTY_RECOMPOSE;
+        q_event_maybe_update(view);
+        return 1;
+    }
+    return 0;
+}
+
 void q_event_dispatch(quanton_view_t *view, q_event_t *event)
 {
-    int hit_x;
-    int hit_y;
+    int hit_x = 0;
+    int hit_y = 0;
     q_box_t *scroll_box;
     q_box_t *text_target;
     float max_scroll;
@@ -1518,6 +1682,22 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
             view->dirty_flags |= Q_DIRTY_RECOMPOSE;
             q_event_maybe_update(view);
         }
+        return;
+    }
+    if (event->type == Q_EVENT_MOUSE_MOVE && view->mouse_select_box != NULL) {
+        q_box_t *b = view->mouse_select_box;
+        hit_x = event->mouse_x + (int) lroundf(view->scroll_x);
+        hit_y = event->mouse_y + (int) lroundf(view->scroll_y);
+        if (b->widget_type == Q_WIDGET_TEXTAREA) {
+            b->widget_caret = q_widget_textarea_caret_from_click(b, hit_x, hit_y);
+            q_widget_ensure_caret_visible_y(b);
+        } else if (b->widget_type == Q_WIDGET_INPUT_TEXT) {
+            b->widget_caret = q_widget_caret_from_click(b, hit_x);
+            q_widget_ensure_caret_visible_x(b);
+        }
+        b->widget_sel_focus = b->widget_caret;
+        view->dirty_flags |= Q_DIRTY_PAINT;
+        q_event_maybe_update(view);
         return;
     }
 
@@ -1538,6 +1718,12 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
             }
         }
         event->target = (event->target_box != NULL) ? event->target_box->dom_node : NULL;
+        if (event->type == Q_EVENT_MOUSE_DOWN || event->type == Q_EVENT_MOUSE_WHEEL) {
+            q_box_t *active = q_find_scroll_ancestor(event->target_box);
+            if (active != NULL) {
+                view->active_scroll_box = active;
+            }
+        }
     }
 
     if (event->type == Q_EVENT_MOUSE_DOWN && event->mouse_button == 0) {
@@ -1553,16 +1739,24 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
                 if (widget_box->widget_type == Q_WIDGET_TEXTAREA) {
                     widget_box->widget_caret =
                         q_widget_textarea_caret_from_click(widget_box, hit_x, hit_y);
+                    widget_box->widget_sel_anchor = widget_box->widget_caret;
+                    widget_box->widget_sel_focus = widget_box->widget_caret;
+                    view->mouse_select_box = widget_box;
                     q_widget_ensure_caret_visible_y(widget_box);
                 } else {
                     widget_box->widget_caret = q_widget_caret_from_click(widget_box, hit_x);
+                    widget_box->widget_sel_anchor = widget_box->widget_caret;
+                    widget_box->widget_sel_focus = widget_box->widget_caret;
+                    view->mouse_select_box = widget_box;
                     q_widget_ensure_caret_visible_x(widget_box);
                 }
                 view->dirty_flags |= Q_DIRTY_PAINT;
                 q_event_maybe_update(view);
             } else if (widget_box->widget_type == Q_WIDGET_SELECT) {
-                q_widget_set_focus(view, widget_box);
-                widget_box->widget_open = 1;
+                if (view->focused_widget != widget_box) {
+                    q_widget_set_focus(view, widget_box);
+                }
+                widget_box->widget_open = !widget_box->widget_open;
                 view->dirty_flags |= Q_DIRTY_PAINT;
                 q_event_maybe_update(view);
             } else if (widget_box->widget_type == Q_WIDGET_BUTTON) {
@@ -1582,6 +1776,7 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
             view->drag_scroll_box = NULL;
             return;
         }
+        view->mouse_select_box = NULL;
         if (open_select != NULL) {
             int option_idx = q_widget_select_pick_popup_index(open_select, hit_x, hit_y);
             if (option_idx >= 0) {
@@ -1645,24 +1840,8 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
                     view->on_event(view, &change_event, view->on_event_userdata);
                 }
             } else if (widget_box->widget_type == Q_WIDGET_SELECT) {
-                if (open_select != NULL && widget_box == open_select) {
-                    /* keep it open after click; option pick happens on popup clicks */
-                    view->dirty_flags |= Q_DIRTY_PAINT;
-                    q_event_maybe_update(view);
-                } else {
-                    int changed = q_widget_select_cycle(widget_box);
-                    widget_box->widget_open = 0;
-                    view->dirty_flags |= Q_DIRTY_PAINT;
-                    q_event_maybe_update(view);
-                    if (changed && view->on_event != NULL) {
-                        q_event_t change_event;
-                        memset(&change_event, 0, sizeof(change_event));
-                        change_event.type = Q_EVENT_CHANGE;
-                        change_event.target_box = widget_box;
-                        change_event.target = widget_box->dom_node;
-                        view->on_event(view, &change_event, view->on_event_userdata);
-                    }
-                }
+                view->dirty_flags |= Q_DIRTY_PAINT;
+                q_event_maybe_update(view);
             }
         }
         if (open_select != NULL && (widget_box == NULL || widget_box != open_select)) {
@@ -1766,11 +1945,51 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
         q_box_t *focused_widget = view->focused_widget;
         int changed = 0;
         int repeat_count = (event->key_repeat > 0) ? event->key_repeat : 1;
+        int extend = (event->key_mod & Q_KEYMOD_SHIFT) != 0u;
+        int ctrl = (event->key_mod & Q_KEYMOD_CTRL) != 0u;
         int rep;
         if (focused_widget != NULL
             && (focused_widget->widget_type == Q_WIDGET_INPUT_TEXT
                 || focused_widget->widget_type == Q_WIDGET_TEXTAREA))
         {
+            if (ctrl && (event->key_sym == 'c' || event->key_sym == 'C')) {
+                char *sel = q_widget_selection_text(focused_widget);
+                if (sel != NULL) {
+                    free(view->clipboard_text);
+                    view->clipboard_text = sel;
+                }
+            } else if (ctrl && (event->key_sym == 'x' || event->key_sym == 'X')) {
+                char *sel = q_widget_selection_text(focused_widget);
+                if (sel != NULL) {
+                    free(view->clipboard_text);
+                    view->clipboard_text = sel;
+                    if (q_widget_selection_delete(focused_widget)) {
+                        changed = 1;
+                    }
+                }
+            } else if (ctrl && (event->key_sym == 'v' || event->key_sym == 'V')) {
+                if (view->clipboard_text != NULL && view->clipboard_text[0] != '\0') {
+                    size_t i;
+                    size_t n = strlen(view->clipboard_text);
+                    if (q_widget_selection_delete(focused_widget)) {
+                        changed = 1;
+                    }
+                    for (i = 0u; i < n; ++i) {
+                        unsigned char ch = (unsigned char) view->clipboard_text[i];
+                        if (ch == '\n') {
+                            if (focused_widget->widget_type == Q_WIDGET_TEXTAREA) {
+                                q_widget_insert_newline(focused_widget);
+                                changed = 1;
+                            }
+                        } else if (ch >= Q_WIDGET_TEXT_INPUT_PRINTABLE_MIN
+                                   && ch <= Q_WIDGET_TEXT_INPUT_PRINTABLE_MAX)
+                        {
+                            q_widget_insert_char(focused_widget, ch);
+                            changed = 1;
+                        }
+                    }
+                }
+            } else
             for (rep = 0; rep < repeat_count; ++rep) {
                 if (event->key_sym == Q_KEY_BACKSPACE) {
                     q_widget_delete_prev_char(focused_widget);
@@ -1779,31 +1998,34 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
                     q_widget_delete_next_char(focused_widget);
                     changed = 1;
                 } else if (event->key_sym == Q_KEY_LEFT) {
-                    if (focused_widget->widget_caret > 0u) {
-                        focused_widget->widget_caret--;
-                    }
+                    size_t caret = focused_widget->widget_caret;
+                    if (caret > 0u) caret--;
+                    q_widget_selection_move_or_extend(focused_widget, caret, extend);
                     changed = 1;
                 } else if (event->key_sym == Q_KEY_RIGHT) {
-                    if (focused_widget->widget_caret < focused_widget->widget_value_len) {
-                        focused_widget->widget_caret++;
-                    }
+                    size_t caret = focused_widget->widget_caret;
+                    if (caret < focused_widget->widget_value_len) caret++;
+                    q_widget_selection_move_or_extend(focused_widget, caret, extend);
                     changed = 1;
                 } else if (event->key_sym == Q_KEY_UP) {
                     if (focused_widget->widget_type == Q_WIDGET_TEXTAREA) {
-                        q_widget_textarea_move_vertical(focused_widget, -1);
+                        size_t caret = q_widget_textarea_move_vertical(focused_widget, -1);
+                        q_widget_selection_move_or_extend(focused_widget, caret, extend);
                         changed = 1;
                     }
                 } else if (event->key_sym == Q_KEY_DOWN) {
                     if (focused_widget->widget_type == Q_WIDGET_TEXTAREA) {
-                        q_widget_textarea_move_vertical(focused_widget, +1);
+                        size_t caret = q_widget_textarea_move_vertical(focused_widget, +1);
+                        q_widget_selection_move_or_extend(focused_widget, caret, extend);
                         changed = 1;
                     }
                 } else if (event->key_sym == Q_KEY_HOME) {
-                    focused_widget->widget_caret = 0u;
+                    q_widget_selection_move_or_extend(focused_widget, 0u, extend);
                     changed = 1;
                     break;
                 } else if (event->key_sym == Q_KEY_END) {
-                    focused_widget->widget_caret = focused_widget->widget_value_len;
+                    q_widget_selection_move_or_extend(focused_widget,
+                                                      focused_widget->widget_value_len, extend);
                     changed = 1;
                     break;
                 } else if (event->key_sym == Q_KEY_ENTER) {
@@ -1827,6 +2049,32 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
                 }
                 view->dirty_flags |= Q_DIRTY_PAINT;
                 q_event_maybe_update(view);
+            }
+        } else if (focused_widget != NULL && focused_widget->widget_type == Q_WIDGET_SELECT) {
+            if (event->key_sym == Q_KEY_ENTER || event->key_sym == Q_KEY_DOWN
+                || event->key_sym == Q_KEY_PAGEDOWN)
+            {
+                if (q_widget_select_cycle(focused_widget)) {
+                    view->dirty_flags |= Q_DIRTY_PAINT;
+                    q_event_maybe_update(view);
+                }
+            }
+        } else {
+            float delta = 0.0f;
+            if (event->key_sym == Q_KEY_UP) {
+                delta = -Q_EVENT_WHEEL_SCROLL_PX;
+            } else if (event->key_sym == Q_KEY_DOWN) {
+                delta = Q_EVENT_WHEEL_SCROLL_PX;
+            } else if (event->key_sym == Q_KEY_PAGEUP) {
+                delta = -(float) (view->vp_height * 0.9f);
+            } else if (event->key_sym == Q_KEY_PAGEDOWN) {
+                delta = (float) (view->vp_height * 0.9f);
+            }
+            if (delta != 0.0f) {
+                q_box_t *active = view->active_scroll_box;
+                if (!q_scroll_box_by(view, active, delta)) {
+                    q_view_scroll_by(view, 0.0f, delta);
+                }
             }
         }
     }
