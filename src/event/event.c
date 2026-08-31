@@ -1105,6 +1105,156 @@ static int q_text_has_selection(const q_box_t *box)
     return box != NULL && box->text_sel_anchor != box->text_sel_focus;
 }
 
+static void q_text_selection_clear_tree(q_box_t *box)
+{
+    q_box_t *child;
+    if (box == NULL) return;
+    if (box->type == Q_BOX_TEXT) {
+        box->text_sel_anchor = 0u;
+        box->text_sel_focus = 0u;
+    }
+    for (child = box->first_child; child != NULL; child = child->next_sibling) {
+        q_text_selection_clear_tree(child);
+    }
+}
+
+typedef struct q_text_order_scan {
+    const q_box_t *a;
+    const q_box_t *b;
+    int idx;
+    int a_idx;
+    int b_idx;
+} q_text_order_scan_t;
+
+static void q_text_order_scan(q_box_t *box, q_text_order_scan_t *st)
+{
+    q_box_t *child;
+    if (box == NULL || st == NULL) return;
+    if (box->type == Q_BOX_TEXT) {
+        if ((const q_box_t *) box == st->a && st->a_idx < 0) st->a_idx = st->idx;
+        if ((const q_box_t *) box == st->b && st->b_idx < 0) st->b_idx = st->idx;
+        st->idx++;
+    }
+    for (child = box->first_child; child != NULL; child = child->next_sibling) {
+        q_text_order_scan(child, st);
+    }
+}
+
+static int q_text_box_exists_in_tree(q_box_t *box, const q_box_t *needle)
+{
+    q_box_t *child;
+    if (box == NULL || needle == NULL) return 0;
+    if ((const q_box_t *) box == needle) return 1;
+    for (child = box->first_child; child != NULL; child = child->next_sibling) {
+        if (q_text_box_exists_in_tree(child, needle)) return 1;
+    }
+    return 0;
+}
+
+static int q_text_box_cmp_order(q_box_t *root, const q_box_t *a, const q_box_t *b)
+{
+    q_text_order_scan_t st;
+    if (a == b) return 0;
+    memset(&st, 0, sizeof(st));
+    st.a = a;
+    st.b = b;
+    st.a_idx = -1;
+    st.b_idx = -1;
+    q_text_order_scan(root, &st);
+    if (st.a_idx < 0 || st.b_idx < 0) return 2;
+    return (st.a_idx < st.b_idx) ? -1 : 1;
+}
+
+typedef struct q_text_range_state {
+    q_box_t *first;
+    q_box_t *last;
+    size_t first_off;
+    size_t last_off;
+    int active;
+    int done;
+} q_text_range_state_t;
+
+static void q_text_selection_apply_range(q_box_t *box, q_text_range_state_t *st)
+{
+    q_box_t *child;
+    if (box == NULL || st == NULL || st->done) return;
+    if (box->type == Q_BOX_TEXT) {
+        if (box == st->first && box == st->last) {
+            box->text_sel_anchor = st->first_off;
+            box->text_sel_focus = st->last_off;
+            st->done = 1;
+        } else if (box == st->first) {
+            box->text_sel_anchor = st->first_off;
+            box->text_sel_focus = box->text_len;
+            st->active = 1;
+        } else if (box == st->last) {
+            box->text_sel_anchor = 0u;
+            box->text_sel_focus = st->last_off;
+            st->active = 0;
+            st->done = 1;
+        } else if (st->active) {
+            box->text_sel_anchor = 0u;
+            box->text_sel_focus = box->text_len;
+        }
+    }
+    for (child = box->first_child; child != NULL; child = child->next_sibling) {
+        q_text_selection_apply_range(child, st);
+    }
+}
+
+static void q_text_selection_update_view(quanton_view_t *view)
+{
+    q_text_range_state_t st;
+    q_box_t *first;
+    q_box_t *last;
+    size_t first_off;
+    size_t last_off;
+    int cmp;
+
+    if (view == NULL || view->layout_root == NULL) return;
+    q_text_selection_clear_tree(view->layout_root);
+    if (view->text_sel_anchor_box == NULL || view->text_sel_focus_box == NULL) return;
+    if (!q_text_box_exists_in_tree(view->layout_root, view->text_sel_anchor_box)
+        || !q_text_box_exists_in_tree(view->layout_root, view->text_sel_focus_box))
+    {
+        view->text_sel_anchor_box = NULL;
+        view->text_sel_focus_box = NULL;
+        view->text_sel_anchor_off = 0u;
+        view->text_sel_focus_off = 0u;
+        return;
+    }
+
+    cmp = q_text_box_cmp_order(view->layout_root, view->text_sel_anchor_box, view->text_sel_focus_box);
+    if (cmp == 2) {
+        view->text_sel_anchor_box = NULL;
+        view->text_sel_focus_box = NULL;
+        view->text_sel_anchor_off = 0u;
+        view->text_sel_focus_off = 0u;
+        return;
+    }
+    if (cmp <= 0) {
+        first = view->text_sel_anchor_box;
+        first_off = view->text_sel_anchor_off;
+        last = view->text_sel_focus_box;
+        last_off = view->text_sel_focus_off;
+    } else {
+        first = view->text_sel_focus_box;
+        first_off = view->text_sel_focus_off;
+        last = view->text_sel_anchor_box;
+        last_off = view->text_sel_anchor_off;
+    }
+
+    if (first_off > first->text_len) first_off = first->text_len;
+    if (last_off > last->text_len) last_off = last->text_len;
+
+    memset(&st, 0, sizeof(st));
+    st.first = first;
+    st.last = last;
+    st.first_off = first_off;
+    st.last_off = last_off;
+    q_text_selection_apply_range(view->layout_root, &st);
+}
+
 static size_t q_text_caret_from_click(const q_box_t *box, int hit_x)
 {
     size_t i;
@@ -1239,26 +1389,72 @@ static char *q_widget_selection_text(const q_box_t *box)
     return buf;
 }
 
-static char *q_text_selection_text(const q_box_t *box)
+typedef struct q_text_sel_buf {
+    char *data;
+    size_t len;
+    size_t cap;
+} q_text_sel_buf_t;
+
+static int q_text_sel_buf_append(q_text_sel_buf_t *sb, const char *data, size_t n)
 {
+    size_t need;
+    size_t new_cap;
+    char *new_data;
+    if (sb == NULL || data == NULL || n == 0u) return 1;
+    need = sb->len + n + 1u;
+    if (need > sb->cap) {
+        new_cap = (sb->cap > 0u) ? sb->cap : 64u;
+        while (new_cap < need) new_cap *= 2u;
+        new_data = (char *) realloc(sb->data, new_cap);
+        if (new_data == NULL) return 0;
+        sb->data = new_data;
+        sb->cap = new_cap;
+    }
+    memcpy(sb->data + sb->len, data, n);
+    sb->len += n;
+    sb->data[sb->len] = '\0';
+    return 1;
+}
+
+static int q_text_selection_collect_tree(const q_box_t *box, q_text_sel_buf_t *sb)
+{
+    const q_box_t *child;
     size_t a, b, t;
-    char *buf;
-    if (box == NULL || box->text == NULL || !q_text_has_selection(box)) {
+    if (box == NULL || sb == NULL) return 1;
+    if (box->type == Q_BOX_TEXT && box->text != NULL && q_text_has_selection(box)) {
+        a = box->text_sel_anchor;
+        b = box->text_sel_focus;
+        if (a > b) {
+            t = a; a = b; b = t;
+        }
+        if (a > box->text_len) a = box->text_len;
+        if (b > box->text_len) b = box->text_len;
+        if (b > a && !q_text_sel_buf_append(sb, box->text + a, b - a)) {
+            return 0;
+        }
+    }
+    for (child = box->first_child; child != NULL; child = child->next_sibling) {
+        if (!q_text_selection_collect_tree(child, sb)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static char *q_text_selection_text_view(const quanton_view_t *view)
+{
+    q_text_sel_buf_t sb;
+    if (view == NULL || view->layout_root == NULL) return NULL;
+    memset(&sb, 0, sizeof(sb));
+    if (!q_text_selection_collect_tree(view->layout_root, &sb)) {
+        free(sb.data);
         return NULL;
     }
-    a = box->text_sel_anchor;
-    b = box->text_sel_focus;
-    if (a > b) {
-        t = a; a = b; b = t;
+    if (sb.len == 0u) {
+        free(sb.data);
+        return NULL;
     }
-    if (a > box->text_len) a = box->text_len;
-    if (b > box->text_len) b = box->text_len;
-    if (b <= a) return NULL;
-    buf = (char *) malloc((b - a) + 1u);
-    if (buf == NULL) return NULL;
-    memcpy(buf, box->text + a, b - a);
-    buf[b - a] = '\0';
-    return buf;
+    return sb.data;
 }
 
 static void q_widget_set_focus(quanton_view_t *view, q_box_t *box)
@@ -1757,11 +1953,21 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
         return;
     }
     if (event->type == Q_EVENT_MOUSE_MOVE && view->mouse_text_select_box != NULL) {
-        q_box_t *b = view->mouse_text_select_box;
+        q_box_t *hit_box;
+        q_box_t *focus_text;
         hit_x = event->mouse_x + (int) lroundf(view->scroll_x);
         hit_y = event->mouse_y + (int) lroundf(view->scroll_y);
-        (void) hit_y;
-        b->text_sel_focus = q_text_caret_from_click(b, hit_x);
+        hit_box = q_hit_test(view->layout_root, hit_x, hit_y);
+        focus_text = q_find_text_descendant_at_point(hit_box, hit_x, hit_y);
+        if (focus_text == NULL) {
+            focus_text = q_find_deepest_text_descendant(hit_box);
+        }
+        if (focus_text == NULL) {
+            focus_text = view->mouse_text_select_box;
+        }
+        view->text_sel_focus_box = focus_text;
+        view->text_sel_focus_off = q_text_caret_from_click(focus_text, hit_x);
+        q_text_selection_update_view(view);
         view->dirty_flags |= Q_DIRTY_PAINT;
         q_event_maybe_update(view);
         return;
@@ -1838,19 +2044,20 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
                 q_event_maybe_update(view);
             }
         } else if (event->target_box != NULL && event->target_box->type == Q_BOX_TEXT) {
-            if (view->mouse_text_select_box != NULL && view->mouse_text_select_box != event->target_box) {
-                q_text_selection_clear(view->mouse_text_select_box);
-            }
+            q_text_selection_clear_tree(view->layout_root);
             view->mouse_text_select_box = event->target_box;
-            view->mouse_text_select_box->text_sel_anchor =
-                q_text_caret_from_click(view->mouse_text_select_box, hit_x);
-            view->mouse_text_select_box->text_sel_focus =
-                view->mouse_text_select_box->text_sel_anchor;
+            view->text_sel_anchor_box = event->target_box;
+            view->text_sel_anchor_off = q_text_caret_from_click(event->target_box, hit_x);
+            view->text_sel_focus_box = event->target_box;
+            view->text_sel_focus_off = view->text_sel_anchor_off;
+            q_text_selection_update_view(view);
             view->dirty_flags |= Q_DIRTY_PAINT;
             q_event_maybe_update(view);
         } else if (view->mouse_text_select_box != NULL) {
-            q_text_selection_clear(view->mouse_text_select_box);
+            q_text_selection_clear_tree(view->layout_root);
             view->mouse_text_select_box = NULL;
+            view->text_sel_anchor_box = NULL;
+            view->text_sel_focus_box = NULL;
         }
     }
 
@@ -2041,10 +2248,9 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
         int extend = (event->key_mod & Q_KEYMOD_SHIFT) != 0u;
         int ctrl = (event->key_mod & Q_KEYMOD_CTRL) != 0u;
         int rep;
-        if (ctrl && (event->key_sym == 'c' || event->key_sym == 'C')
-            && view->mouse_text_select_box != NULL)
+        if (ctrl && (event->key_sym == 'c' || event->key_sym == 'C'))
         {
-            char *sel = q_text_selection_text(view->mouse_text_select_box);
+            char *sel = q_text_selection_text_view(view);
             if (sel != NULL) {
                 free(view->clipboard_text);
                 view->clipboard_text = sel;
