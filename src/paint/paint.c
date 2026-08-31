@@ -13,7 +13,7 @@
 
 #define Q_TEXT_COLOR 0x000000FFu
 #define Q_MARKER_GUTTER_X 4
-#define Q_SCROLLBAR_THICKNESS 12
+#define Q_SCROLLBAR_THICKNESS 14
 #define Q_SCROLLBAR_MIN_THUMB 16
 #define Q_SCROLLBAR_TRACK_COLOR 0xA0A0A0FFu
 #define Q_SCROLLBAR_THUMB_COLOR 0x707070FFu
@@ -873,6 +873,11 @@ static void q_paint_form_widget(q_box_t *box)
         int x0 = box->tile_w - 11;
         const lxb_char_t *value;
         size_t value_len = 0;
+        uint32_t frame_color = box->widget_open ? 0x3B82F6FFu : 0x707070FFu;
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, 0, 0, box->tile_w, 1, frame_color);
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, 0, box->tile_h - 1, box->tile_w, 1, frame_color);
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, 0, 0, 1, box->tile_h, frame_color);
+        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, box->tile_w - 1, 0, 1, box->tile_h, frame_color);
         if (box->widget_value != NULL && box->widget_value_len > 0u) {
             value = (const lxb_char_t *) box->widget_value;
             value_len = box->widget_value_len;
@@ -882,9 +887,15 @@ static void q_paint_form_widget(q_box_t *box)
         if (value != NULL && value_len > 0u) {
             q_paint_render_widget_text(box, (const char *) value, value_len, 4, 4, text_color);
         }
-        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, x0, mid_y - 1, 6, 1, text_color);
-        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, x0 + 1, mid_y, 4, 1, text_color);
-        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, x0 + 2, mid_y + 1, 2, 1, text_color);
+        if (box->widget_open) {
+            q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, x0 + 2, mid_y - 1, 2, 1, text_color);
+            q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, x0 + 1, mid_y, 4, 1, text_color);
+            q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, x0, mid_y + 1, 6, 1, text_color);
+        } else {
+            q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, x0, mid_y - 1, 6, 1, text_color);
+            q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, x0 + 1, mid_y, 4, 1, text_color);
+            q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, x0 + 2, mid_y + 1, 2, 1, text_color);
+        }
         return;
     }
 
@@ -897,6 +908,8 @@ static void q_paint_form_widget(q_box_t *box)
         }
         if (box->widget_focused && box->widget_caret <= box->widget_value_len) {
             int caret_x = 4;
+            int caret_h;
+            int caret_top = 4;
             if (box->widget_caret > 0u && box->widget_value != NULL) {
                 q_font_t *font = q_paint_widget_font(box);
                 if (font != NULL) {
@@ -904,8 +917,19 @@ static void q_paint_form_widget(q_box_t *box)
                                                             box->widget_caret));
                 }
             }
+            caret_h = (int) lroundf((!isnan(box->font_size) && box->font_size > 0.0f)
+                                    ? box->font_size : 16.0f);
+            if (caret_h < 8) {
+                caret_h = 8;
+            }
+            if (caret_top + caret_h > box->tile_h - 2) {
+                caret_h = box->tile_h - caret_top - 2;
+            }
+            if (caret_h < 1) {
+                caret_h = 1;
+            }
             q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
-                              caret_x, 2, 1, box->tile_h - 4, text_color);
+                              caret_x, caret_top, 1, caret_h, text_color);
         }
         return;
     }

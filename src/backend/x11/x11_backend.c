@@ -74,6 +74,8 @@ static uint32_t x11_translate_key(KeySym ks)
     case XK_End:       return Q_KEY_END;
     case XK_BackSpace: return Q_KEY_BACKSPACE;
     case XK_Delete:    return Q_KEY_DELETE;
+    case XK_Return:
+    case XK_KP_Enter:  return Q_KEY_ENTER;
     default:           return (uint32_t) ks;
     }
 }

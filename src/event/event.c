@@ -60,7 +60,7 @@ static void q_dbg_print_box(const char *label, const q_box_t *box)
 #define Q_EVENT_WHEEL_SCROLL_PX 40.0f
 #define Q_WIDGET_TEXT_INPUT_PRINTABLE_MIN 0x20u
 #define Q_WIDGET_TEXT_INPUT_PRINTABLE_MAX 0x7Eu
-#define Q_SCROLLBAR_THICKNESS 12
+#define Q_SCROLLBAR_THICKNESS 14
 #define Q_SCROLLBAR_MIN_THUMB 16
 
 static int q_event_is_mouse_event(q_event_type_t type)
@@ -812,6 +812,38 @@ static void q_widget_insert_char(q_box_t *box, uint32_t ch)
     box->widget_caret = caret + 1u;
 }
 
+static void q_widget_insert_newline(q_box_t *box)
+{
+    char *buf;
+    size_t caret;
+    size_t len;
+
+    if (box == NULL || box->widget_type != Q_WIDGET_TEXTAREA) {
+        return;
+    }
+
+    len = box->widget_value_len;
+    caret = (box->widget_caret > len) ? len : box->widget_caret;
+    buf = (char *) malloc(len + 2u);
+    if (buf == NULL) {
+        return;
+    }
+
+    if (box->widget_value != NULL && caret > 0u) {
+        memcpy(buf, box->widget_value, caret);
+    }
+    buf[caret] = '\n';
+    if (box->widget_value != NULL && len > caret) {
+        memcpy(buf + caret + 1, box->widget_value + caret, len - caret);
+    }
+    buf[len + 1u] = '\0';
+
+    free(box->widget_value);
+    box->widget_value = buf;
+    box->widget_value_len = len + 1u;
+    box->widget_caret = caret + 1u;
+}
+
 static void q_widget_delete_char(q_box_t *box)
 {
     size_t caret;
@@ -1110,6 +1142,16 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
         return;
     }
 
+    if (event->type == Q_EVENT_MOUSE_MOVE && view->drag_scroll_box != NULL) {
+        hit_x = event->mouse_x + (int) lroundf(view->scroll_x);
+        hit_y = event->mouse_y + (int) lroundf(view->scroll_y);
+        if (q_update_scrollbar_drag(view, hit_x, hit_y)) {
+            view->dirty_flags |= Q_DIRTY_RECOMPOSE;
+            q_view_update(view);
+        }
+        return;
+    }
+
     scroll_box = NULL;
     scrolled = 0;
 
@@ -1147,7 +1189,6 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
                 q_view_update(view);
             } else if (widget_box->widget_type == Q_WIDGET_SELECT) {
                 q_widget_set_focus(view, widget_box);
-                widget_box->widget_open = 1;
                 view->dirty_flags |= Q_DIRTY_PAINT;
                 q_view_update(view);
             } else if (widget_box->widget_type == Q_WIDGET_BUTTON) {
@@ -1208,13 +1249,16 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
                     view->on_event(view, &change_event, view->on_event_userdata);
                 }
             } else if (widget_box->widget_type == Q_WIDGET_SELECT) {
-                int changed = 0;
-                widget_box->widget_open = 0;
-                changed = q_widget_select_cycle(widget_box);
-                if (changed) {
+                if (!widget_box->widget_open) {
+                    widget_box->widget_open = 1;
                     view->dirty_flags |= Q_DIRTY_PAINT;
                     q_view_update(view);
-                    if (view->on_event != NULL) {
+                } else {
+                    int changed = q_widget_select_cycle(widget_box);
+                    widget_box->widget_open = 0;
+                    view->dirty_flags |= Q_DIRTY_PAINT;
+                    q_view_update(view);
+                    if (changed && view->on_event != NULL) {
                         q_event_t change_event;
                         memset(&change_event, 0, sizeof(change_event));
                         change_event.type = Q_EVENT_CHANGE;
@@ -1222,20 +1266,9 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
                         change_event.target = widget_box->dom_node;
                         view->on_event(view, &change_event, view->on_event_userdata);
                     }
-                } else {
-                    view->dirty_flags |= Q_DIRTY_PAINT;
-                    q_view_update(view);
                 }
             }
         }
-    }
-
-    if (event->type == Q_EVENT_MOUSE_MOVE && view->drag_scroll_box != NULL) {
-        if (q_update_scrollbar_drag(view, hit_x, hit_y)) {
-            view->dirty_flags |= Q_DIRTY_RECOMPOSE;
-            q_view_update(view);
-        }
-        return;
     }
 
     if (event->type == Q_EVENT_MOUSE_WHEEL) {
@@ -1334,6 +1367,11 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
             } else if (event->key_sym == Q_KEY_END) {
                 focused_widget->widget_caret = focused_widget->widget_value_len;
                 changed = 1;
+            } else if (event->key_sym == Q_KEY_ENTER) {
+                if (focused_widget->widget_type == Q_WIDGET_TEXTAREA) {
+                    q_widget_insert_newline(focused_widget);
+                    changed = 1;
+                }
             } else if (event->key_sym >= Q_WIDGET_TEXT_INPUT_PRINTABLE_MIN
                        && event->key_sym <= Q_WIDGET_TEXT_INPUT_PRINTABLE_MAX)
             {
