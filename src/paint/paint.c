@@ -39,6 +39,27 @@ static uint32_t q_paint_resolve_text_color(const q_box_t *box)
     return Q_TEXT_COLOR;
 }
 
+static int q_paint_widget_selection_bounds(const q_box_t *box, size_t *start, size_t *end)
+{
+    size_t a;
+    size_t b;
+    if (box == NULL || start == NULL || end == NULL) {
+        return 0;
+    }
+    a = box->widget_sel_anchor;
+    b = box->widget_sel_focus;
+    if (a > b) {
+        size_t t = a;
+        a = b;
+        b = t;
+    }
+    if (a > box->widget_value_len) a = box->widget_value_len;
+    if (b > box->widget_value_len) b = box->widget_value_len;
+    *start = a;
+    *end = b;
+    return b > a;
+}
+
 static int q_paint_box_width(const q_box_t *box)
 {
     int w = (int) ceilf(box->width);
@@ -926,6 +947,9 @@ static void q_paint_render_textarea(q_box_t *box, uint32_t text_color)
     q_font_t *font;
     int caret_x = 4;
     int caret_y = base_y;
+    size_t sel_start = 0u;
+    size_t sel_end = 0u;
+    int has_sel = 0;
 
     if (box == NULL) {
         return;
@@ -934,6 +958,7 @@ static void q_paint_render_textarea(q_box_t *box, uint32_t text_color)
     if (box->widget_caret > box->widget_value_len) {
         box->widget_caret = box->widget_value_len;
     }
+    has_sel = q_paint_widget_selection_bounds(box, &sel_start, &sel_end);
     if (box->widget_scroll_y > 0.0f) {
         scroll_y = box->widget_scroll_y;
     }
@@ -955,6 +980,30 @@ static void q_paint_render_textarea(q_box_t *box, uint32_t text_color)
         for (i = 0u; i <= box->widget_value_len; ++i) {
             if (i == box->widget_value_len || box->widget_value[i] == '\n') {
                 size_t seg_len = i - line_start;
+                size_t line_end = i;
+                if (has_sel && sel_end > line_start && sel_start < line_end) {
+                    size_t ss = (sel_start > line_start) ? sel_start : line_start;
+                    size_t se = (sel_end < line_end) ? sel_end : line_end;
+                    q_font_t *hl_font = q_paint_widget_font(box);
+                    int x1 = 4;
+                    int x2 = 4;
+                    if (hl_font != NULL) {
+                        x1 += (int) lroundf(q_font_measure(hl_font, box->widget_value + line_start,
+                                                           ss - line_start));
+                        x2 += (int) lroundf(q_font_measure(hl_font, box->widget_value + line_start,
+                                                           se - line_start));
+                    } else {
+                        x1 += (int) ((ss - line_start) * 8u);
+                        x2 += (int) ((se - line_start) * 8u);
+                    }
+                    if (x2 > x1) {
+                        q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                                          x1,
+                                          base_y + (int) line_index * 18
+                                          - (int) lroundf(scroll_y),
+                                          x2 - x1, 16, 0x93C5FDFFu);
+                    }
+                }
                 if (seg_len > 0u) {
                     q_paint_render_widget_text(box, box->widget_value + line_start, seg_len,
                                                4, base_y + (int) line_index * 18
@@ -1088,7 +1137,30 @@ static void q_paint_form_widget(q_box_t *box)
             const lxb_char_t *value;
             size_t value_len = 0;
             int text_x = 4 - (int) lroundf((box->widget_scroll_x > 0.0f) ? box->widget_scroll_x : 0.0f);
+            size_t sel_start = 0u;
+            size_t sel_end = 0u;
+            int has_sel = q_paint_widget_selection_bounds(box, &sel_start, &sel_end);
             value = q_paint_get_attr(box, "value", &value_len);
+            if (box->widget_value != NULL) {
+                value = (const lxb_char_t *) box->widget_value;
+                value_len = box->widget_value_len;
+            }
+            if (has_sel && box->widget_value != NULL) {
+                q_font_t *font = q_paint_widget_font(box);
+                int x1 = text_x;
+                int x2 = text_x;
+                if (font != NULL) {
+                    x1 += (int) lroundf(q_font_measure(font, box->widget_value, sel_start));
+                    x2 += (int) lroundf(q_font_measure(font, box->widget_value, sel_end));
+                } else {
+                    x1 += (int) (sel_start * 8u);
+                    x2 += (int) (sel_end * 8u);
+                }
+                if (x2 > x1) {
+                    q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                                      x1, 2, x2 - x1, box->tile_h - 4, 0x93C5FDFFu);
+                }
+            }
             if (value != NULL && value_len > 0u) {
                 q_paint_render_widget_text(box, (const char *) value, value_len, text_x, 4, text_color);
             }

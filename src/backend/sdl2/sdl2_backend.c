@@ -64,6 +64,8 @@ static uint32_t sdl2_translate_key(SDL_Keycode sym)
     case SDLK_RIGHT:     return Q_KEY_RIGHT;
     case SDLK_UP:        return Q_KEY_UP;
     case SDLK_DOWN:      return Q_KEY_DOWN;
+    case SDLK_PAGEUP:    return Q_KEY_PAGEUP;
+    case SDLK_PAGEDOWN:  return Q_KEY_PAGEDOWN;
     case SDLK_HOME:      return Q_KEY_HOME;
     case SDLK_END:       return Q_KEY_END;
     case SDLK_BACKSPACE: return Q_KEY_BACKSPACE;
@@ -79,6 +81,7 @@ static int sdl2_key_is_repeat_coalescible(uint32_t key_sym)
     if (key_sym == Q_KEY_LEFT || key_sym == Q_KEY_RIGHT
         || key_sym == Q_KEY_UP || key_sym == Q_KEY_DOWN
         || key_sym == Q_KEY_HOME || key_sym == Q_KEY_END
+        || key_sym == Q_KEY_PAGEUP || key_sym == Q_KEY_PAGEDOWN
         || key_sym == Q_KEY_BACKSPACE || key_sym == Q_KEY_DELETE
         || key_sym == Q_KEY_ENTER)
     {

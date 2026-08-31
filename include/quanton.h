@@ -81,6 +81,8 @@ typedef struct q_event {
 #define Q_KEY_RIGHT     0x27u
 #define Q_KEY_UP        0x26u
 #define Q_KEY_DOWN      0x28u
+#define Q_KEY_PAGEUP    0x21u
+#define Q_KEY_PAGEDOWN  0x22u
 #define Q_KEY_HOME      0x24u
 #define Q_KEY_END       0x23u
 #define Q_KEY_ENTER     0x0Du
@@ -348,6 +350,8 @@ struct q_box {
     char *widget_value;
     size_t widget_value_len;
     size_t widget_caret;
+    size_t widget_sel_anchor;
+    size_t widget_sel_focus;
     float widget_scroll_x;
     float widget_scroll_y;
     int widget_checked;
@@ -390,6 +394,9 @@ struct quanton_view {
                                      void *userdata);
     void               *on_navigate_userdata;
     q_box_t            *focused_widget;   /* currently focused interactive box */
+    q_box_t            *active_scroll_box; /* last activated scrollable pane */
+    q_box_t            *mouse_select_box;  /* active text-selection drag source */
+    char               *clipboard_text;    /* internal clipboard buffer */
     size_t              texture_cache_limit_bytes; /* 0 = backend default */
     void               *window_handle;     /* opaque backend-specific handle */
     q_box_t            *drag_scroll_box;   /* active scrollbar-drag target */

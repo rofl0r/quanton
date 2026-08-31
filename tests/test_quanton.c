@@ -2909,6 +2909,29 @@ int main(int argc, char **argv)
         assert(strcmp(txt_box->widget_value, "c") == 0);
         assert(txt_box->widget_caret == 0u);
 
+        free(txt_box->widget_value);
+        txt_box->widget_value = strdup("password");
+        assert(txt_box->widget_value != NULL);
+        txt_box->widget_value_len = strlen("password");
+        txt_box->widget_caret = 0u;
+        txt_box->widget_sel_anchor = 0u;
+        txt_box->widget_sel_focus = 0u;
+        memset(&ev, 0, sizeof(ev));
+        ev.type = Q_EVENT_KEY_DOWN;
+        ev.key_sym = Q_KEY_RIGHT;
+        ev.key_mod = 1u; /* shift */
+        ev.key_repeat = 4;
+        q_event_dispatch(&wview, &ev);
+        assert(txt_box->widget_sel_focus == 4u);
+        ev.key_mod = 2u; /* ctrl */
+        ev.key_repeat = 1;
+        ev.key_sym = 'x';
+        q_event_dispatch(&wview, &ev);
+        assert(strcmp(txt_box->widget_value, "word") == 0);
+        ev.key_sym = 'v';
+        q_event_dispatch(&wview, &ev);
+        assert(strcmp(txt_box->widget_value, "password") == 0);
+
         q_layout_free_tree(wview.layout_root);
         free(wview.framebuffer);
         q_document_destroy(wdoc);
@@ -2927,6 +2950,7 @@ int main(int argc, char **argv)
         q_event_t ev;
         int down_x;
         int down_y;
+        float old_scroll;
 
         ddoc = q_document_create();
         assert(ddoc != NULL);
@@ -2966,6 +2990,17 @@ int main(int argc, char **argv)
         q_event_dispatch(&dview, &ev);
 
         assert(sc_box->scroll_y > 0.0f);
+        memset(&ev, 0, sizeof(ev));
+        ev.type = Q_EVENT_MOUSE_DOWN;
+        ev.mouse_button = 0;
+        ev.mouse_x = (int) lroundf(sc_box->x + 5.0f);
+        ev.mouse_y = (int) lroundf(sc_box->y + 5.0f);
+        q_event_dispatch(&dview, &ev);
+        old_scroll = sc_box->scroll_y;
+        ev.type = Q_EVENT_KEY_DOWN;
+        ev.key_sym = Q_KEY_PAGEDOWN;
+        q_event_dispatch(&dview, &ev);
+        assert(sc_box->scroll_y > old_scroll);
 
         q_layout_free_tree(dview.layout_root);
         free(dview.framebuffer);
