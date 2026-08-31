@@ -187,29 +187,34 @@ static float q_clamp_scroll(float value, float max_value)
     if (value < 0.0f) {
         return 0.0f;
     }
-
-    static q_font_t *q_widget_font(const q_box_t *box)
-    {
-        static q_font_cache_t *cache;
-        float size;
-        int weight;
-        int style;
-
-        if (box == NULL) {
-            return NULL;
-        }
-        if (cache == NULL) {
-            cache = q_font_cache_create();
-        }
-        if (cache == NULL) {
-            return NULL;
-        }
-
-        size = (!isnan(box->font_size) && box->font_size > 0.0f) ? box->font_size : 16.0f;
-        weight = (box->font_weight > 0) ? box->font_weight : 400;
-        style = (int) box->font_style;
-        return q_font_match(cache, "sans-serif", size, weight, style);
+    if (value > max_value) {
+        return max_value;
     }
+    return value;
+}
+
+static q_font_t *q_widget_font(const q_box_t *box)
+{
+    static q_font_cache_t *cache;
+    float size;
+    int weight;
+    int style;
+
+    if (box == NULL) {
+        return NULL;
+    }
+    if (cache == NULL) {
+        cache = q_font_cache_create();
+    }
+    if (cache == NULL) {
+        return NULL;
+    }
+
+    size = (!isnan(box->font_size) && box->font_size > 0.0f) ? box->font_size : 16.0f;
+    weight = (box->font_weight > 0) ? box->font_weight : 400;
+    style = (int) box->font_style;
+    return q_font_match(cache, "sans-serif", size, weight, style);
+}
 
     static float q_widget_measure_prefix(const q_box_t *box, size_t len)
     {
@@ -360,289 +365,68 @@ static float q_clamp_scroll(float value, float max_value)
         return 0;
     }
 
-    static void q_widget_set_value(q_box_t *box, const char *text, size_t len)
-    {
-        char *buf;
+static void q_widget_set_value(q_box_t *box, const char *text, size_t len)
+{
+    char *buf;
 
-        if (box == NULL) {
-            return;
-        }
-
-        free(box->widget_value);
-        box->widget_value = NULL;
-        box->widget_value_len = 0u;
-        box->widget_caret = 0u;
-        box->widget_scroll_x = 0.0f;
-
-        if (text == NULL || len == 0u) {
-            return;
-        }
-
-        buf = (char *) malloc(len + 1u);
-        if (buf == NULL) {
-            return;
-        }
-        memcpy(buf, text, len);
-        buf[len] = '\0';
-        box->widget_value = buf;
-        box->widget_value_len = len;
-        box->widget_caret = len;
+    if (box == NULL) {
+        return;
     }
 
-    static int q_widget_select_cycle(q_box_t *box)
+    free(box->widget_value);
+    box->widget_value = NULL;
+    box->widget_value_len = 0u;
+    box->widget_caret = 0u;
+    box->widget_scroll_x = 0.0f;
+
+    if (text == NULL || len == 0u) {
+        return;
+    }
+
+    buf = (char *) malloc(len + 1u);
+    if (buf == NULL) {
+        return;
+    }
+    memcpy(buf, text, len);
+    buf[len] = '\0';
+    box->widget_value = buf;
+    box->widget_value_len = len;
+    box->widget_caret = len;
+}
+
+static int q_widget_select_cycle(q_box_t *box)
+{
+    lxb_dom_node_t *node;
+    lxb_dom_node_t *child;
+    char *first = NULL;
+    size_t first_len = 0u;
+    char *next = NULL;
+    size_t next_len = 0u;
+    int found_current = 0;
+
+    if (box == NULL || box->dom_node == NULL
+        || lxb_dom_node_type(box->dom_node) != LXB_DOM_NODE_TYPE_ELEMENT)
     {
-        lxb_dom_node_t *node;
-        lxb_dom_node_t *child;
-        char *first = NULL;
-        size_t first_len = 0u;
-        char *next = NULL;
-        size_t next_len = 0u;
-        int found_current = 0;
+        return 0;
+    }
 
-        if (box == NULL || box->dom_node == NULL
-            || lxb_dom_node_type(box->dom_node) != LXB_DOM_NODE_TYPE_ELEMENT)
+    node = box->dom_node;
+    for (child = node->first_child; child != NULL; child = child->next) {
+        char *label = NULL;
+        size_t label_len = 0u;
+        size_t cap = 0u;
+        if (child->type != LXB_DOM_NODE_TYPE_ELEMENT
+            || lxb_dom_node_tag_id(child) != LXB_TAG_OPTION)
         {
-            return 0;
+            continue;
         }
-
-        static int q_box_has_vertical_scrollbar(const q_box_t *box, float content_h, float viewport_h)
-        {
-            if (box == NULL) {
-                return 0;
-            }
-            if (box->overflow_y == Q_OVERFLOW_SCROLL) {
-                return 1;
-            }
-            if (box->overflow_y == Q_OVERFLOW_AUTO && content_h > viewport_h) {
-                return 1;
-            }
-            return 0;
+        if (q_collect_text_recursive(child, &label, &label_len, &cap) != 0) {
+            free(label);
+            continue;
         }
-
-        static int q_box_has_horizontal_scrollbar(const q_box_t *box, float content_w, float viewport_w)
-        {
-            if (box == NULL) {
-                return 0;
-            }
-            if (box->overflow_x == Q_OVERFLOW_SCROLL) {
-                return 1;
-            }
-            if (box->overflow_x == Q_OVERFLOW_AUTO && content_w > viewport_w) {
-                return 1;
-            }
-            return 0;
-        }
-
-        static int q_scrollbar_thumb_hit(const q_box_t *box, int vertical,
-                                         int hit_x, int hit_y,
-                                         int *track_len_out, int *thumb_len_out,
-                                         float *max_scroll_out)
-        {
-            float content_w = 0.0f;
-            float content_h = 0.0f;
-            int top;
-            int right;
-            int bottom;
-            int left;
-            int viewport_w;
-            int viewport_h;
-            int show_vertical;
-            int show_horizontal;
-            int track_x;
-            int track_y;
-            int track_w;
-            int track_h;
-            int thumb_x;
-            int thumb_y;
-            int thumb_w;
-            int thumb_h;
-            float max_scroll;
-            float scroll;
-            float ratio;
-
-            if (box == NULL) {
-                return 0;
-            }
-
-            q_box_content_extent(box, &content_w, &content_h);
-            top = (int) ceilf(box->border_width[0]);
-            right = (int) ceilf(box->border_width[1]);
-            bottom = (int) ceilf(box->border_width[2]);
-            left = (int) ceilf(box->border_width[3]);
-            viewport_w = (int) lroundf(box->width) - left - right;
-            viewport_h = (int) lroundf(box->height) - top - bottom;
-            if (viewport_w <= 0 || viewport_h <= 0) {
-                return 0;
-            }
-
-            show_vertical = q_box_has_vertical_scrollbar(box, content_h, (float) viewport_h);
-            show_horizontal = q_box_has_horizontal_scrollbar(box, content_w, (float) viewport_w);
-
-            if (vertical) {
-                if (!show_vertical) {
-                    return 0;
-                }
-                track_w = Q_SCROLLBAR_THICKNESS;
-                if (track_w > viewport_w) {
-                    track_w = viewport_w;
-                }
-                track_h = viewport_h - (show_horizontal ? Q_SCROLLBAR_THICKNESS : 0);
-                if (track_h <= 0) {
-                    return 0;
-                }
-                track_x = (int) lroundf(box->x + box->width) - right - track_w;
-                track_y = (int) lroundf(box->y) + top;
-                thumb_w = track_w;
-                thumb_h = (int) lroundf(((float) viewport_h / (content_h > 0.0f ? content_h : 1.0f)) * track_h);
-                if (thumb_h < Q_SCROLLBAR_MIN_THUMB) thumb_h = Q_SCROLLBAR_MIN_THUMB;
-                if (thumb_h > track_h) thumb_h = track_h;
-                max_scroll = content_h - (float) viewport_h;
-                if (max_scroll < 0.0f) max_scroll = 0.0f;
-                scroll = q_clamp_scroll(box->scroll_y, max_scroll);
-                ratio = (max_scroll > 0.0f) ? (scroll / max_scroll) : 0.0f;
-                thumb_x = track_x;
-                thumb_y = track_y + (int) lroundf(ratio * (float) (track_h - thumb_h));
-            } else {
-                if (!show_horizontal) {
-                    return 0;
-                }
-                track_h = Q_SCROLLBAR_THICKNESS;
-                if (track_h > viewport_h) {
-                    track_h = viewport_h;
-                }
-                track_w = viewport_w - (show_vertical ? Q_SCROLLBAR_THICKNESS : 0);
-                if (track_w <= 0) {
-                    return 0;
-                }
-                track_x = (int) lroundf(box->x) + left;
-                track_y = (int) lroundf(box->y + box->height) - bottom - track_h;
-                thumb_h = track_h;
-                thumb_w = (int) lroundf(((float) viewport_w / (content_w > 0.0f ? content_w : 1.0f)) * track_w);
-                if (thumb_w < Q_SCROLLBAR_MIN_THUMB) thumb_w = Q_SCROLLBAR_MIN_THUMB;
-                if (thumb_w > track_w) thumb_w = track_w;
-                max_scroll = content_w - (float) viewport_w;
-                if (max_scroll < 0.0f) max_scroll = 0.0f;
-                scroll = q_clamp_scroll(box->scroll_x, max_scroll);
-                ratio = (max_scroll > 0.0f) ? (scroll / max_scroll) : 0.0f;
-                thumb_x = track_x + (int) lroundf(ratio * (float) (track_w - thumb_w));
-                thumb_y = track_y;
-            }
-
-            if (track_len_out != NULL) {
-                *track_len_out = vertical ? track_h : track_w;
-            }
-            if (thumb_len_out != NULL) {
-                *thumb_len_out = vertical ? thumb_h : thumb_w;
-            }
-            if (max_scroll_out != NULL) {
-                *max_scroll_out = max_scroll;
-            }
-
-            return hit_x >= thumb_x && hit_x < (thumb_x + thumb_w)
-                && hit_y >= thumb_y && hit_y < (thumb_y + thumb_h);
-        }
-
-        static int q_begin_scrollbar_drag(quanton_view_t *view, q_box_t *target_box, int hit_x, int hit_y)
-        {
-            q_box_t *box;
-            int track_len;
-            int thumb_len;
-            float max_scroll;
-
-            if (view == NULL) {
-                return 0;
-            }
-
-            for (box = target_box; box != NULL; box = box->parent) {
-                if (q_scrollbar_thumb_hit(box, 1, hit_x, hit_y, &track_len, &thumb_len, &max_scroll)) {
-                    if (track_len > thumb_len && max_scroll > 0.0f) {
-                        view->drag_scroll_box = box;
-                        view->drag_scroll_vertical = 1;
-                        view->drag_scroll_last_mouse = hit_y;
-                        return 1;
-                    }
-                }
-                if (q_scrollbar_thumb_hit(box, 0, hit_x, hit_y, &track_len, &thumb_len, &max_scroll)) {
-                    if (track_len > thumb_len && max_scroll > 0.0f) {
-                        view->drag_scroll_box = box;
-                        view->drag_scroll_vertical = 0;
-                        view->drag_scroll_last_mouse = hit_x;
-                        return 1;
-                    }
-                }
-            }
-
-            return 0;
-        }
-
-        static int q_update_scrollbar_drag(quanton_view_t *view, int hit_x, int hit_y)
-        {
-            q_box_t *box;
-            int track_len = 0;
-            int thumb_len = 0;
-            float max_scroll = 0.0f;
-            int cur_mouse;
-            int delta_px;
-            float scroll_delta;
-            float old_scroll;
-
-            if (view == NULL || view->drag_scroll_box == NULL) {
-                return 0;
-            }
-
-            box = view->drag_scroll_box;
-            if (!q_scrollbar_thumb_hit(box, view->drag_scroll_vertical, hit_x, hit_y,
-                                       &track_len, &thumb_len, &max_scroll))
-            {
-                if ((track_len <= 0 || thumb_len >= track_len || max_scroll <= 0.0f)) {
-                    return 0;
-                }
-            }
-
-            cur_mouse = view->drag_scroll_vertical ? hit_y : hit_x;
-            delta_px = cur_mouse - view->drag_scroll_last_mouse;
-            view->drag_scroll_last_mouse = cur_mouse;
-            if (delta_px == 0 || track_len <= thumb_len || max_scroll <= 0.0f) {
-                return 0;
-            }
-
-            scroll_delta = ((float) delta_px / (float) (track_len - thumb_len)) * max_scroll;
-            if (view->drag_scroll_vertical) {
-                old_scroll = box->scroll_y;
-                box->scroll_y = q_clamp_scroll(box->scroll_y + scroll_delta, max_scroll);
-                return box->scroll_y != old_scroll;
-            }
-
-            old_scroll = box->scroll_x;
-            box->scroll_x = q_clamp_scroll(box->scroll_x + scroll_delta, max_scroll);
-            return box->scroll_x != old_scroll;
-        }
-
-        node = box->dom_node;
-        for (child = node->first_child; child != NULL; child = child->next) {
-            char *label = NULL;
-            size_t label_len = 0u;
-            size_t cap = 0u;
-            if (child->type != LXB_DOM_NODE_TYPE_ELEMENT
-                || lxb_dom_node_tag_id(child) != LXB_TAG_OPTION)
-            {
-                continue;
-            }
-            if (q_collect_text_recursive(child, &label, &label_len, &cap) != 0) {
-                free(label);
-                continue;
-            }
-            if (first == NULL) {
-                first = label;
-                first_len = label_len;
-                label = NULL;
-            }
-            if (found_current && next == NULL) {
-                next = label;
-                next_len = label_len;
-                label = NULL;
-                break;
-            }
+        if (first == NULL) {
+            first = label;
+            first_len = label_len;
             if (!found_current
                 && label_len == box->widget_value_len
                 && ((label_len == 0u)
@@ -651,34 +435,255 @@ static float q_clamp_scroll(float value, float max_value)
             {
                 found_current = 1;
             }
-            free(label);
+            continue;
         }
+        if (found_current && next == NULL) {
+            next = label;
+            next_len = label_len;
+            label = NULL;
+            break;
+        }
+        if (!found_current
+            && label_len == box->widget_value_len
+            && ((label_len == 0u)
+                || (box->widget_value != NULL
+                    && memcmp(label, box->widget_value, label_len) == 0)))
+        {
+            found_current = 1;
+        }
+        free(label);
+    }
 
-        if (next != NULL) {
-            q_widget_set_value(box, next, next_len);
-            free(next);
+    if (next != NULL) {
+        q_widget_set_value(box, next, next_len);
+        free(next);
+        free(first);
+        return 1;
+    }
+    if (first != NULL) {
+        if (first_len != box->widget_value_len
+            || box->widget_value == NULL
+            || memcmp(first, box->widget_value, first_len) != 0)
+        {
+            q_widget_set_value(box, first, first_len);
             free(first);
             return 1;
         }
-        if (first != NULL) {
-            if (first_len != box->widget_value_len
-                || box->widget_value == NULL
-                || memcmp(first, box->widget_value, first_len) != 0)
-            {
-                q_widget_set_value(box, first, first_len);
-                free(first);
+    }
+    free(first);
+    return 0;
+}
+
+static int q_box_has_vertical_scrollbar(const q_box_t *box, float content_h, float viewport_h)
+{
+    if (box == NULL) {
+        return 0;
+    }
+    if (box->overflow_y == Q_OVERFLOW_SCROLL) {
+        return 1;
+    }
+    if (box->overflow_y == Q_OVERFLOW_AUTO && content_h > viewport_h) {
+        return 1;
+    }
+    return 0;
+}
+
+static int q_box_has_horizontal_scrollbar(const q_box_t *box, float content_w, float viewport_w)
+{
+    if (box == NULL) {
+        return 0;
+    }
+    if (box->overflow_x == Q_OVERFLOW_SCROLL) {
+        return 1;
+    }
+    if (box->overflow_x == Q_OVERFLOW_AUTO && content_w > viewport_w) {
+        return 1;
+    }
+    return 0;
+}
+
+static int q_scrollbar_thumb_hit(const q_box_t *box, int vertical,
+                                 int hit_x, int hit_y,
+                                 int *track_len_out, int *thumb_len_out,
+                                 float *max_scroll_out)
+{
+    float content_w = 0.0f;
+    float content_h = 0.0f;
+    int top;
+    int right;
+    int bottom;
+    int left;
+    int viewport_w;
+    int viewport_h;
+    int show_vertical;
+    int show_horizontal;
+    int track_x;
+    int track_y;
+    int track_w;
+    int track_h;
+    int thumb_x;
+    int thumb_y;
+    int thumb_w;
+    int thumb_h;
+    float max_scroll;
+    float scroll;
+    float ratio;
+
+    if (box == NULL) {
+        return 0;
+    }
+
+    q_box_content_extent(box, &content_w, &content_h);
+    top = (int) ceilf(box->border_width[0]);
+    right = (int) ceilf(box->border_width[1]);
+    bottom = (int) ceilf(box->border_width[2]);
+    left = (int) ceilf(box->border_width[3]);
+    viewport_w = (int) lroundf(box->width) - left - right;
+    viewport_h = (int) lroundf(box->height) - top - bottom;
+    if (viewport_w <= 0 || viewport_h <= 0) {
+        return 0;
+    }
+
+    show_vertical = q_box_has_vertical_scrollbar(box, content_h, (float) viewport_h);
+    show_horizontal = q_box_has_horizontal_scrollbar(box, content_w, (float) viewport_w);
+
+    if (vertical) {
+        if (!show_vertical) {
+            return 0;
+        }
+        track_w = Q_SCROLLBAR_THICKNESS;
+        if (track_w > viewport_w) {
+            track_w = viewport_w;
+        }
+        track_h = viewport_h - (show_horizontal ? Q_SCROLLBAR_THICKNESS : 0);
+        if (track_h <= 0) {
+            return 0;
+        }
+        track_x = (int) lroundf(box->x + box->width) - right - track_w;
+        track_y = (int) lroundf(box->y) + top;
+        thumb_w = track_w;
+        thumb_h = (int) lroundf(((float) viewport_h / (content_h > 0.0f ? content_h : 1.0f)) * track_h);
+        if (thumb_h < Q_SCROLLBAR_MIN_THUMB) thumb_h = Q_SCROLLBAR_MIN_THUMB;
+        if (thumb_h > track_h) thumb_h = track_h;
+        max_scroll = content_h - (float) viewport_h;
+        if (max_scroll < 0.0f) max_scroll = 0.0f;
+        scroll = q_clamp_scroll(box->scroll_y, max_scroll);
+        ratio = (max_scroll > 0.0f) ? (scroll / max_scroll) : 0.0f;
+        thumb_x = track_x;
+        thumb_y = track_y + (int) lroundf(ratio * (float) (track_h - thumb_h));
+    } else {
+        if (!show_horizontal) {
+            return 0;
+        }
+        track_h = Q_SCROLLBAR_THICKNESS;
+        if (track_h > viewport_h) {
+            track_h = viewport_h;
+        }
+        track_w = viewport_w - (show_vertical ? Q_SCROLLBAR_THICKNESS : 0);
+        if (track_w <= 0) {
+            return 0;
+        }
+        track_x = (int) lroundf(box->x) + left;
+        track_y = (int) lroundf(box->y + box->height) - bottom - track_h;
+        thumb_h = track_h;
+        thumb_w = (int) lroundf(((float) viewport_w / (content_w > 0.0f ? content_w : 1.0f)) * track_w);
+        if (thumb_w < Q_SCROLLBAR_MIN_THUMB) thumb_w = Q_SCROLLBAR_MIN_THUMB;
+        if (thumb_w > track_w) thumb_w = track_w;
+        max_scroll = content_w - (float) viewport_w;
+        if (max_scroll < 0.0f) max_scroll = 0.0f;
+        scroll = q_clamp_scroll(box->scroll_x, max_scroll);
+        ratio = (max_scroll > 0.0f) ? (scroll / max_scroll) : 0.0f;
+        thumb_x = track_x + (int) lroundf(ratio * (float) (track_w - thumb_w));
+        thumb_y = track_y;
+    }
+
+    if (track_len_out != NULL) {
+        *track_len_out = vertical ? track_h : track_w;
+    }
+    if (thumb_len_out != NULL) {
+        *thumb_len_out = vertical ? thumb_h : thumb_w;
+    }
+    if (max_scroll_out != NULL) {
+        *max_scroll_out = max_scroll;
+    }
+
+    return hit_x >= thumb_x && hit_x < (thumb_x + thumb_w)
+        && hit_y >= thumb_y && hit_y < (thumb_y + thumb_h);
+}
+
+static int q_begin_scrollbar_drag(quanton_view_t *view, q_box_t *target_box, int hit_x, int hit_y)
+{
+    q_box_t *box;
+    int track_len;
+    int thumb_len;
+    float max_scroll;
+
+    if (view == NULL) {
+        return 0;
+    }
+
+    for (box = target_box; box != NULL; box = box->parent) {
+        if (q_scrollbar_thumb_hit(box, 1, hit_x, hit_y, &track_len, &thumb_len, &max_scroll)) {
+            if (track_len > thumb_len && max_scroll > 0.0f) {
+                view->drag_scroll_box = box;
+                view->drag_scroll_vertical = 1;
+                view->drag_scroll_last_mouse = hit_y;
                 return 1;
             }
         }
-        free(first);
-        return 0;
+        if (q_scrollbar_thumb_hit(box, 0, hit_x, hit_y, &track_len, &thumb_len, &max_scroll)) {
+            if (track_len > thumb_len && max_scroll > 0.0f) {
+                view->drag_scroll_box = box;
+                view->drag_scroll_vertical = 0;
+                view->drag_scroll_last_mouse = hit_x;
+                return 1;
+            }
+        }
     }
-    if (value > max_value) {
-        return max_value;
-    }
-    return value;
+
+    return 0;
 }
 
+static int q_update_scrollbar_drag(quanton_view_t *view, int hit_x, int hit_y)
+{
+    q_box_t *box;
+    int track_len = 0;
+    int thumb_len = 0;
+    float max_scroll = 0.0f;
+    int cur_mouse;
+    int delta_px;
+    float scroll_delta;
+    float old_scroll;
+
+    if (view == NULL || view->drag_scroll_box == NULL) {
+        return 0;
+    }
+
+    box = view->drag_scroll_box;
+    (void) q_scrollbar_thumb_hit(box, view->drag_scroll_vertical, hit_x, hit_y,
+                                 &track_len, &thumb_len, &max_scroll);
+    if (track_len <= thumb_len || max_scroll <= 0.0f) {
+        return 0;
+    }
+
+    cur_mouse = view->drag_scroll_vertical ? hit_y : hit_x;
+    delta_px = cur_mouse - view->drag_scroll_last_mouse;
+    view->drag_scroll_last_mouse = cur_mouse;
+    if (delta_px == 0) {
+        return 0;
+    }
+
+    scroll_delta = ((float) delta_px / (float) (track_len - thumb_len)) * max_scroll;
+    if (view->drag_scroll_vertical) {
+        old_scroll = box->scroll_y;
+        box->scroll_y = q_clamp_scroll(box->scroll_y + scroll_delta, max_scroll);
+        return box->scroll_y != old_scroll;
+    }
+
+    old_scroll = box->scroll_x;
+    box->scroll_x = q_clamp_scroll(box->scroll_x + scroll_delta, max_scroll);
+    return box->scroll_x != old_scroll;
+}
 static q_box_t *q_find_deepest_text_descendant(q_box_t *box)
 {
     q_box_t *child;
