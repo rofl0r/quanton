@@ -319,6 +319,7 @@ struct q_box {
     float padding_right;
     float padding_bottom;
     float padding_left;
+    float flex_gap;
     q_list_style_type_t list_style_type;
     int list_item_index;
     q_float_type_t float_type;
@@ -343,8 +344,10 @@ struct q_box {
     char *widget_value;
     size_t widget_value_len;
     size_t widget_caret;
+    float widget_scroll_x;
     int widget_checked;
     int widget_pressed;
+    int widget_open;
     struct q_table *table;   /* non-NULL for Q_BOX_TABLE after measure */
 };
 
@@ -383,6 +386,9 @@ struct quanton_view {
     void               *on_navigate_userdata;
     q_box_t            *focused_widget;   /* currently focused interactive box */
     void               *window_handle;     /* opaque backend-specific handle */
+    q_box_t            *drag_scroll_box;   /* active scrollbar-drag target */
+    int                 drag_scroll_vertical;
+    int                 drag_scroll_last_mouse;
     int                 should_close;
     q_dirty_flags_t     dirty_flags;       /* accumulated dirty bits */
 };

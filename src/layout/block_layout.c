@@ -378,6 +378,21 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
         float item_w = 0.0f;
         float max_h = 0.0f;
         float used_w = 0.0f;
+        float inner_w;
+        float cursor_x;
+        float flow_y;
+        float gap = (box->flex_gap > 0.0f) ? box->flex_gap : 0.0f;
+        float inset_left = box->padding_left;
+        float inset_right = box->padding_right;
+        float inset_top = box->padding_top;
+        float inset_bottom = box->padding_bottom;
+
+        if (box->parent == NULL) {
+            inset_left += box->margin_left;
+            inset_right += box->margin_right;
+            inset_top += box->margin_top;
+            inset_bottom += box->margin_bottom;
+        }
 
         /* Count only in-flow flex children */
         for (child = box->first_child; child != NULL; child = child->next_sibling) {
@@ -386,14 +401,29 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
             }
         }
 
-        if (child_count > 0 && box->width > 0.0f) {
-            item_w = box->width / (float) child_count;
+        inner_w = box->width - inset_left - inset_right;
+        if (inner_w < 0.0f) {
+            inner_w = 0.0f;
+        }
+        if (child_count > 1) {
+            inner_w -= gap * (float) (child_count - 1u);
+            if (inner_w < 0.0f) {
+                inner_w = 0.0f;
+            }
+        }
+        if (child_count > 0 && inner_w > 0.0f) {
+            item_w = inner_w / (float) child_count;
         }
 
+        cursor_x = inset_left;
+        flow_y = inset_top;
         for (child = box->first_child; child != NULL; child = child->next_sibling) {
             q_layout_measure(child, item_w, containing_h);
             if (!q_is_out_of_flow(child)) {
+                child->x = cursor_x;
+                child->y = flow_y;
                 used_w += child->width;
+                cursor_x += child->width + gap;
                 if (child->height > max_h) {
                     max_h = child->height;
                 }
@@ -403,7 +433,10 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
         if (isnan(box->style_width) && box->width <= 0.0f) {
             box->width = used_w;
         }
-        box->height = max_h;
+        if (child_count > 1) {
+            used_w += gap * (float) (child_count - 1u);
+        }
+        box->height = flow_y + max_h + inset_bottom;
         if (!isnan(box->style_height)) {
             box->height = box->style_height;
         }
@@ -597,11 +630,18 @@ void q_layout_position(q_box_t *box, float origin_x, float origin_y)
     }
 
     if (box->is_flex_container) {
-        cursor_x = origin_x;
+        float cursor_y = origin_y;
+        if (box->parent == NULL) {
+            cursor_x = origin_x + box->margin_left + box->padding_left;
+            cursor_y = origin_y + box->margin_top + box->padding_top;
+        } else {
+            cursor_x = origin_x + box->padding_left;
+            cursor_y = origin_y + box->padding_top;
+        }
         for (child = box->first_child; child != NULL; child = child->next_sibling) {
             if (!q_is_out_of_flow(child)) {
-                q_layout_position(child, cursor_x, origin_y);
-                cursor_x += child->width;
+                q_layout_position(child, cursor_x, cursor_y);
+                cursor_x += child->width + ((box->flex_gap > 0.0f) ? box->flex_gap : 0.0f);
             }
         }
         return;

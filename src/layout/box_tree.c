@@ -865,6 +865,14 @@ static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
             }
             box->overflow_x = ov;
             box->overflow_y = ov;
+        } else if (css_name_eq(prop, prop_len, "gap")
+                   || css_name_eq(prop, prop_len, "column-gap")) {
+            float v = css_parse_length_pct(val, val_len, NULL);
+            if (!isnan(v) && v > 0.0f) {
+                box->flex_gap = v;
+            } else {
+                box->flex_gap = 0.0f;
+            }
         } else if (css_name_eq(prop, prop_len, "float")) {
             if (css_value_is(val, val_len, "left")) {
                 box->float_type = Q_FLOAT_LEFT;
@@ -1204,6 +1212,106 @@ static void q_box_set_widget_value(q_box_t *box, const lxb_char_t *value, size_t
     box->widget_value = buf;
     box->widget_value_len = value_len;
     box->widget_caret = value_len;
+}
+
+static int q_collect_text_recursive(lxb_dom_node_t *node, char **buf, size_t *len, size_t *cap)
+{
+    lxb_dom_node_t *child;
+
+    if (node == NULL || buf == NULL || len == NULL || cap == NULL) {
+        return -1;
+    }
+
+    if (node->type == LXB_DOM_NODE_TYPE_TEXT) {
+        lxb_dom_character_data_t *text = (lxb_dom_character_data_t *) node;
+        size_t add = text->data.length;
+        if (add > 0u) {
+            if (*len + add + 1u > *cap) {
+                size_t new_cap = (*cap == 0u) ? 32u : *cap;
+                while (*len + add + 1u > new_cap) {
+                    new_cap *= 2u;
+                }
+                {
+                    char *new_buf = (char *) realloc(*buf, new_cap);
+                    if (new_buf == NULL) {
+                        return -1;
+                    }
+                    *buf = new_buf;
+                    *cap = new_cap;
+                }
+            }
+            memcpy(*buf + *len, text->data.data, add);
+            *len += add;
+            (*buf)[*len] = '\0';
+        }
+    }
+
+    for (child = node->first_child; child != NULL; child = child->next) {
+        if (q_collect_text_recursive(child, buf, len, cap) != 0) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static void q_box_init_select_value(q_box_t *box, lxb_dom_node_t *select_node)
+{
+    lxb_dom_node_t *child;
+    lxb_dom_node_t *fallback_option = NULL;
+    lxb_dom_node_t *selected_option = NULL;
+    char *text_buf = NULL;
+    size_t text_len = 0;
+    size_t text_cap = 0;
+
+    if (box == NULL || select_node == NULL) {
+        return;
+    }
+
+    for (child = select_node->first_child; child != NULL; child = child->next) {
+        if (child->type == LXB_DOM_NODE_TYPE_ELEMENT
+            && lxb_dom_node_tag_id(child) == LXB_TAG_OPTION)
+        {
+            if (fallback_option == NULL) {
+                fallback_option = child;
+            }
+            if (lxb_dom_element_has_attribute(lxb_dom_interface_element(child),
+                                              (const lxb_char_t *) "selected",
+                                              sizeof("selected") - 1))
+            {
+                selected_option = child;
+                break;
+            }
+        }
+    }
+
+    if (selected_option == NULL) {
+        selected_option = fallback_option;
+    }
+    if (selected_option == NULL) {
+        return;
+    }
+
+    if (q_collect_text_recursive(selected_option, &text_buf, &text_len, &text_cap) == 0) {
+        q_box_set_widget_value(box, (const lxb_char_t *) text_buf, text_len);
+    }
+    free(text_buf);
+}
+
+static void q_box_init_textarea_value(q_box_t *box, lxb_dom_node_t *textarea_node)
+{
+    char *text_buf = NULL;
+    size_t text_len = 0;
+    size_t text_cap = 0;
+
+    if (box == NULL || textarea_node == NULL) {
+        return;
+    }
+
+    if (q_collect_text_recursive(textarea_node, &text_buf, &text_len, &text_cap) == 0) {
+        q_box_set_widget_value(box, (const lxb_char_t *) text_buf, text_len);
+    }
+    free(text_buf);
 }
 
 static int q_count_preceding_list_items(lxb_dom_node_t *node)
@@ -1618,6 +1726,14 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
     for (child = node->first_child; child != NULL; child = child->next) {
         if (q_layout_walk_node(doc, child, child_parent) != 0) {
             return -1;
+        }
+    }
+
+    if (current != NULL) {
+        if (current->widget_type == Q_WIDGET_SELECT) {
+            q_box_init_select_value(current, node);
+        } else if (current->widget_type == Q_WIDGET_TEXTAREA) {
+            q_box_init_textarea_value(current, node);
         }
     }
 

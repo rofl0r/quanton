@@ -17,6 +17,7 @@
 
 #define Q_SDL2_CACHE_MARGIN_PX 256
 #define Q_SDL2_CACHE_TTL_FRAMES 180u
+#define Q_SCROLLBAR_THICKNESS 12
 
 typedef struct q_sdl2_tex_entry {
     const q_box_t *box;
@@ -87,6 +88,53 @@ static int q_box_overflow_clips(q_overflow_type_t overflow)
         || overflow == Q_OVERFLOW_CLIP
         || overflow == Q_OVERFLOW_SCROLL
         || overflow == Q_OVERFLOW_AUTO;
+}
+
+static void q_box_content_extent(const q_box_t *box, float *out_w, float *out_h)
+{
+    q_box_t *child;
+    float max_w = 0.0f;
+    float max_h = 0.0f;
+
+    if (box == NULL || out_w == NULL || out_h == NULL) {
+        return;
+    }
+
+    for (child = box->first_child; child != NULL; child = child->next_sibling) {
+        float local_right = (child->x - box->x) + child->width;
+        float local_bottom = (child->y - box->y) + child->height;
+        if (local_right > max_w) {
+            max_w = local_right;
+        }
+        if (local_bottom > max_h) {
+            max_h = local_bottom;
+        }
+    }
+
+    *out_w = (max_w > 0.0f) ? max_w : 0.0f;
+    *out_h = (max_h > 0.0f) ? max_h : 0.0f;
+}
+
+static int q_box_has_vertical_scrollbar(const q_box_t *box, float content_h, float viewport_h)
+{
+    if (box == NULL) {
+        return 0;
+    }
+    if (box->overflow_y == Q_OVERFLOW_SCROLL) {
+        return 1;
+    }
+    return box->overflow_y == Q_OVERFLOW_AUTO && content_h > viewport_h;
+}
+
+static int q_box_has_horizontal_scrollbar(const q_box_t *box, float content_w, float viewport_w)
+{
+    if (box == NULL) {
+        return 0;
+    }
+    if (box->overflow_x == Q_OVERFLOW_SCROLL) {
+        return 1;
+    }
+    return box->overflow_x == Q_OVERFLOW_AUTO && content_w > viewport_w;
 }
 
 static int rect_intersect(const SDL_Rect *a, const SDL_Rect *b, SDL_Rect *out)
@@ -296,6 +344,10 @@ static void sdl2_render_box_recursive(q_sdl2_win_t *win,
         int bright = (int) ceilf(box->border_width[1]);
         int btop = (int) ceilf(box->border_width[0]);
         int bbottom = (int) ceilf(box->border_width[2]);
+        float content_w = 0.0f;
+        float content_h = 0.0f;
+        int show_vertical;
+        int show_horizontal;
         content_rect.x = box_rect.x + bleft;
         content_rect.y = box_rect.y + btop;
         content_rect.w = box_rect.w - bleft - bright;
@@ -305,6 +357,21 @@ static void sdl2_render_box_recursive(q_sdl2_win_t *win,
         }
         if (content_rect.h < 0) {
             content_rect.h = 0;
+        }
+        q_box_content_extent(box, &content_w, &content_h);
+        show_vertical = q_box_has_vertical_scrollbar(box, content_h, (float) content_rect.h);
+        show_horizontal = q_box_has_horizontal_scrollbar(box, content_w, (float) content_rect.w);
+        if (show_vertical) {
+            content_rect.w -= Q_SCROLLBAR_THICKNESS;
+            if (content_rect.w < 0) {
+                content_rect.w = 0;
+            }
+        }
+        if (show_horizontal) {
+            content_rect.h -= Q_SCROLLBAR_THICKNESS;
+            if (content_rect.h < 0) {
+                content_rect.h = 0;
+            }
         }
         if (clip == NULL) {
             child_clip = content_rect;
@@ -345,7 +412,7 @@ static int sdl2_create_window(quanton_view_t *view, int w, int h, const char *ti
         (title != NULL) ? title : "quanton",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         w, h,
-        SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);
+        SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
     if (win->window == NULL) {
         fprintf(stderr, "quanton/sdl2: SDL_CreateWindow: %s\n", SDL_GetError());
         free(win);
