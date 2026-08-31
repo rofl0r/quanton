@@ -60,6 +60,7 @@ const lxb_char_t *q_dom_get_attribute(quanton_view_t *view,
                 && (box->widget_type == Q_WIDGET_INPUT_TEXT
                     || box->widget_type == Q_WIDGET_INPUT_SUBMIT
                     || box->widget_type == Q_WIDGET_BUTTON
+                    || box->widget_type == Q_WIDGET_SELECT
                     || box->widget_type == Q_WIDGET_TEXTAREA))
             {
                 if (out_len != NULL) {

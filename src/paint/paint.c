@@ -255,11 +255,6 @@ static void q_paint_scrollbar(q_box_t *box, int vertical)
                       track_x, track_y, track_w, track_h, Q_SCROLLBAR_TRACK_COLOR);
     q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
                       thumb_x, thumb_y, thumb_w, thumb_h, Q_SCROLLBAR_THUMB_COLOR);
-#ifdef QUANTON_DEBUG_SCROLLBAR_TMP
-    fprintf(stderr, "[sb] vert=%d box_x=%.1f box_w=%.1f tile_w=%d tile_h=%d track_x=%d track_w=%d self_tile_w=%d self_tile_h=%d\n",
-            vertical, (double) box->x, (double) box->width, box->tile_w, box->tile_h,
-            track_x, track_w, box->self_tile_w, box->self_tile_h);
-#endif
 }
 
 typedef struct q_paint_child_entry {
@@ -683,6 +678,7 @@ static const lxb_char_t *q_paint_get_attr(const q_box_t *box,
         && (box->widget_type == Q_WIDGET_INPUT_TEXT
             || box->widget_type == Q_WIDGET_INPUT_SUBMIT
             || box->widget_type == Q_WIDGET_BUTTON
+            || box->widget_type == Q_WIDGET_SELECT
             || box->widget_type == Q_WIDGET_TEXTAREA))
     {
         if (out_len != NULL) {
@@ -828,14 +824,15 @@ static void q_paint_form_widget(q_box_t *box)
         {
             const lxb_char_t *value;
             size_t value_len = 0;
+            int text_x = 4 - (int) lroundf((box->widget_scroll_x > 0.0f) ? box->widget_scroll_x : 0.0f);
             value = q_paint_get_attr(box, "value", &value_len);
             if (value != NULL && value_len > 0u) {
-                q_paint_render_widget_text(box, (const char *) value, value_len, 4, 4, text_color);
+                q_paint_render_widget_text(box, (const char *) value, value_len, text_x, 4, text_color);
             }
             if (box->widget_focused && box->widget_type == Q_WIDGET_INPUT_TEXT
                 && box->widget_caret <= box->widget_value_len)
             {
-                int caret_x = 4;
+                int caret_x = text_x;
                 if (box->widget_caret > 0u && box->widget_value != NULL) {
                     q_font_t *font = q_paint_widget_font(box);
                     if (font != NULL) {
@@ -874,6 +871,17 @@ static void q_paint_form_widget(q_box_t *box)
     if (tag == LXB_TAG_SELECT) {
         int mid_y = box->tile_h / 2;
         int x0 = box->tile_w - 11;
+        const lxb_char_t *value;
+        size_t value_len = 0;
+        if (box->widget_value != NULL && box->widget_value_len > 0u) {
+            value = (const lxb_char_t *) box->widget_value;
+            value_len = box->widget_value_len;
+        } else {
+            value = q_paint_get_attr(box, "value", &value_len);
+        }
+        if (value != NULL && value_len > 0u) {
+            q_paint_render_widget_text(box, (const char *) value, value_len, 4, 4, text_color);
+        }
         q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, x0, mid_y - 1, 6, 1, text_color);
         q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, x0 + 1, mid_y, 4, 1, text_color);
         q_paint_fill_rect(box->tile, box->tile_w, box->tile_h, x0 + 2, mid_y + 1, 2, 1, text_color);
@@ -881,7 +889,24 @@ static void q_paint_form_widget(q_box_t *box)
     }
 
     if (tag == LXB_TAG_TEXTAREA) {
-        /* Visual-only widget: border/background are enough. */
+        const lxb_char_t *value;
+        size_t value_len = 0;
+        value = q_paint_get_attr(box, "value", &value_len);
+        if (value != NULL && value_len > 0u) {
+            q_paint_render_widget_text(box, (const char *) value, value_len, 4, 4, text_color);
+        }
+        if (box->widget_focused && box->widget_caret <= box->widget_value_len) {
+            int caret_x = 4;
+            if (box->widget_caret > 0u && box->widget_value != NULL) {
+                q_font_t *font = q_paint_widget_font(box);
+                if (font != NULL) {
+                    caret_x += (int) lroundf(q_font_measure(font, box->widget_value,
+                                                            box->widget_caret));
+                }
+            }
+            q_paint_fill_rect(box->tile, box->tile_w, box->tile_h,
+                              caret_x, 2, 1, box->tile_h - 4, text_color);
+        }
         return;
     }
 }

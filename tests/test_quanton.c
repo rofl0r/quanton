@@ -1461,6 +1461,36 @@ int main(int argc, char **argv)
         q_document_destroy(flex_doc);
     }
 
+    {
+        static const char flex_gap_html[] =
+            "<html><body style='margin:8px;display:flex;gap:8px;'>"
+            "<div style='height:20px;'></div><div style='height:20px;'></div>"
+            "</body></html>";
+        q_document_t *fg_doc;
+        q_box_t *fg_root;
+        q_box_t *fg_a;
+        q_box_t *fg_b;
+
+        fg_doc = q_document_create();
+        assert(fg_doc != NULL);
+        assert(q_document_load_html(fg_doc, flex_gap_html, sizeof(flex_gap_html) - 1, NULL) == 0);
+        fg_root = q_layout_build_tree(fg_doc);
+        assert(fg_root != NULL);
+        q_layout_measure(fg_root, 300.0f, 0.0f);
+        q_layout_position(fg_root, 0.0f, 0.0f);
+
+        fg_a = fg_root->first_child;
+        assert(fg_a != NULL);
+        fg_b = fg_a->next_sibling;
+        assert(fg_b != NULL);
+
+        assert(nearly_equal(fg_a->x, 8.0f));
+        assert(nearly_equal(fg_b->x, fg_a->x + fg_a->width + 8.0f));
+
+        q_layout_free_tree(fg_root);
+        q_document_destroy(fg_doc);
+    }
+
     /* ── List items + markers (phase 19) ───────────────────────────────── */
     {
         q_document_t *list_doc;
@@ -2754,6 +2784,148 @@ int main(int argc, char **argv)
         q_layout_free_tree(eview.layout_root);
         free(eview.framebuffer);
         q_document_destroy(edoc);
+    }
+
+    {
+        static const char widget_html[] =
+            "<html><body style='margin:0;'>"
+            "<input id='txt' type='text' value='abcdefghijklmnopqrstuvwxyz0123456789'/>"
+            "<select id='sel'><option>one</option><option>two</option></select>"
+            "<textarea id='ta' rows='2' cols='16'>hello world</textarea>"
+            "</body></html>";
+        q_document_t *wdoc;
+        quanton_view_t wview;
+        lxb_dom_element_t *el;
+        q_box_t *txt_box;
+        q_box_t *sel_box;
+        q_box_t *ta_box;
+        q_event_t ev;
+
+        wdoc = q_document_create();
+        assert(wdoc != NULL);
+        assert(q_document_load_html(wdoc, widget_html, sizeof(widget_html) - 1, NULL) == 0);
+        memset(&wview, 0, sizeof(wview));
+        wview.document = wdoc;
+        wview.vp_width = 640;
+        wview.vp_height = 200;
+        q_dom_mark_dirty(&wview, NULL, Q_DIRTY_LAYOUT);
+        q_view_update(&wview);
+        assert(wview.layout_root != NULL);
+
+        el = q_dom_get_element_by_id(&wview, "txt");
+        assert(el != NULL);
+        txt_box = find_box_for_dom_node(wview.layout_root, lxb_dom_interface_node(el));
+        assert(txt_box != NULL);
+
+        memset(&ev, 0, sizeof(ev));
+        ev.type = Q_EVENT_MOUSE_DOWN;
+        ev.mouse_button = 0;
+        ev.mouse_x = (int) lroundf(txt_box->x + 6.0f);
+        ev.mouse_y = (int) lroundf(txt_box->y + 6.0f);
+        q_event_dispatch(&wview, &ev);
+        assert(wview.focused_widget == txt_box);
+        assert(txt_box->widget_caret <= 1u);
+
+        ev.mouse_x = (int) lroundf(txt_box->x + txt_box->width - 3.0f);
+        ev.mouse_y = (int) lroundf(txt_box->y + 6.0f);
+        q_event_dispatch(&wview, &ev);
+        assert(txt_box->widget_caret == txt_box->widget_value_len);
+        assert(txt_box->widget_scroll_x > 0.0f);
+
+        el = q_dom_get_element_by_id(&wview, "sel");
+        assert(el != NULL);
+        sel_box = find_box_for_dom_node(wview.layout_root, lxb_dom_interface_node(el));
+        assert(sel_box != NULL);
+        assert(sel_box->widget_value != NULL);
+        assert(strcmp(sel_box->widget_value, "one") == 0);
+
+        memset(&ev, 0, sizeof(ev));
+        ev.type = Q_EVENT_MOUSE_DOWN;
+        ev.mouse_button = 0;
+        ev.mouse_x = (int) lroundf(sel_box->x + 6.0f);
+        ev.mouse_y = (int) lroundf(sel_box->y + 6.0f);
+        q_event_dispatch(&wview, &ev);
+        ev.type = Q_EVENT_MOUSE_UP;
+        q_event_dispatch(&wview, &ev);
+        assert(sel_box->widget_value != NULL);
+        assert(strcmp(sel_box->widget_value, "two") == 0);
+        assert(sel_box->widget_open == 0);
+
+        el = q_dom_get_element_by_id(&wview, "ta");
+        assert(el != NULL);
+        ta_box = find_box_for_dom_node(wview.layout_root, lxb_dom_interface_node(el));
+        assert(ta_box != NULL);
+
+        memset(&ev, 0, sizeof(ev));
+        ev.type = Q_EVENT_MOUSE_DOWN;
+        ev.mouse_button = 0;
+        ev.mouse_x = (int) lroundf(ta_box->x + 6.0f);
+        ev.mouse_y = (int) lroundf(ta_box->y + 6.0f);
+        q_event_dispatch(&wview, &ev);
+        assert(wview.focused_widget == ta_box);
+        assert(ta_box->widget_caret <= 1u);
+
+        q_layout_free_tree(wview.layout_root);
+        free(wview.framebuffer);
+        q_document_destroy(wdoc);
+    }
+
+    {
+        static const char drag_html[] =
+            "<html><body style='margin:0;'>"
+            "<div id='sc' style='width:120px;height:70px;overflow:auto;border:1px solid #000;'>"
+            "<div style='height:300px;'>content</div>"
+            "</div></body></html>";
+        q_document_t *ddoc;
+        quanton_view_t dview;
+        lxb_dom_element_t *el;
+        q_box_t *sc_box;
+        q_event_t ev;
+        int down_x;
+        int down_y;
+
+        ddoc = q_document_create();
+        assert(ddoc != NULL);
+        assert(q_document_load_html(ddoc, drag_html, sizeof(drag_html) - 1, NULL) == 0);
+        memset(&dview, 0, sizeof(dview));
+        dview.document = ddoc;
+        dview.vp_width = 300;
+        dview.vp_height = 220;
+        q_dom_mark_dirty(&dview, NULL, Q_DIRTY_LAYOUT);
+        q_view_update(&dview);
+        assert(dview.layout_root != NULL);
+
+        el = q_dom_get_element_by_id(&dview, "sc");
+        assert(el != NULL);
+        sc_box = find_box_for_dom_node(dview.layout_root, lxb_dom_interface_node(el));
+        assert(sc_box != NULL);
+        assert(sc_box->scroll_y == 0.0f);
+
+        down_x = (int) lroundf(sc_box->x + sc_box->width - 3.0f);
+        down_y = (int) lroundf(sc_box->y + 10.0f);
+
+        memset(&ev, 0, sizeof(ev));
+        ev.type = Q_EVENT_MOUSE_DOWN;
+        ev.mouse_button = 0;
+        ev.mouse_x = down_x;
+        ev.mouse_y = down_y;
+        q_event_dispatch(&dview, &ev);
+
+        ev.type = Q_EVENT_MOUSE_MOVE;
+        ev.mouse_x = down_x;
+        ev.mouse_y = down_y + 30;
+        q_event_dispatch(&dview, &ev);
+
+        ev.type = Q_EVENT_MOUSE_UP;
+        ev.mouse_x = down_x;
+        ev.mouse_y = down_y + 30;
+        q_event_dispatch(&dview, &ev);
+
+        assert(sc_box->scroll_y > 0.0f);
+
+        q_layout_free_tree(dview.layout_root);
+        free(dview.framebuffer);
+        q_document_destroy(ddoc);
     }
 
     cache = q_font_cache_create();

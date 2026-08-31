@@ -3,8 +3,10 @@
 #include "lexbor/dom/interface.h"
 #include "lexbor/dom/interfaces/element.h"
 #include "lexbor/dom/interfaces/node.h"
+#include "lexbor/dom/interfaces/character_data.h"
 
 #include <math.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -58,6 +60,8 @@ static void q_dbg_print_box(const char *label, const q_box_t *box)
 #define Q_EVENT_WHEEL_SCROLL_PX 40.0f
 #define Q_WIDGET_TEXT_INPUT_PRINTABLE_MIN 0x20u
 #define Q_WIDGET_TEXT_INPUT_PRINTABLE_MAX 0x7Eu
+#define Q_SCROLLBAR_THICKNESS 12
+#define Q_SCROLLBAR_MIN_THUMB 16
 
 static int q_event_is_mouse_event(q_event_type_t type)
 {
@@ -182,6 +186,492 @@ static float q_clamp_scroll(float value, float max_value)
 {
     if (value < 0.0f) {
         return 0.0f;
+    }
+
+    static q_font_t *q_widget_font(const q_box_t *box)
+    {
+        static q_font_cache_t *cache;
+        float size;
+        int weight;
+        int style;
+
+        if (box == NULL) {
+            return NULL;
+        }
+        if (cache == NULL) {
+            cache = q_font_cache_create();
+        }
+        if (cache == NULL) {
+            return NULL;
+        }
+
+        size = (!isnan(box->font_size) && box->font_size > 0.0f) ? box->font_size : 16.0f;
+        weight = (box->font_weight > 0) ? box->font_weight : 400;
+        style = (int) box->font_style;
+        return q_font_match(cache, "sans-serif", size, weight, style);
+    }
+
+    static float q_widget_measure_prefix(const q_box_t *box, size_t len)
+    {
+        q_font_t *font;
+
+        if (box == NULL || box->widget_value == NULL || len == 0u) {
+            return 0.0f;
+        }
+        if (len > box->widget_value_len) {
+            len = box->widget_value_len;
+        }
+
+        font = q_widget_font(box);
+        if (font != NULL) {
+            return q_font_measure(font, box->widget_value, len);
+        }
+        return (float) len * 8.0f;
+    }
+
+    static float q_widget_measure_text(const q_box_t *box)
+    {
+        return q_widget_measure_prefix(box, (box != NULL) ? box->widget_value_len : 0u);
+    }
+
+    static float q_widget_inner_width(const q_box_t *box)
+    {
+        float w;
+        if (box == NULL) {
+            return 0.0f;
+        }
+        w = box->width
+          - ceilf(box->border_width[1]) - ceilf(box->border_width[3])
+          - box->padding_left - box->padding_right;
+        return (w > 0.0f) ? w : 0.0f;
+    }
+
+    static void q_widget_ensure_caret_visible_x(q_box_t *box)
+    {
+        float inner_w;
+        float text_w;
+        float caret_px;
+        float max_scroll;
+        float scroll_x;
+
+        if (box == NULL || box->widget_type != Q_WIDGET_INPUT_TEXT) {
+            return;
+        }
+
+        inner_w = q_widget_inner_width(box);
+        text_w = q_widget_measure_text(box);
+        caret_px = q_widget_measure_prefix(box, box->widget_caret);
+        max_scroll = text_w - inner_w;
+        if (max_scroll < 0.0f) {
+            max_scroll = 0.0f;
+        }
+        scroll_x = box->widget_scroll_x;
+        if (caret_px < scroll_x) {
+            scroll_x = caret_px;
+        } else if (caret_px > scroll_x + inner_w - 1.0f) {
+            scroll_x = caret_px - inner_w + 1.0f;
+        }
+        if (scroll_x < 0.0f) {
+            scroll_x = 0.0f;
+        }
+        if (scroll_x > max_scroll) {
+            scroll_x = max_scroll;
+        }
+        box->widget_scroll_x = scroll_x;
+    }
+
+    static size_t q_widget_caret_from_local_x(const q_box_t *box, float local_x)
+    {
+        size_t i;
+        float prev = 0.0f;
+
+        if (box == NULL) {
+            return 0u;
+        }
+        if (box->widget_value_len == 0u || box->widget_value == NULL) {
+            return 0u;
+        }
+        if (local_x <= 0.0f) {
+            return 0u;
+        }
+
+        for (i = 1u; i <= box->widget_value_len; ++i) {
+            float cur = q_widget_measure_prefix(box, i);
+            if (local_x < (prev + cur) * 0.5f) {
+                return i - 1u;
+            }
+            prev = cur;
+        }
+        return box->widget_value_len;
+    }
+
+    static size_t q_widget_caret_from_click(const q_box_t *box, int hit_x)
+    {
+        float border_left;
+        float local_x;
+
+        if (box == NULL) {
+            return 0u;
+        }
+
+        border_left = ceilf(box->border_width[3]);
+        local_x = (float) hit_x - box->x - border_left - box->padding_left + box->widget_scroll_x;
+        return q_widget_caret_from_local_x(box, local_x);
+    }
+
+    static int q_collect_text_recursive(lxb_dom_node_t *node, char **buf, size_t *len, size_t *cap)
+    {
+        lxb_dom_node_t *child;
+
+        if (node == NULL || buf == NULL || len == NULL || cap == NULL) {
+            return -1;
+        }
+
+        if (node->type == LXB_DOM_NODE_TYPE_TEXT) {
+            lxb_dom_character_data_t *text = (lxb_dom_character_data_t *) node;
+            size_t add = text->data.length;
+            if (add > 0u) {
+                if (*len + add + 1u > *cap) {
+                    size_t new_cap = (*cap == 0u) ? 32u : *cap;
+                    while (*len + add + 1u > new_cap) {
+                        new_cap *= 2u;
+                    }
+                    {
+                        char *new_buf = (char *) realloc(*buf, new_cap);
+                        if (new_buf == NULL) {
+                            return -1;
+                        }
+                        *buf = new_buf;
+                        *cap = new_cap;
+                    }
+                }
+                memcpy(*buf + *len, text->data.data, add);
+                *len += add;
+                (*buf)[*len] = '\0';
+            }
+        }
+
+        for (child = node->first_child; child != NULL; child = child->next) {
+            if (q_collect_text_recursive(child, buf, len, cap) != 0) {
+                return -1;
+            }
+        }
+
+        return 0;
+    }
+
+    static void q_widget_set_value(q_box_t *box, const char *text, size_t len)
+    {
+        char *buf;
+
+        if (box == NULL) {
+            return;
+        }
+
+        free(box->widget_value);
+        box->widget_value = NULL;
+        box->widget_value_len = 0u;
+        box->widget_caret = 0u;
+        box->widget_scroll_x = 0.0f;
+
+        if (text == NULL || len == 0u) {
+            return;
+        }
+
+        buf = (char *) malloc(len + 1u);
+        if (buf == NULL) {
+            return;
+        }
+        memcpy(buf, text, len);
+        buf[len] = '\0';
+        box->widget_value = buf;
+        box->widget_value_len = len;
+        box->widget_caret = len;
+    }
+
+    static int q_widget_select_cycle(q_box_t *box)
+    {
+        lxb_dom_node_t *node;
+        lxb_dom_node_t *child;
+        char *first = NULL;
+        size_t first_len = 0u;
+        char *next = NULL;
+        size_t next_len = 0u;
+        int found_current = 0;
+
+        if (box == NULL || box->dom_node == NULL
+            || lxb_dom_node_type(box->dom_node) != LXB_DOM_NODE_TYPE_ELEMENT)
+        {
+            return 0;
+        }
+
+        static int q_box_has_vertical_scrollbar(const q_box_t *box, float content_h, float viewport_h)
+        {
+            if (box == NULL) {
+                return 0;
+            }
+            if (box->overflow_y == Q_OVERFLOW_SCROLL) {
+                return 1;
+            }
+            if (box->overflow_y == Q_OVERFLOW_AUTO && content_h > viewport_h) {
+                return 1;
+            }
+            return 0;
+        }
+
+        static int q_box_has_horizontal_scrollbar(const q_box_t *box, float content_w, float viewport_w)
+        {
+            if (box == NULL) {
+                return 0;
+            }
+            if (box->overflow_x == Q_OVERFLOW_SCROLL) {
+                return 1;
+            }
+            if (box->overflow_x == Q_OVERFLOW_AUTO && content_w > viewport_w) {
+                return 1;
+            }
+            return 0;
+        }
+
+        static int q_scrollbar_thumb_hit(const q_box_t *box, int vertical,
+                                         int hit_x, int hit_y,
+                                         int *track_len_out, int *thumb_len_out,
+                                         float *max_scroll_out)
+        {
+            float content_w = 0.0f;
+            float content_h = 0.0f;
+            int top;
+            int right;
+            int bottom;
+            int left;
+            int viewport_w;
+            int viewport_h;
+            int show_vertical;
+            int show_horizontal;
+            int track_x;
+            int track_y;
+            int track_w;
+            int track_h;
+            int thumb_x;
+            int thumb_y;
+            int thumb_w;
+            int thumb_h;
+            float max_scroll;
+            float scroll;
+            float ratio;
+
+            if (box == NULL) {
+                return 0;
+            }
+
+            q_box_content_extent(box, &content_w, &content_h);
+            top = (int) ceilf(box->border_width[0]);
+            right = (int) ceilf(box->border_width[1]);
+            bottom = (int) ceilf(box->border_width[2]);
+            left = (int) ceilf(box->border_width[3]);
+            viewport_w = (int) lroundf(box->width) - left - right;
+            viewport_h = (int) lroundf(box->height) - top - bottom;
+            if (viewport_w <= 0 || viewport_h <= 0) {
+                return 0;
+            }
+
+            show_vertical = q_box_has_vertical_scrollbar(box, content_h, (float) viewport_h);
+            show_horizontal = q_box_has_horizontal_scrollbar(box, content_w, (float) viewport_w);
+
+            if (vertical) {
+                if (!show_vertical) {
+                    return 0;
+                }
+                track_w = Q_SCROLLBAR_THICKNESS;
+                if (track_w > viewport_w) {
+                    track_w = viewport_w;
+                }
+                track_h = viewport_h - (show_horizontal ? Q_SCROLLBAR_THICKNESS : 0);
+                if (track_h <= 0) {
+                    return 0;
+                }
+                track_x = (int) lroundf(box->x + box->width) - right - track_w;
+                track_y = (int) lroundf(box->y) + top;
+                thumb_w = track_w;
+                thumb_h = (int) lroundf(((float) viewport_h / (content_h > 0.0f ? content_h : 1.0f)) * track_h);
+                if (thumb_h < Q_SCROLLBAR_MIN_THUMB) thumb_h = Q_SCROLLBAR_MIN_THUMB;
+                if (thumb_h > track_h) thumb_h = track_h;
+                max_scroll = content_h - (float) viewport_h;
+                if (max_scroll < 0.0f) max_scroll = 0.0f;
+                scroll = q_clamp_scroll(box->scroll_y, max_scroll);
+                ratio = (max_scroll > 0.0f) ? (scroll / max_scroll) : 0.0f;
+                thumb_x = track_x;
+                thumb_y = track_y + (int) lroundf(ratio * (float) (track_h - thumb_h));
+            } else {
+                if (!show_horizontal) {
+                    return 0;
+                }
+                track_h = Q_SCROLLBAR_THICKNESS;
+                if (track_h > viewport_h) {
+                    track_h = viewport_h;
+                }
+                track_w = viewport_w - (show_vertical ? Q_SCROLLBAR_THICKNESS : 0);
+                if (track_w <= 0) {
+                    return 0;
+                }
+                track_x = (int) lroundf(box->x) + left;
+                track_y = (int) lroundf(box->y + box->height) - bottom - track_h;
+                thumb_h = track_h;
+                thumb_w = (int) lroundf(((float) viewport_w / (content_w > 0.0f ? content_w : 1.0f)) * track_w);
+                if (thumb_w < Q_SCROLLBAR_MIN_THUMB) thumb_w = Q_SCROLLBAR_MIN_THUMB;
+                if (thumb_w > track_w) thumb_w = track_w;
+                max_scroll = content_w - (float) viewport_w;
+                if (max_scroll < 0.0f) max_scroll = 0.0f;
+                scroll = q_clamp_scroll(box->scroll_x, max_scroll);
+                ratio = (max_scroll > 0.0f) ? (scroll / max_scroll) : 0.0f;
+                thumb_x = track_x + (int) lroundf(ratio * (float) (track_w - thumb_w));
+                thumb_y = track_y;
+            }
+
+            if (track_len_out != NULL) {
+                *track_len_out = vertical ? track_h : track_w;
+            }
+            if (thumb_len_out != NULL) {
+                *thumb_len_out = vertical ? thumb_h : thumb_w;
+            }
+            if (max_scroll_out != NULL) {
+                *max_scroll_out = max_scroll;
+            }
+
+            return hit_x >= thumb_x && hit_x < (thumb_x + thumb_w)
+                && hit_y >= thumb_y && hit_y < (thumb_y + thumb_h);
+        }
+
+        static int q_begin_scrollbar_drag(quanton_view_t *view, q_box_t *target_box, int hit_x, int hit_y)
+        {
+            q_box_t *box;
+            int track_len;
+            int thumb_len;
+            float max_scroll;
+
+            if (view == NULL) {
+                return 0;
+            }
+
+            for (box = target_box; box != NULL; box = box->parent) {
+                if (q_scrollbar_thumb_hit(box, 1, hit_x, hit_y, &track_len, &thumb_len, &max_scroll)) {
+                    if (track_len > thumb_len && max_scroll > 0.0f) {
+                        view->drag_scroll_box = box;
+                        view->drag_scroll_vertical = 1;
+                        view->drag_scroll_last_mouse = hit_y;
+                        return 1;
+                    }
+                }
+                if (q_scrollbar_thumb_hit(box, 0, hit_x, hit_y, &track_len, &thumb_len, &max_scroll)) {
+                    if (track_len > thumb_len && max_scroll > 0.0f) {
+                        view->drag_scroll_box = box;
+                        view->drag_scroll_vertical = 0;
+                        view->drag_scroll_last_mouse = hit_x;
+                        return 1;
+                    }
+                }
+            }
+
+            return 0;
+        }
+
+        static int q_update_scrollbar_drag(quanton_view_t *view, int hit_x, int hit_y)
+        {
+            q_box_t *box;
+            int track_len = 0;
+            int thumb_len = 0;
+            float max_scroll = 0.0f;
+            int cur_mouse;
+            int delta_px;
+            float scroll_delta;
+            float old_scroll;
+
+            if (view == NULL || view->drag_scroll_box == NULL) {
+                return 0;
+            }
+
+            box = view->drag_scroll_box;
+            if (!q_scrollbar_thumb_hit(box, view->drag_scroll_vertical, hit_x, hit_y,
+                                       &track_len, &thumb_len, &max_scroll))
+            {
+                if ((track_len <= 0 || thumb_len >= track_len || max_scroll <= 0.0f)) {
+                    return 0;
+                }
+            }
+
+            cur_mouse = view->drag_scroll_vertical ? hit_y : hit_x;
+            delta_px = cur_mouse - view->drag_scroll_last_mouse;
+            view->drag_scroll_last_mouse = cur_mouse;
+            if (delta_px == 0 || track_len <= thumb_len || max_scroll <= 0.0f) {
+                return 0;
+            }
+
+            scroll_delta = ((float) delta_px / (float) (track_len - thumb_len)) * max_scroll;
+            if (view->drag_scroll_vertical) {
+                old_scroll = box->scroll_y;
+                box->scroll_y = q_clamp_scroll(box->scroll_y + scroll_delta, max_scroll);
+                return box->scroll_y != old_scroll;
+            }
+
+            old_scroll = box->scroll_x;
+            box->scroll_x = q_clamp_scroll(box->scroll_x + scroll_delta, max_scroll);
+            return box->scroll_x != old_scroll;
+        }
+
+        node = box->dom_node;
+        for (child = node->first_child; child != NULL; child = child->next) {
+            char *label = NULL;
+            size_t label_len = 0u;
+            size_t cap = 0u;
+            if (child->type != LXB_DOM_NODE_TYPE_ELEMENT
+                || lxb_dom_node_tag_id(child) != LXB_TAG_OPTION)
+            {
+                continue;
+            }
+            if (q_collect_text_recursive(child, &label, &label_len, &cap) != 0) {
+                free(label);
+                continue;
+            }
+            if (first == NULL) {
+                first = label;
+                first_len = label_len;
+                label = NULL;
+            }
+            if (found_current && next == NULL) {
+                next = label;
+                next_len = label_len;
+                label = NULL;
+                break;
+            }
+            if (!found_current
+                && label_len == box->widget_value_len
+                && ((label_len == 0u)
+                    || (box->widget_value != NULL
+                        && memcmp(label, box->widget_value, label_len) == 0)))
+            {
+                found_current = 1;
+            }
+            free(label);
+        }
+
+        if (next != NULL) {
+            q_widget_set_value(box, next, next_len);
+            free(next);
+            free(first);
+            return 1;
+        }
+        if (first != NULL) {
+            if (first_len != box->widget_value_len
+                || box->widget_value == NULL
+                || memcmp(first, box->widget_value, first_len) != 0)
+            {
+                q_widget_set_value(box, first, first_len);
+                free(first);
+                return 1;
+            }
+        }
+        free(first);
+        return 0;
     }
     if (value > max_value) {
         return max_value;
@@ -635,13 +1125,24 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
     }
 
     if (event->type == Q_EVENT_MOUSE_DOWN && event->mouse_button == 0) {
+        if (q_begin_scrollbar_drag(view, event->target_box, hit_x, hit_y)) {
+            return;
+        }
         q_box_t *widget_box = q_widget_box_from_target(event->target_box);
         if (widget_box != NULL) {
             if (widget_box->widget_type == Q_WIDGET_INPUT_TEXT
                 || widget_box->widget_type == Q_WIDGET_TEXTAREA)
             {
                 q_widget_set_focus(view, widget_box);
-                widget_box->widget_caret = widget_box->widget_value_len;
+                widget_box->widget_caret = q_widget_caret_from_click(widget_box, hit_x);
+                if (widget_box->widget_type == Q_WIDGET_INPUT_TEXT) {
+                    q_widget_ensure_caret_visible_x(widget_box);
+                }
+                view->dirty_flags |= Q_DIRTY_PAINT;
+                q_view_update(view);
+            } else if (widget_box->widget_type == Q_WIDGET_SELECT) {
+                q_widget_set_focus(view, widget_box);
+                widget_box->widget_open = 1;
                 view->dirty_flags |= Q_DIRTY_PAINT;
                 q_view_update(view);
             } else if (widget_box->widget_type == Q_WIDGET_BUTTON) {
@@ -653,6 +1154,10 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
     }
 
     if (event->type == Q_EVENT_MOUSE_UP && event->mouse_button == 0) {
+        if (view->drag_scroll_box != NULL) {
+            view->drag_scroll_box = NULL;
+            return;
+        }
         q_box_t *widget_box = q_widget_box_from_target(event->target_box);
         if (widget_box != NULL) {
             if (widget_box->widget_type == Q_WIDGET_BUTTON && widget_box->widget_pressed) {
@@ -697,8 +1202,35 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
                     change_event.target = widget_box->dom_node;
                     view->on_event(view, &change_event, view->on_event_userdata);
                 }
+            } else if (widget_box->widget_type == Q_WIDGET_SELECT) {
+                int changed = 0;
+                widget_box->widget_open = 0;
+                changed = q_widget_select_cycle(widget_box);
+                if (changed) {
+                    view->dirty_flags |= Q_DIRTY_PAINT;
+                    q_view_update(view);
+                    if (view->on_event != NULL) {
+                        q_event_t change_event;
+                        memset(&change_event, 0, sizeof(change_event));
+                        change_event.type = Q_EVENT_CHANGE;
+                        change_event.target_box = widget_box;
+                        change_event.target = widget_box->dom_node;
+                        view->on_event(view, &change_event, view->on_event_userdata);
+                    }
+                } else {
+                    view->dirty_flags |= Q_DIRTY_PAINT;
+                    q_view_update(view);
+                }
             }
         }
+    }
+
+    if (event->type == Q_EVENT_MOUSE_MOVE && view->drag_scroll_box != NULL) {
+        if (q_update_scrollbar_drag(view, hit_x, hit_y)) {
+            view->dirty_flags |= Q_DIRTY_RECOMPOSE;
+            q_view_update(view);
+        }
+        return;
     }
 
     if (event->type == Q_EVENT_MOUSE_WHEEL) {
@@ -805,6 +1337,7 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
             }
 
             if (changed) {
+                q_widget_ensure_caret_visible_x(focused_widget);
                 view->dirty_flags |= Q_DIRTY_PAINT;
                 q_view_update(view);
             }
