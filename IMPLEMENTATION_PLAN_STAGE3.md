@@ -475,7 +475,7 @@ typedef struct q_backend_vt {
 | 16 | ~~External CSS `<link rel="stylesheet">`~~ | M | lexbor_shim.c, resource.c, box_tree.c (implemented) |
 | 17 | Functional `<button>` click + pressed state | M | event.c, paint.c |
 | 18 | Functional checkbox / radio toggle | M | event.c, paint.c |
-| 19 | Keyboard focus tracking + Tab cycle | M | event.c, quanton.h |
+| 19 | ~~Keyboard focus tracking + Tab cycle~~ | M | event.c, quanton.h (implemented) |
 | 20 | Functional text input (keyboard + caret) | L | event.c, paint.c |
 | 21 | `<textarea>` multi-line editing | L | event.c, paint.c |
 | 22 | `<select>` dropdown overlay | L | event.c, paint.c, block_layout.c |

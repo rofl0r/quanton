@@ -88,6 +88,7 @@ typedef struct q_event {
 #define Q_KEY_HOME      0x1007u
 #define Q_KEY_END       0x1008u
 #define Q_KEY_ENTER     0x0Du
+#define Q_KEY_TAB       0x09u
 
 typedef void (*q_event_handler_fn)(quanton_view_t *view,
                                    const q_event_t *event,

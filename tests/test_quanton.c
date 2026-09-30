@@ -3070,6 +3070,85 @@ int main(int argc, char **argv)
     }
 
     {
+        static const char tab_html[] =
+            "<html><body style='margin:0;'>"
+            "<input id='tab-text' type='text'>"
+            "<button id='tab-button'>Button</button>"
+            "<input id='tab-disabled' type='button' disabled value='Disabled'>"
+            "<input id='tab-check' type='checkbox'>"
+            "<input id='tab-radio' type='radio'>"
+            "<select id='tab-select'><option>A</option></select>"
+            "<textarea id='tab-area'>Text</textarea>"
+            "</body></html>";
+        static const char *const ids[] = {
+            "tab-text", "tab-button", "tab-disabled", "tab-check",
+            "tab-radio", "tab-select", "tab-area"
+        };
+        static const q_widget_type_t types[] = {
+            Q_WIDGET_INPUT_TEXT, Q_WIDGET_BUTTON, Q_WIDGET_INPUT_SUBMIT,
+            Q_WIDGET_INPUT_CHECK, Q_WIDGET_INPUT_RADIO, Q_WIDGET_SELECT,
+            Q_WIDGET_TEXTAREA
+        };
+        q_document_t *tdoc = q_document_create();
+        quanton_view_t tview;
+        q_event_t ev;
+        q_box_t *boxes[sizeof(ids) / sizeof(ids[0])];
+        size_t i;
+
+        assert(tdoc != NULL);
+        assert(q_document_load_html(tdoc, tab_html, sizeof(tab_html) - 1u, NULL) == 0);
+        memset(&tview, 0, sizeof(tview));
+        tview.document = tdoc;
+        tview.vp_width = 640;
+        tview.vp_height = 240;
+        q_dom_mark_dirty(&tview, NULL, Q_DIRTY_LAYOUT);
+        q_view_update(&tview);
+        assert(tview.layout_root != NULL);
+
+        for (i = 0u; i < sizeof(ids) / sizeof(ids[0]); ++i) {
+            lxb_dom_element_t *el = q_dom_get_element_by_id(&tview, ids[i]);
+            assert(el != NULL);
+            boxes[i] = find_box_for_dom_node(tview.layout_root,
+                                             lxb_dom_interface_node(el));
+            assert(boxes[i] != NULL);
+            assert(boxes[i]->widget_type == types[i]);
+        }
+
+        memset(&ev, 0, sizeof(ev));
+        ev.type = Q_EVENT_KEY_DOWN;
+        ev.key_sym = Q_KEY_TAB;
+        assert(tview.focused_widget == NULL);
+        q_event_dispatch(&tview, &ev);
+        assert(tview.focused_widget == boxes[0]);
+        assert(boxes[0]->widget_focused);
+
+        q_event_dispatch(&tview, &ev);
+        assert(tview.focused_widget == boxes[1]);
+        assert(!boxes[0]->widget_focused && boxes[1]->widget_focused);
+        q_event_dispatch(&tview, &ev);
+        assert(tview.focused_widget == boxes[3]);
+        q_event_dispatch(&tview, &ev);
+        assert(tview.focused_widget == boxes[4]);
+        q_event_dispatch(&tview, &ev);
+        assert(tview.focused_widget == boxes[5]);
+        q_event_dispatch(&tview, &ev);
+        assert(tview.focused_widget == boxes[6]);
+        q_event_dispatch(&tview, &ev);
+        assert(tview.focused_widget == boxes[0]);
+
+        ev.key_mod = Q_KEYMOD_SHIFT;
+        q_event_dispatch(&tview, &ev);
+        assert(tview.focused_widget == boxes[6]);
+        ev.key_mod = 0u;
+        q_event_dispatch(&tview, &ev);
+        assert(tview.focused_widget == boxes[0]);
+
+        q_layout_free_tree(tview.layout_root);
+        free(tview.framebuffer);
+        q_document_destroy(tdoc);
+    }
+
+    {
         static const char drag_html[] =
             "<html><body style='margin:0;'>"
             "<div id='sc' style='width:120px;height:70px;overflow:auto;border:1px solid #000;'>"
