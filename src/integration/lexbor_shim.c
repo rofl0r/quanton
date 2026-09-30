@@ -6,6 +6,7 @@
 #include "lexbor/dom/interfaces/element.h"
 #include "lexbor/dom/interfaces/node.h"
 #include "lexbor/html/interfaces/document.h"
+#include "lexbor/style/style.h"
 #include "lexbor/style/html/interfaces/document.h"
 #include "lexbor/tag/const.h"
 
@@ -148,6 +149,18 @@ static int q_document_load_link_stylesheets(lxb_html_document_t *document,
     return 0;
 }
 
+static void q_html_document_destroy(lxb_html_document_t *document)
+{
+    if (document == NULL) {
+        return;
+    }
+    if (document->dom_document.css != NULL) {
+        lxb_html_document_stylesheet_destroy_all(document, true);
+    }
+    lxb_style_destroy(document);
+    (void) lxb_html_document_destroy(document);
+}
+
 q_document_t *q_document_create(void)
 {
     return (q_document_t *) calloc(1, sizeof(q_document_t));
@@ -160,7 +173,8 @@ void q_document_destroy(q_document_t *doc)
     }
 
     if (doc->document != NULL) {
-        doc->document = lxb_html_document_destroy(doc->document);
+        q_html_document_destroy(doc->document);
+        doc->document = NULL;
     }
 
     free(doc->html);
@@ -183,21 +197,26 @@ int q_document_load_html(q_document_t *doc, const char *html, size_t len, const 
         return -1;
     }
 
+    if (lxb_style_init(new_document) != LXB_STATUS_OK) {
+        q_html_document_destroy(new_document);
+        return -1;
+    }
+
     if (lxb_html_document_parse(new_document, (const lxb_char_t *) html, len) != LXB_STATUS_OK) {
-        (void) lxb_html_document_destroy(new_document);
+        q_html_document_destroy(new_document);
         return -1;
     }
 
     if (q_document_load_link_stylesheets(new_document, base_url,
                                           lxb_dom_interface_node(new_document)) != 0)
     {
-        (void) lxb_html_document_destroy(new_document);
+        q_html_document_destroy(new_document);
         return -1;
     }
 
     new_html = (char *) malloc(len + 1);
     if (new_html == NULL) {
-        (void) lxb_html_document_destroy(new_document);
+        q_html_document_destroy(new_document);
         return -1;
     }
 
@@ -208,13 +227,13 @@ int q_document_load_html(q_document_t *doc, const char *html, size_t len, const 
         new_base = strdup(base_url);
         if (new_base == NULL) {
             free(new_html);
-            (void) lxb_html_document_destroy(new_document);
+            q_html_document_destroy(new_document);
             return -1;
         }
     }
 
     if (doc->document != NULL) {
-        doc->document = lxb_html_document_destroy(doc->document);
+        q_html_document_destroy(doc->document);
     }
 
     free(doc->html);
