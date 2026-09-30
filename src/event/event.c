@@ -1493,7 +1493,6 @@ typedef struct q_widget_focus_scan {
     q_box_t *next;
     q_box_t *previous;
     int found_focused;
-    int reverse;
 } q_widget_focus_scan_t;
 
 static int q_widget_is_tab_stop(const q_box_t *box)
@@ -1528,11 +1527,7 @@ static void q_widget_scan_tab_stops(q_box_t *box, q_widget_focus_scan_t *scan)
         if (scan->first == NULL) {
             scan->first = box;
         }
-        if (scan->reverse) {
-            if (scan->focused != NULL && !scan->found_focused) {
-                scan->next = box;
-            }
-        } else if (scan->found_focused && scan->next == NULL) {
+        if (scan->found_focused && scan->next == NULL) {
             scan->next = box;
         }
         if (box == scan->focused) {
@@ -1558,7 +1553,6 @@ static int q_widget_focus_next_tab_stop(quanton_view_t *view, int reverse)
 
     memset(&scan, 0, sizeof(scan));
     scan.focused = view->focused_widget;
-    scan.reverse = reverse;
     q_widget_scan_tab_stops(view->layout_root, &scan);
 
     if (scan.first == NULL) {

@@ -3136,7 +3136,7 @@ int main(int argc, char **argv)
         q_event_dispatch(&tview, &ev);
         assert(tview.focused_widget == boxes[0]);
 
-        ev.key_mod = Q_KEYMOD_SHIFT;
+        ev.key_mod = 1u;
         q_event_dispatch(&tview, &ev);
         assert(tview.focused_widget == boxes[6]);
         ev.key_mod = 0u;
@@ -3146,6 +3146,30 @@ int main(int argc, char **argv)
         q_layout_free_tree(tview.layout_root);
         free(tview.framebuffer);
         q_document_destroy(tdoc);
+
+        {
+            static const char disabled_html[] =
+                "<html><body><button disabled>Disabled</button></body></html>";
+            q_document_t *ddoc = q_document_create();
+            quanton_view_t dview;
+            assert(ddoc != NULL);
+            assert(q_document_load_html(ddoc, disabled_html,
+                                        sizeof(disabled_html) - 1u, NULL) == 0);
+            memset(&dview, 0, sizeof(dview));
+            dview.document = ddoc;
+            dview.vp_width = 320;
+            dview.vp_height = 120;
+            q_dom_mark_dirty(&dview, NULL, Q_DIRTY_LAYOUT);
+            q_view_update(&dview);
+            memset(&ev, 0, sizeof(ev));
+            ev.type = Q_EVENT_KEY_DOWN;
+            ev.key_sym = Q_KEY_TAB;
+            q_event_dispatch(&dview, &ev);
+            assert(dview.focused_widget == NULL);
+            q_layout_free_tree(dview.layout_root);
+            free(dview.framebuffer);
+            q_document_destroy(ddoc);
+        }
     }
 
     {
