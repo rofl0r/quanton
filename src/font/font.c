@@ -518,6 +518,8 @@ q_shaped_run_t *q_font_shape_run(q_font_t *font, const char *text, size_t len)
     SFT_Glyph prev = 0;
     int has_prev = 0;
     SFT_LMetrics lmetrics;
+    float ink_top;
+    float ink_bottom;
 
     if (font == NULL || text == NULL) {
         return NULL;
@@ -544,6 +546,8 @@ q_shaped_run_t *q_font_shape_run(q_font_t *font, const char *text, size_t len)
         run->descender = (float) lmetrics.descender;
         run->line_gap = (float) lmetrics.lineGap;
     }
+    ink_top = -run->ascender;
+    ink_bottom = -run->descender + ((run->line_gap > 0.0f) ? run->line_gap : 0.0f);
 
     while (i < len && g < glyph_count) {
         uint32_t cp;
@@ -563,6 +567,16 @@ q_shaped_run_t *q_font_shape_run(q_font_t *font, const char *text, size_t len)
             has_prev = 0;
         }
         else {
+            float glyph_bottom;
+            if (metrics.minHeight > 0) {
+                glyph_bottom = (float) metrics.yOffset + (float) metrics.minHeight;
+                if ((float) metrics.yOffset < ink_top) {
+                    ink_top = (float) metrics.yOffset;
+                }
+                if (glyph_bottom > ink_bottom) {
+                    ink_bottom = glyph_bottom;
+                }
+            }
             x_advance = (float) metrics.advanceWidth;
             if (has_prev) {
                 SFT_Kerning kerning;
@@ -584,6 +598,8 @@ q_shaped_run_t *q_font_shape_run(q_font_t *font, const char *text, size_t len)
     }
 
     run->count = g;
+    run->baseline = -ink_top;
+    run->height = ink_bottom - ink_top;
     return run;
 }
 
@@ -614,7 +630,7 @@ void q_font_render_run(const q_shaped_run_t *run,
     }
 
     font = run->font;
-    baseline_y = run->ascender;
+    baseline_y = run->baseline;
     cr = q_color_r(color);
     cg = q_color_g(color);
     cb = q_color_b(color);

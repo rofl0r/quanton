@@ -65,6 +65,20 @@ static q_box_t *g_event_target_box;
 static lxb_dom_node_t *g_event_target;
 static const char *g_last_set_title;
 static const char *g_navigate_href;
+static const uint8_t g_embedded_stylesheet[] =
+    ".external { color: #123456; font-size: 24px; }";
+
+static int load_embedded_stylesheet(void *userdata, const char *url,
+                                    q_resource_t *resource)
+{
+    (void) userdata;
+    if (strcmp(url, "app://site/css/theme.css") != 0) {
+        return 0;
+    }
+    resource->data = g_embedded_stylesheet;
+    resource->size = sizeof(g_embedded_stylesheet) - 1u;
+    return 1;
+}
 
 static q_box_t *find_box_for_dom_node(q_box_t *root, const lxb_dom_node_t *node)
 {
@@ -373,10 +387,76 @@ int main(int argc, char **argv)
         assert(resolved != NULL);
         assert(strcmp(resolved, "file://./../pixel.png") == 0);
         free(resolved);
+
+        resolved = q_url_resolve("app://site/pages/index.html", "../css/theme.css");
+        assert(resolved != NULL);
+        assert(strcmp(resolved, "app://site/css/theme.css") == 0);
+        free(resolved);
+    }
+
+    {
+        q_resource_t resource;
+        uint8_t *copy;
+        size_t resource_len = 0u;
+
+        assert(q_resource_backend_register("app", load_embedded_stylesheet, NULL) == 0);
+        assert(q_resource_open("app://site/css/theme.css", &resource));
+        assert(resource.data == g_embedded_stylesheet);
+        assert(resource.size == sizeof(g_embedded_stylesheet) - 1u);
+        q_resource_close(&resource);
+        assert(resource.data == NULL);
+
+        copy = q_resource_load("app://site/css/theme.css", &resource_len);
+        assert(copy != NULL);
+        assert(resource_len == sizeof(g_embedded_stylesheet) - 1u);
+        assert(memcmp(copy, g_embedded_stylesheet, resource_len) == 0);
+        q_resource_free(copy);
     }
 
     doc = q_document_create();
     assert(doc != NULL);
+
+    {
+        static const char linked_html[] =
+            "<html><head><link rel='alternate stylesheet' "
+            "href='../css/theme.css'></head><body>"
+            "<p class='external'>External style</p></body></html>";
+        q_document_t *linked_doc = q_document_create();
+        q_box_t *linked_root;
+        assert(linked_doc != NULL);
+        assert(q_document_load_html(linked_doc, linked_html, sizeof(linked_html) - 1u,
+                                   "app://site/pages/index.html") == 0);
+        linked_root = q_layout_build_tree(linked_doc);
+        assert(linked_root != NULL);
+        assert(linked_root->first_child != NULL);
+        assert(linked_root->first_child->has_text_color);
+        assert(linked_root->first_child->text_color == 0x123456FFu);
+        assert(nearly_equal(linked_root->first_child->font_size, 24.0f));
+        q_layout_free_tree(linked_root);
+        q_document_destroy(linked_doc);
+    }
+
+    assert(q_resource_backend_unregister("app") == 0);
+    {
+        q_resource_t resource;
+        assert(!q_resource_open("app://site/css/theme.css", &resource));
+    }
+
+    {
+        q_document_t *file_linked_doc = q_document_create();
+        q_box_t *file_linked_root;
+        assert(file_linked_doc != NULL);
+        assert(q_document_load_url(file_linked_doc,
+                                   "file://./tests/html/external_stylesheet.html") == 0);
+        file_linked_root = q_layout_build_tree(file_linked_doc);
+        assert(file_linked_root != NULL);
+        assert(file_linked_root->first_child != NULL);
+        assert(file_linked_root->first_child->has_text_color);
+        assert(file_linked_root->first_child->text_color == 0x654321FFu);
+        assert(nearly_equal(file_linked_root->first_child->font_size, 20.0f));
+        q_layout_free_tree(file_linked_root);
+        q_document_destroy(file_linked_doc);
+    }
 
     assert(q_document_load_html(doc, html, sizeof(html) - 1, "file://./tests/input.html")
            == 0);
@@ -893,9 +973,11 @@ int main(int argc, char **argv)
         assert(va_bottom->vertical_align == Q_VERTICAL_ALIGN_BOTTOM);
         assert(va_super->vertical_align == Q_VERTICAL_ALIGN_SUPER);
         assert(va_sub->vertical_align == Q_VERTICAL_ALIGN_SUB);
+        assert(va_line->padding_top > 0.0f);
 
         assert(nearly_equal(va_top->y, va_base->y));
         assert(va_bottom->y > va_base->y);
+        assert(va_super->y >= va_line->y);
         assert(va_super->y < va_base->y);
         assert(va_sub->y > va_base->y);
 
@@ -1692,6 +1774,7 @@ int main(int argc, char **argv)
         render_html_case_to_png("file://./tests/html/blockquote.html", "output_blockquote.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/strikethrough.html", "output_strikethrough.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/sup_sub.html", "output_sup_sub.png", TEST_WIDTH, TEST_HEIGHT);
+        render_html_case_to_png("file://./tests/html/text_align.html", "output_text_align.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/anchor_link.html", "output_anchor_link.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/anchor_scroll.html", "output_anchor_scroll.png", TEST_WIDTH, TEST_HEIGHT);
 #else
@@ -2445,23 +2528,33 @@ int main(int argc, char **argv)
         q_document_destroy(sdoc);
     }
 
-    /* text-align center/right line placement */
+    /* text-align center/right and full justification */
     {
         static const char ta_html[] =
             "<html><body>"
             "<div style='width:200px;text-align:center;'>aaaa</div>"
             "<div style='width:200px;text-align:right;'>aaaa</div>"
+            "<div style='width:180px;text-align:justify;'>"
+            "one two three four five six seven eight nine ten eleven twelve"
+            "</div>"
             "</body></html>";
         q_document_t *tadoc = q_document_create();
         q_box_t *taroot = NULL;
         q_box_t *center_div;
         q_box_t *right_div;
+        q_box_t *justify_div;
         q_box_t *center_line;
         q_box_t *right_line;
+        q_box_t *justify_line;
+        q_box_t *last_justify_line;
         q_box_t *center_text;
         q_box_t *right_text;
+        q_box_t *last_text;
+        q_box_t *justify_child;
         float center_offset;
         float right_offset;
+        float justify_gap = -1.0f;
+        size_t justified_space_count = 0u;
 
         assert(tadoc != NULL);
         assert(q_document_load_html(tadoc, ta_html, sizeof(ta_html) - 1, NULL) == 0);
@@ -2474,20 +2567,59 @@ int main(int argc, char **argv)
         assert(center_div != NULL);
         right_div = center_div->next_sibling;
         assert(right_div != NULL);
-        assert(right_div->next_sibling == NULL);
+        justify_div = right_div->next_sibling;
+        assert(justify_div != NULL && justify_div->next_sibling == NULL);
 
         center_line = center_div->first_child->first_child;
         right_line = right_div->first_child->first_child;
+        justify_line = justify_div->first_child->first_child;
         assert(center_line != NULL && right_line != NULL);
+        assert(justify_line != NULL && justify_line->next_sibling != NULL);
 
         center_text = center_line->first_child;
         right_text = right_line->first_child;
+        last_text = justify_line->last_child;
+        last_justify_line = justify_line->next_sibling;
+        while (last_justify_line->next_sibling != NULL) {
+            last_justify_line = last_justify_line->next_sibling;
+        }
+        assert(last_justify_line->first_child != NULL);
         assert(center_text != NULL && right_text != NULL);
 
         center_offset = center_text->x - center_line->x;
         right_offset = right_text->x - right_line->x;
         assert(center_offset > 0.0f);
         assert(right_offset > center_offset);
+        assert(last_text != NULL);
+        assert(nearly_equal(last_text->x + last_text->width,
+                            justify_line->x + justify_line->width));
+        for (justify_child = justify_line->first_child;
+             justify_child != NULL;
+             justify_child = justify_child->next_sibling)
+        {
+            if (justify_child->type == Q_BOX_TEXT
+                && justify_child->text != NULL
+                && justify_child->text_len == 1u
+                && justify_child->text[0] == ' '
+                && justify_child->next_sibling != NULL)
+            {
+                float gap = justify_child->next_sibling->x
+                    - (justify_child->x + justify_child->width);
+                if (justified_space_count == 0u) {
+                    justify_gap = gap;
+                } else {
+                    assert(nearly_equal(gap, justify_gap));
+                }
+                ++justified_space_count;
+            }
+        }
+        assert(justified_space_count > 0u);
+        assert(justify_gap > 0.0f);
+        assert(nearly_equal(last_justify_line->first_child->x,
+                            last_justify_line->x));
+        assert(last_justify_line->last_child->x
+                   + last_justify_line->last_child->width
+               < last_justify_line->x + last_justify_line->width - 1.0f);
 
         q_layout_free_tree(taroot);
         q_document_destroy(tadoc);
@@ -2935,6 +3067,109 @@ int main(int argc, char **argv)
         q_layout_free_tree(wview.layout_root);
         free(wview.framebuffer);
         q_document_destroy(wdoc);
+    }
+
+    {
+        static const char tab_html[] =
+            "<html><body style='margin:0;'>"
+            "<input id='tab-text' type='text'>"
+            "<button id='tab-button'>Button</button>"
+            "<input id='tab-disabled' type='button' disabled value='Disabled'>"
+            "<input id='tab-check' type='checkbox'>"
+            "<input id='tab-radio' type='radio'>"
+            "<select id='tab-select'><option>A</option></select>"
+            "<textarea id='tab-area'>Text</textarea>"
+            "</body></html>";
+        static const char *const ids[] = {
+            "tab-text", "tab-button", "tab-disabled", "tab-check",
+            "tab-radio", "tab-select", "tab-area"
+        };
+        static const q_widget_type_t types[] = {
+            Q_WIDGET_INPUT_TEXT, Q_WIDGET_BUTTON, Q_WIDGET_INPUT_SUBMIT,
+            Q_WIDGET_INPUT_CHECK, Q_WIDGET_INPUT_RADIO, Q_WIDGET_SELECT,
+            Q_WIDGET_TEXTAREA
+        };
+        q_document_t *tdoc = q_document_create();
+        quanton_view_t tview;
+        q_event_t ev;
+        q_box_t *boxes[sizeof(ids) / sizeof(ids[0])];
+        size_t i;
+
+        assert(tdoc != NULL);
+        assert(q_document_load_html(tdoc, tab_html, sizeof(tab_html) - 1u, NULL) == 0);
+        memset(&tview, 0, sizeof(tview));
+        tview.document = tdoc;
+        tview.vp_width = 640;
+        tview.vp_height = 240;
+        q_dom_mark_dirty(&tview, NULL, Q_DIRTY_LAYOUT);
+        q_view_update(&tview);
+        assert(tview.layout_root != NULL);
+
+        for (i = 0u; i < sizeof(ids) / sizeof(ids[0]); ++i) {
+            lxb_dom_element_t *el = q_dom_get_element_by_id(&tview, ids[i]);
+            assert(el != NULL);
+            boxes[i] = find_box_for_dom_node(tview.layout_root,
+                                             lxb_dom_interface_node(el));
+            assert(boxes[i] != NULL);
+            assert(boxes[i]->widget_type == types[i]);
+        }
+
+        memset(&ev, 0, sizeof(ev));
+        ev.type = Q_EVENT_KEY_DOWN;
+        ev.key_sym = Q_KEY_TAB;
+        assert(tview.focused_widget == NULL);
+        q_event_dispatch(&tview, &ev);
+        assert(tview.focused_widget == boxes[0]);
+        assert(boxes[0]->widget_focused);
+
+        q_event_dispatch(&tview, &ev);
+        assert(tview.focused_widget == boxes[1]);
+        assert(!boxes[0]->widget_focused && boxes[1]->widget_focused);
+        q_event_dispatch(&tview, &ev);
+        assert(tview.focused_widget == boxes[3]);
+        q_event_dispatch(&tview, &ev);
+        assert(tview.focused_widget == boxes[4]);
+        q_event_dispatch(&tview, &ev);
+        assert(tview.focused_widget == boxes[5]);
+        q_event_dispatch(&tview, &ev);
+        assert(tview.focused_widget == boxes[6]);
+        q_event_dispatch(&tview, &ev);
+        assert(tview.focused_widget == boxes[0]);
+
+        ev.key_mod = 1u;
+        q_event_dispatch(&tview, &ev);
+        assert(tview.focused_widget == boxes[6]);
+        ev.key_mod = 0u;
+        q_event_dispatch(&tview, &ev);
+        assert(tview.focused_widget == boxes[0]);
+
+        q_layout_free_tree(tview.layout_root);
+        free(tview.framebuffer);
+        q_document_destroy(tdoc);
+
+        {
+            static const char disabled_html[] =
+                "<html><body><button disabled>Disabled</button></body></html>";
+            q_document_t *ddoc = q_document_create();
+            quanton_view_t dview;
+            assert(ddoc != NULL);
+            assert(q_document_load_html(ddoc, disabled_html,
+                                        sizeof(disabled_html) - 1u, NULL) == 0);
+            memset(&dview, 0, sizeof(dview));
+            dview.document = ddoc;
+            dview.vp_width = 320;
+            dview.vp_height = 120;
+            q_dom_mark_dirty(&dview, NULL, Q_DIRTY_LAYOUT);
+            q_view_update(&dview);
+            memset(&ev, 0, sizeof(ev));
+            ev.type = Q_EVENT_KEY_DOWN;
+            ev.key_sym = Q_KEY_TAB;
+            q_event_dispatch(&dview, &ev);
+            assert(dview.focused_widget == NULL);
+            q_layout_free_tree(dview.layout_root);
+            free(dview.framebuffer);
+            q_document_destroy(ddoc);
+        }
     }
 
     {

@@ -54,7 +54,7 @@ vertical-align, border-radius, and basic form widget visuals.
 | **P2** | `<input type="checkbox">` / `<input type="radio">` (toggleable) | M |
 | **P3** | CSS `margin: auto` horizontal centering | M |
 | **P3** | CSS `min-width` / `max-width` / `min-height` / `max-height` | M |
-| **P3** | CSS `text-align` (left / center / right / justify) | M |
+| **P3** | ~~CSS `text-align` (left / center / right / justify)~~ | M |
 | **P3** | `app://` in-memory resource registry | M |
 | **P3** | Named anchor scrolling (`<a href="#section">` jumps to id) | S |
 | **P3** | `<title>` element mapped to window title | S |
@@ -472,14 +472,14 @@ typedef struct q_backend_vt {
 | 13 | ~~ Named anchor scroll (`href="#id"`) | S | event.c |
 | 14 | ~~`<title>` → window title~~ | S | box_tree.c, backend vtable |
 | 15 | `app://` resource registry | M | resource.c, quanton.h |
-| 16 | External CSS `<link rel="stylesheet">` | M | box_tree.c (or stylesheet.c) |
+| 16 | ~~External CSS `<link rel="stylesheet">`~~ | M | lexbor_shim.c, resource.c, box_tree.c (implemented) |
 | 17 | Functional `<button>` click + pressed state | M | event.c, paint.c |
 | 18 | Functional checkbox / radio toggle | M | event.c, paint.c |
-| 19 | Keyboard focus tracking + Tab cycle | M | event.c, quanton.h |
+| 19 | ~~Keyboard focus tracking + Tab cycle~~ | M | event.c, quanton.h (implemented) |
 | 20 | Functional text input (keyboard + caret) | L | event.c, paint.c |
 | 21 | `<textarea>` multi-line editing | L | event.c, paint.c |
 | 22 | `<select>` dropdown overlay | L | event.c, paint.c, block_layout.c |
-| 23 | `text-align: justify` | M | block_layout.c |
+| 23 | ~~`text-align: justify`~~ | M | box_tree.c, block_layout.c (implemented) |
 | 24 | make scrollbar pullable (mouse drag)
 | 25 | improve scrolling performance by accumulating all queued wheel events into a single operation
 | 26 | ~~verify whether SDL2 backend really composes the viewport from box textures to profit from OpenGL~~ (implemented as backend-driven per-box texture rendering + cache) |
@@ -533,6 +533,7 @@ Suggested new test cases:
 | `tests/html/anchor_link.html` | `<a href>` underlined blue text |
 | `tests/html/anchor_scroll.html` | `<a href="#id">` scrolls into view |
 | `tests/html/app_resource.html` | `<img src="app://...">` via registry |
+| `tests/html/external_stylesheet.html` | linked CSS loaded by URL-relative resource resolution |
 | `tests/html/form_button.html` | `<button>` click fires event |
 | `tests/html/form_checkbox.html` | Checkbox toggle, radio group mutual exclusion |
 | `tests/html/form_input.html` | Text entry, caret positioning |

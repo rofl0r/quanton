@@ -2,8 +2,15 @@
 
 #include "quanton.h"
 
+#include "lexbor/css/css.h"
+#include "lexbor/dom/interfaces/element.h"
+#include "lexbor/dom/interfaces/node.h"
 #include "lexbor/html/interfaces/document.h"
+#include "lexbor/style/style.h"
+#include "lexbor/style/html/interfaces/document.h"
+#include "lexbor/tag/const.h"
 
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -13,6 +20,147 @@ struct q_document {
     size_t html_len;
     char *base_url;
 };
+
+static int q_rel_has_stylesheet_token(const lxb_char_t *rel, size_t rel_len)
+{
+    size_t i = 0u;
+
+    while (i < rel_len) {
+        size_t start;
+        size_t len;
+        while (i < rel_len && isspace((unsigned char) rel[i])) {
+            ++i;
+        }
+        start = i;
+        while (i < rel_len && !isspace((unsigned char) rel[i])) {
+            ++i;
+        }
+        len = i - start;
+        if (len == sizeof("stylesheet") - 1u) {
+            size_t j;
+            for (j = 0u; j < len; ++j) {
+                if (tolower((unsigned char) rel[start + j])
+                    != (unsigned char) "stylesheet"[j])
+                {
+                    break;
+                }
+            }
+            if (j == len) {
+                return 1;
+            }
+        }
+    }
+
+    return 0;
+}
+
+static int q_document_load_link_stylesheet(lxb_html_document_t *document,
+                                           const char *base_url,
+                                           lxb_dom_element_t *element)
+{
+    lxb_dom_document_css_t *css = document->dom_document.css;
+    const lxb_char_t *href;
+    const lxb_char_t *rel;
+    size_t href_len = 0u;
+    size_t rel_len = 0u;
+    char *href_str;
+    char *url;
+    q_resource_t resource;
+    lxb_css_stylesheet_t *stylesheet;
+    lxb_status_t status;
+
+    rel = lxb_dom_element_get_attribute(element, (const lxb_char_t *) "rel",
+                                        sizeof("rel") - 1u, &rel_len);
+    if (rel == NULL || !q_rel_has_stylesheet_token(rel, rel_len)
+        || lxb_dom_element_has_attribute(element, (const lxb_char_t *) "disabled",
+                                         sizeof("disabled") - 1u))
+    {
+        return 0;
+    }
+
+    href = lxb_dom_element_get_attribute(element, (const lxb_char_t *) "href",
+                                         sizeof("href") - 1u, &href_len);
+    if (href == NULL || href_len == 0u) {
+        return 0;
+    }
+
+    if (href_len == SIZE_MAX) {
+        return -1;
+    }
+    href_str = (char *) malloc(href_len + 1u);
+    if (href_str == NULL) {
+        return -1;
+    }
+    memcpy(href_str, href, href_len);
+    href_str[href_len] = '\0';
+    url = q_url_resolve(base_url, href_str);
+    free(href_str);
+    if (url == NULL) {
+        return -1;
+    }
+
+    if (!q_resource_open(url, &resource)) {
+        free(url);
+        return 0;
+    }
+    free(url);
+
+    stylesheet = lxb_css_stylesheet_create(css->memory);
+    if (stylesheet == NULL) {
+        q_resource_close(&resource);
+        return -1;
+    }
+
+    status = lxb_css_stylesheet_parse(stylesheet, css->parser,
+                                      resource.data, resource.size);
+    q_resource_close(&resource);
+    if (status != LXB_STATUS_OK || stylesheet->root == NULL) {
+        (void) lxb_css_stylesheet_destroy(stylesheet, false);
+        return status == LXB_STATUS_OK ? 0 : -1;
+    }
+
+    status = lxb_html_document_stylesheet_attach(document, stylesheet);
+    if (status != LXB_STATUS_OK) {
+        (void) lxb_css_stylesheet_destroy(stylesheet, false);
+        return -1;
+    }
+
+    return 1;
+}
+
+static int q_document_load_link_stylesheets(lxb_html_document_t *document,
+                                            const char *base_url,
+                                            lxb_dom_node_t *node)
+{
+    lxb_dom_node_t *child;
+
+    if (node->type == LXB_DOM_NODE_TYPE_ELEMENT
+        && lxb_dom_node_tag_id(node) == LXB_TAG_LINK
+        && q_document_load_link_stylesheet(document, base_url,
+                                           lxb_dom_interface_element(node)) < 0)
+    {
+        return -1;
+    }
+
+    for (child = node->first_child; child != NULL; child = child->next) {
+        if (q_document_load_link_stylesheets(document, base_url, child) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static void q_html_document_destroy(lxb_html_document_t *document)
+{
+    if (document == NULL) {
+        return;
+    }
+    if (document->dom_document.css != NULL) {
+        lxb_html_document_stylesheet_destroy_all(document, true);
+    }
+    lxb_style_destroy(document);
+    (void) lxb_html_document_destroy(document);
+}
 
 q_document_t *q_document_create(void)
 {
@@ -26,7 +174,8 @@ void q_document_destroy(q_document_t *doc)
     }
 
     if (doc->document != NULL) {
-        doc->document = lxb_html_document_destroy(doc->document);
+        q_html_document_destroy(doc->document);
+        doc->document = NULL;
     }
 
     free(doc->html);
@@ -49,14 +198,26 @@ int q_document_load_html(q_document_t *doc, const char *html, size_t len, const 
         return -1;
     }
 
+    if (lxb_style_init(new_document) != LXB_STATUS_OK) {
+        q_html_document_destroy(new_document);
+        return -1;
+    }
+
     if (lxb_html_document_parse(new_document, (const lxb_char_t *) html, len) != LXB_STATUS_OK) {
-        (void) lxb_html_document_destroy(new_document);
+        q_html_document_destroy(new_document);
+        return -1;
+    }
+
+    if (q_document_load_link_stylesheets(new_document, base_url,
+                                          lxb_dom_interface_node(new_document)) != 0)
+    {
+        q_html_document_destroy(new_document);
         return -1;
     }
 
     new_html = (char *) malloc(len + 1);
     if (new_html == NULL) {
-        (void) lxb_html_document_destroy(new_document);
+        q_html_document_destroy(new_document);
         return -1;
     }
 
@@ -67,13 +228,13 @@ int q_document_load_html(q_document_t *doc, const char *html, size_t len, const 
         new_base = strdup(base_url);
         if (new_base == NULL) {
             free(new_html);
-            (void) lxb_html_document_destroy(new_document);
+            q_html_document_destroy(new_document);
             return -1;
         }
     }
 
     if (doc->document != NULL) {
-        doc->document = lxb_html_document_destroy(doc->document);
+        q_html_document_destroy(doc->document);
     }
 
     free(doc->html);
@@ -89,21 +250,19 @@ int q_document_load_html(q_document_t *doc, const char *html, size_t len, const 
 
 int q_document_load_url(q_document_t *doc, const char *url)
 {
-    uint8_t *buf;
-    size_t len = 0;
+    q_resource_t resource;
     int rc;
 
     if (doc == NULL || url == NULL) {
         return -1;
     }
 
-    buf = q_resource_load(url, &len);
-    if (buf == NULL) {
+    if (!q_resource_open(url, &resource)) {
         return -1;
     }
 
-    rc = q_document_load_html(doc, (const char *) buf, len, url);
-    q_resource_free(buf);
+    rc = q_document_load_html(doc, (const char *) resource.data, resource.size, url);
+    q_resource_close(&resource);
 
     return rc;
 }

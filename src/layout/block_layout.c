@@ -1,5 +1,6 @@
 #include "quanton.h"
 
+#include <ctype.h>
 #include <math.h>
 #include <string.h>
 
@@ -99,10 +100,7 @@ static void q_layout_measure_text(q_box_t *box)
         /* Keep a live font reference for paint-time glyph rasterization. */
         box->run = run;
         box->width = run->total_advance;
-        box->height = run->ascender + fabsf(run->descender);
-        if (run->line_gap > 0.0f) {
-            box->height += run->line_gap;
-        }
+        box->height = run->height;
     } else {
         box->width = (float) box->text_len * (font_size * 0.6f);
         box->height = font_size;
@@ -235,6 +233,40 @@ static float q_layout_maxf(float a, float b)
     return (a > b) ? a : b;
 }
 
+static float q_layout_vertical_offset(const q_box_t *child, float line_h)
+{
+    if (child->vertical_align == Q_VERTICAL_ALIGN_MIDDLE) {
+        return (line_h - child->height) * 0.5f;
+    }
+    if (child->vertical_align == Q_VERTICAL_ALIGN_BOTTOM) {
+        return line_h - child->height;
+    }
+    if (child->vertical_align == Q_VERTICAL_ALIGN_SUB) {
+        return line_h * 0.2f;
+    }
+    if (child->vertical_align == Q_VERTICAL_ALIGN_SUPER) {
+        return -line_h * 0.2f;
+    }
+    return 0.0f;
+}
+
+static int q_layout_is_space_box(const q_box_t *box)
+{
+    size_t i;
+
+    if (box == NULL || box->type != Q_BOX_TEXT || box->text == NULL
+        || box->text_len == 0u)
+    {
+        return 0;
+    }
+    for (i = 0u; i < box->text_len; ++i) {
+        if (!isspace((unsigned char) box->text[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static void q_layout_apply_minmax(q_box_t *box)
 {
     if (box == NULL) {
@@ -336,9 +368,13 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
          * up to the surrounding inline-block box. */
         float max_h = 0.0f;
         float used_w = 0.0f;
+        float min_y = 0.0f;
+        float max_y = 0.0f;
 
         box->width = (containing_w > 0.0f) ? containing_w : 0.0f;
         box->height = 0.0f;
+        box->padding_top = 0.0f;
+        box->padding_bottom = 0.0f;
         for (child = box->first_child; child != NULL; child = child->next_sibling) {
             if (!child->is_inline_block) {
                 q_layout_measure(child, box->width, containing_h);
@@ -353,6 +389,19 @@ void q_layout_measure(q_box_t *box, float containing_w, float containing_h)
         }
         box->height = max_h;
         q_layout_apply_minmax(box);
+        max_h = box->height;
+        for (child = box->first_child; child != NULL; child = child->next_sibling) {
+            float child_y = q_layout_vertical_offset(child, max_h);
+            if (child_y < min_y) {
+                min_y = child_y;
+            }
+            if (child_y + child->height > max_y) {
+                max_y = child_y + child->height;
+            }
+        }
+        box->padding_top = -min_y;
+        box->padding_bottom = max_y - max_h;
+        box->height = max_h + box->padding_top + box->padding_bottom;
         return;
     }
 
@@ -581,44 +630,48 @@ void q_layout_position(q_box_t *box, float origin_x, float origin_y)
 
     if (box->type == Q_BOX_LINE) {
         /* Position word children left-to-right */
-        float line_h = (box->height > 0.0f) ? box->height : 0.0f;
+        float line_h = box->height - box->padding_top - box->padding_bottom;
         q_text_align_type_t align = Q_TEXT_ALIGN_LEFT;
         float content_w = 0.0f;
+        size_t space_count = 0u;
         size_t nchildren = 0;
+        int justify = 0;
+        float justify_extra = 0.0f;
         if (box->parent != NULL) {
             align = box->parent->text_align;
         }
         for (child = box->first_child; child != NULL; child = child->next_sibling) {
             content_w += child->width;
+            if (q_layout_is_space_box(child)) {
+                ++space_count;
+            }
             ++nchildren;
         }
         if (nchildren > 1) {
             content_w += (float) (nchildren - 1) * Q_LAYOUT_WORD_SPACING;
         }
+        if (align == Q_TEXT_ALIGN_JUSTIFY && box->next_sibling != NULL
+            && space_count > 0u && box->width > content_w)
+        {
+            justify = 1;
+            justify_extra = (box->width - content_w) / (float) space_count;
+        }
         cursor_x = origin_x;
-        if (align == Q_TEXT_ALIGN_CENTER && box->width > content_w) {
+        if (!justify && align == Q_TEXT_ALIGN_CENTER && box->width > content_w) {
             cursor_x += (box->width - content_w) * 0.5f;
-        } else if (align == Q_TEXT_ALIGN_RIGHT && box->width > content_w) {
+        } else if (!justify && align == Q_TEXT_ALIGN_RIGHT && box->width > content_w) {
             cursor_x += (box->width - content_w);
         }
         for (child = box->first_child; child != NULL; child = child->next_sibling) {
-            float y = origin_y;
-
-            if (child->vertical_align == Q_VERTICAL_ALIGN_TOP) {
-                y = origin_y;
-            } else if (child->vertical_align == Q_VERTICAL_ALIGN_MIDDLE) {
-                y = origin_y + ((line_h - child->height) * 0.5f);
-            } else if (child->vertical_align == Q_VERTICAL_ALIGN_BOTTOM) {
-                y = origin_y + (line_h - child->height);
-            } else if (child->vertical_align == Q_VERTICAL_ALIGN_SUB) {
-                y += line_h * 0.2f;
-            } else if (child->vertical_align == Q_VERTICAL_ALIGN_SUPER) {
-                y -= line_h * 0.2f;
-            }
+            float y = origin_y + box->padding_top
+                + q_layout_vertical_offset(child, line_h);
 
             child->x = cursor_x;
             child->y = y;
             cursor_x += child->width + Q_LAYOUT_WORD_SPACING;
+            if (justify && q_layout_is_space_box(child)) {
+                cursor_x += justify_extra;
+            }
             /* Inline-block children carry a full sub-tree; recurse so their
              * internal coordinates are converted to absolute form before
              * the paint pass computes dx = child->x - parent->x offsets. */

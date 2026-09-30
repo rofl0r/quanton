@@ -1093,13 +1093,6 @@ static int q_widget_has_selection(const q_box_t *box)
     return box != NULL && box->widget_sel_anchor != box->widget_sel_focus;
 }
 
-static void q_text_selection_clear(q_box_t *box)
-{
-    if (box == NULL) return;
-    box->text_sel_anchor = 0u;
-    box->text_sel_focus = 0u;
-}
-
 static int q_text_has_selection(const q_box_t *box)
 {
     return box != NULL && box->text_sel_anchor != box->text_sel_focus;
@@ -1491,6 +1484,99 @@ static void q_widget_set_focus(quanton_view_t *view, q_box_t *box)
             view->on_event(view, &focus_event, view->on_event_userdata);
         }
     }
+}
+
+typedef struct q_widget_focus_scan {
+    q_box_t *focused;
+    q_box_t *first;
+    q_box_t *last;
+    q_box_t *next;
+    q_box_t *previous;
+    int found_focused;
+} q_widget_focus_scan_t;
+
+static int q_widget_is_tab_stop(const q_box_t *box)
+{
+    lxb_dom_node_t *node;
+
+    if (box == NULL || box->widget_type == Q_WIDGET_NONE) {
+        return 0;
+    }
+
+    node = box->dom_node;
+    if (node != NULL && node->type == LXB_DOM_NODE_TYPE_ELEMENT
+        && lxb_dom_element_has_attribute(lxb_dom_interface_element(node),
+                                         (const lxb_char_t *) "disabled",
+                                         sizeof("disabled") - 1u))
+    {
+        return 0;
+    }
+
+    return 1;
+}
+
+static void q_widget_scan_tab_stops(q_box_t *box, q_widget_focus_scan_t *scan)
+{
+    q_box_t *child;
+
+    if (box == NULL || scan == NULL) {
+        return;
+    }
+
+    if (q_widget_is_tab_stop(box)) {
+        if (scan->first == NULL) {
+            scan->first = box;
+        }
+        if (scan->found_focused && scan->next == NULL) {
+            scan->next = box;
+        }
+        if (box == scan->focused) {
+            scan->found_focused = 1;
+            scan->previous = scan->last;
+        }
+        scan->last = box;
+    }
+
+    for (child = box->first_child; child != NULL; child = child->next_sibling) {
+        q_widget_scan_tab_stops(child, scan);
+    }
+}
+
+static int q_widget_focus_next_tab_stop(quanton_view_t *view, int reverse)
+{
+    q_widget_focus_scan_t scan;
+    q_box_t *next;
+
+    if (view == NULL || view->layout_root == NULL) {
+        return 0;
+    }
+
+    memset(&scan, 0, sizeof(scan));
+    scan.focused = view->focused_widget;
+    q_widget_scan_tab_stops(view->layout_root, &scan);
+
+    if (scan.first == NULL) {
+        if (view->focused_widget != NULL) {
+            q_widget_set_focus(view, NULL);
+            return 1;
+        }
+        return 0;
+    }
+
+    if (scan.focused == NULL || !scan.found_focused) {
+        next = reverse ? scan.last : scan.first;
+    } else if (reverse) {
+        next = (scan.previous != NULL) ? scan.previous : scan.last;
+    } else {
+        next = (scan.next != NULL) ? scan.next : scan.first;
+    }
+
+    if (next == view->focused_widget) {
+        return 0;
+    }
+
+    q_widget_set_focus(view, next);
+    return 1;
 }
 
 static void q_widget_insert_char(q_box_t *box, uint32_t ch)
@@ -2248,7 +2334,12 @@ void q_event_dispatch(quanton_view_t *view, q_event_t *event)
         int extend = (event->key_mod & Q_KEYMOD_SHIFT) != 0u;
         int ctrl = (event->key_mod & Q_KEYMOD_CTRL) != 0u;
         int rep;
-        if (ctrl && (event->key_sym == 'c' || event->key_sym == 'C'))
+        if (event->key_sym == Q_KEY_TAB) {
+            if (q_widget_focus_next_tab_stop(view, extend)) {
+                view->dirty_flags |= Q_DIRTY_PAINT;
+                q_event_maybe_update(view);
+            }
+        } else if (ctrl && (event->key_sym == 'c' || event->key_sym == 'C'))
         {
             char *sel = q_text_selection_text_view(view);
             if (sel != NULL) {

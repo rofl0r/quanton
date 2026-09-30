@@ -5,6 +5,7 @@
 
 #include "stb_image/stb_image.h"
 
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -35,8 +36,7 @@ static q_image_t *q_image_find(const char *url)
 q_image_t *q_image_load_url(const char *url)
 {
     q_image_t *image;
-    uint8_t *encoded;
-    size_t encoded_len = 0;
+    q_resource_t encoded;
     int width;
     int height;
     int components;
@@ -52,13 +52,17 @@ q_image_t *q_image_load_url(const char *url)
         return image;
     }
 
-    encoded = q_resource_load(url, &encoded_len);
-    if (encoded == NULL) {
+    if (!q_resource_open(url, &encoded)) {
         return NULL;
     }
 
-    decoded = stbi_load_from_memory(encoded, (int) encoded_len, &width, &height, &components, 4);
-    q_resource_free(encoded);
+    if (encoded.size > INT_MAX) {
+        q_resource_close(&encoded);
+        return NULL;
+    }
+    decoded = stbi_load_from_memory(encoded.data, (int) encoded.size,
+                                    &width, &height, &components, 4);
+    q_resource_close(&encoded);
     if (decoded == NULL) {
         return NULL;
     }

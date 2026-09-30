@@ -70,6 +70,7 @@ static uint32_t sdl2_translate_key(SDL_Keycode sym)
     case SDLK_END:       return Q_KEY_END;
     case SDLK_BACKSPACE: return Q_KEY_BACKSPACE;
     case SDLK_DELETE:    return Q_KEY_DELETE;
+    case SDLK_TAB:       return Q_KEY_TAB;
     case SDLK_RETURN:
     case SDLK_KP_ENTER:  return Q_KEY_ENTER;
     default:             return (uint32_t) sym;

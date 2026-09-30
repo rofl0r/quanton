@@ -600,7 +600,7 @@ static void q_paint_text_decoration(q_box_t *box, uint32_t color)
         return;
     }
 
-    baseline = (box->run != NULL) ? (int) lroundf(box->run->ascender) : (int) lroundf(box->height * 0.8f);
+    baseline = (box->run != NULL) ? (int) lroundf(box->run->baseline) : (int) lroundf(box->height * 0.8f);
     underline_y = baseline + 1;
     overline_y = 0;
     strike_y = (box->run != NULL) ? (int) lroundf(baseline - (box->run->ascender * 0.5f))
