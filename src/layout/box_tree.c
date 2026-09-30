@@ -925,6 +925,8 @@ static void parse_style_attribute(const lxb_char_t *style, size_t style_len,
                 box->text_align = Q_TEXT_ALIGN_CENTER;
             } else if (css_value_is(val, val_len, "right")) {
                 box->text_align = Q_TEXT_ALIGN_RIGHT;
+            } else if (css_value_is(val, val_len, "justify")) {
+                box->text_align = Q_TEXT_ALIGN_JUSTIFY;
             } else {
                 box->text_align = Q_TEXT_ALIGN_LEFT;
             }

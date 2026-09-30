@@ -54,7 +54,7 @@ vertical-align, border-radius, and basic form widget visuals.
 | **P2** | `<input type="checkbox">` / `<input type="radio">` (toggleable) | M |
 | **P3** | CSS `margin: auto` horizontal centering | M |
 | **P3** | CSS `min-width` / `max-width` / `min-height` / `max-height` | M |
-| **P3** | CSS `text-align` (left / center / right / justify) | M |
+| **P3** | ~~CSS `text-align` (left / center / right / justify)~~ | M |
 | **P3** | `app://` in-memory resource registry | M |
 | **P3** | Named anchor scrolling (`<a href="#section">` jumps to id) | S |
 | **P3** | `<title>` element mapped to window title | S |
@@ -479,7 +479,7 @@ typedef struct q_backend_vt {
 | 20 | Functional text input (keyboard + caret) | L | event.c, paint.c |
 | 21 | `<textarea>` multi-line editing | L | event.c, paint.c |
 | 22 | `<select>` dropdown overlay | L | event.c, paint.c, block_layout.c |
-| 23 | `text-align: justify` | M | block_layout.c |
+| 23 | ~~`text-align: justify`~~ | M | box_tree.c, block_layout.c (implemented) |
 | 24 | make scrollbar pullable (mouse drag)
 | 25 | improve scrolling performance by accumulating all queued wheel events into a single operation
 | 26 | ~~verify whether SDL2 backend really composes the viewport from box textures to profit from OpenGL~~ (implemented as backend-driven per-box texture rendering + cache) |

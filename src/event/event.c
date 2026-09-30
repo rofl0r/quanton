@@ -1093,13 +1093,6 @@ static int q_widget_has_selection(const q_box_t *box)
     return box != NULL && box->widget_sel_anchor != box->widget_sel_focus;
 }
 
-static void q_text_selection_clear(q_box_t *box)
-{
-    if (box == NULL) return;
-    box->text_sel_anchor = 0u;
-    box->text_sel_focus = 0u;
-}
-
 static int q_text_has_selection(const q_box_t *box)
 {
     return box != NULL && box->text_sel_anchor != box->text_sel_focus;

@@ -84,7 +84,7 @@ Public API reference for `include/quanton.h`.
 ## Important enums and flags
 
 - `q_box_type_t`, `q_position_type_t`, `q_overflow_type_t`, `q_float_type_t`, `q_clear_type_t`
-- `q_white_space_type_t`, `q_text_align_type_t`, `q_vertical_align_type_t`, `q_background_repeat_type_t`, `q_list_style_type_t`
+- `q_white_space_type_t`, `q_text_align_type_t` (left/center/right/justify), `q_vertical_align_type_t`, `q_background_repeat_type_t`, `q_list_style_type_t`
 - `q_font_style_t`, `q_dirty_flags_t`
 - `Q_TEXT_DECORATION_*` bit flags
 

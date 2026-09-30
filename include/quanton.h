@@ -36,6 +36,8 @@ typedef struct q_shaped_run {
     float ascender;
     float descender;
     float line_gap;
+    float baseline;
+    float height;
     q_font_t *font;
 } q_shaped_run_t;
 
@@ -215,6 +217,7 @@ typedef enum q_text_align_type {
     Q_TEXT_ALIGN_LEFT   = 0,
     Q_TEXT_ALIGN_CENTER = 1,
     Q_TEXT_ALIGN_RIGHT  = 2,
+    Q_TEXT_ALIGN_JUSTIFY = 3,
 } q_text_align_type_t;
 
 typedef enum q_background_repeat_type {

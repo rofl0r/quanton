@@ -973,9 +973,11 @@ int main(int argc, char **argv)
         assert(va_bottom->vertical_align == Q_VERTICAL_ALIGN_BOTTOM);
         assert(va_super->vertical_align == Q_VERTICAL_ALIGN_SUPER);
         assert(va_sub->vertical_align == Q_VERTICAL_ALIGN_SUB);
+        assert(va_line->padding_top > 0.0f);
 
         assert(nearly_equal(va_top->y, va_base->y));
         assert(va_bottom->y > va_base->y);
+        assert(va_super->y >= va_line->y);
         assert(va_super->y < va_base->y);
         assert(va_sub->y > va_base->y);
 
@@ -1772,6 +1774,7 @@ int main(int argc, char **argv)
         render_html_case_to_png("file://./tests/html/blockquote.html", "output_blockquote.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/strikethrough.html", "output_strikethrough.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/sup_sub.html", "output_sup_sub.png", TEST_WIDTH, TEST_HEIGHT);
+        render_html_case_to_png("file://./tests/html/text_align.html", "output_text_align.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/anchor_link.html", "output_anchor_link.png", TEST_WIDTH, TEST_HEIGHT);
         render_html_case_to_png("file://./tests/html/anchor_scroll.html", "output_anchor_scroll.png", TEST_WIDTH, TEST_HEIGHT);
 #else
@@ -2525,21 +2528,28 @@ int main(int argc, char **argv)
         q_document_destroy(sdoc);
     }
 
-    /* text-align center/right line placement */
+    /* text-align center/right and full justification */
     {
         static const char ta_html[] =
             "<html><body>"
             "<div style='width:200px;text-align:center;'>aaaa</div>"
             "<div style='width:200px;text-align:right;'>aaaa</div>"
+            "<div style='width:180px;text-align:justify;'>"
+            "one two three four five six seven eight nine ten eleven twelve"
+            "</div>"
             "</body></html>";
         q_document_t *tadoc = q_document_create();
         q_box_t *taroot = NULL;
         q_box_t *center_div;
         q_box_t *right_div;
+        q_box_t *justify_div;
         q_box_t *center_line;
         q_box_t *right_line;
+        q_box_t *justify_line;
+        q_box_t *last_justify_line;
         q_box_t *center_text;
         q_box_t *right_text;
+        q_box_t *last_text;
         float center_offset;
         float right_offset;
 
@@ -2554,20 +2564,35 @@ int main(int argc, char **argv)
         assert(center_div != NULL);
         right_div = center_div->next_sibling;
         assert(right_div != NULL);
-        assert(right_div->next_sibling == NULL);
+        justify_div = right_div->next_sibling;
+        assert(justify_div != NULL && justify_div->next_sibling == NULL);
 
         center_line = center_div->first_child->first_child;
         right_line = right_div->first_child->first_child;
+        justify_line = justify_div->first_child->first_child;
         assert(center_line != NULL && right_line != NULL);
+        assert(justify_line != NULL && justify_line->next_sibling != NULL);
 
         center_text = center_line->first_child;
         right_text = right_line->first_child;
+        last_text = justify_line->last_child;
+        last_justify_line = justify_line->next_sibling;
+        while (last_justify_line->next_sibling != NULL) {
+            last_justify_line = last_justify_line->next_sibling;
+        }
+        assert(last_justify_line->first_child != NULL);
         assert(center_text != NULL && right_text != NULL);
 
         center_offset = center_text->x - center_line->x;
         right_offset = right_text->x - right_line->x;
         assert(center_offset > 0.0f);
         assert(right_offset > center_offset);
+        assert(last_text != NULL);
+        assert(nearly_equal(last_text->x + last_text->width,
+                            justify_line->x + justify_line->width));
+        assert(last_justify_line->last_child->x
+                   + last_justify_line->last_child->width
+               < last_justify_line->x + last_justify_line->width - 1.0f);
 
         q_layout_free_tree(taroot);
         q_document_destroy(tadoc);
