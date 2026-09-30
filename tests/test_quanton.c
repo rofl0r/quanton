@@ -2550,8 +2550,11 @@ int main(int argc, char **argv)
         q_box_t *center_text;
         q_box_t *right_text;
         q_box_t *last_text;
+        q_box_t *justify_child;
         float center_offset;
         float right_offset;
+        float justify_gap = -1.0f;
+        size_t justified_space_count = 0u;
 
         assert(tadoc != NULL);
         assert(q_document_load_html(tadoc, ta_html, sizeof(ta_html) - 1, NULL) == 0);
@@ -2590,6 +2593,30 @@ int main(int argc, char **argv)
         assert(last_text != NULL);
         assert(nearly_equal(last_text->x + last_text->width,
                             justify_line->x + justify_line->width));
+        for (justify_child = justify_line->first_child;
+             justify_child != NULL;
+             justify_child = justify_child->next_sibling)
+        {
+            if (justify_child->type == Q_BOX_TEXT
+                && justify_child->text != NULL
+                && justify_child->text_len == 1u
+                && justify_child->text[0] == ' '
+                && justify_child->next_sibling != NULL)
+            {
+                float gap = justify_child->next_sibling->x
+                    - (justify_child->x + justify_child->width);
+                if (justified_space_count == 0u) {
+                    justify_gap = gap;
+                } else {
+                    assert(nearly_equal(gap, justify_gap));
+                }
+                ++justified_space_count;
+            }
+        }
+        assert(justified_space_count > 0u);
+        assert(justify_gap > 0.0f);
+        assert(nearly_equal(last_justify_line->first_child->x,
+                            last_justify_line->x));
         assert(last_justify_line->last_child->x
                    + last_justify_line->last_child->width
                < last_justify_line->x + last_justify_line->width - 1.0f);
