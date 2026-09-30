@@ -169,6 +169,11 @@ static char *q_url_normalize_path_dup(const char *path)
     int trailing_slash = path_len > 1u && path[path_len - 1u] == '/';
     char *output;
 
+    if (path_len > SIZE_MAX - 2u
+        || path_len >= SIZE_MAX / sizeof(*segments))
+    {
+        return NULL;
+    }
     output = (char *) malloc(path_len + 2u);
     segments = (size_t *) malloc((path_len + 1u) * sizeof(*segments));
     if (output == NULL || segments == NULL) {
@@ -326,7 +331,8 @@ char *q_url_resolve(const char *base_url, const char *ref)
         if (ref[0] == '/') {
             return q_generic_url_resolve(base_url, scheme_len, ref);
         }
-        if (base_url[scheme_len + 1u] == '/'
+        if (strlen(base_url) >= scheme_len + 3u
+            && base_url[scheme_len + 1u] == '/'
             && base_url[scheme_len + 2u] == '/')
         {
             return q_generic_url_resolve(base_url, scheme_len, ref);
@@ -446,6 +452,9 @@ int q_resource_backend_register(const char *scheme,
     if (scheme_len == 0u || !isalpha((unsigned char) scheme[0])) {
         return -1;
     }
+    if (q_scheme_equal_n(scheme, scheme_len, "file")) {
+        return -1;
+    }
     for (i = 1u; i < scheme_len; ++i) {
         if (!isalnum((unsigned char) scheme[i])
             && scheme[i] != '+' && scheme[i] != '-' && scheme[i] != '.')
@@ -484,17 +493,43 @@ int q_resource_backend_register(const char *scheme,
     return 0;
 }
 
+int q_resource_backend_unregister(const char *scheme)
+{
+    size_t scheme_len;
+    q_resource_backend_t **link;
+
+    if (scheme == NULL) {
+        return -1;
+    }
+    scheme_len = strlen(scheme);
+    for (link = &q_resource_backends; *link != NULL; link = &(*link)->next) {
+        q_resource_backend_t *backend = *link;
+        if (q_scheme_equal_n(scheme, scheme_len, backend->scheme)) {
+            *link = backend->next;
+            free(backend->scheme);
+            free(backend);
+            return 0;
+        }
+    }
+    return -1;
+}
+
 int q_resource_open(const char *url, q_resource_t *resource)
 {
     q_resource_backend_t *backend;
     size_t scheme_len;
+    size_t url_len;
 
     if (resource == NULL) {
         return 0;
     }
     memset(resource, 0, sizeof(*resource));
     scheme_len = q_url_scheme_length(url);
-    if (scheme_len == 0u || url[scheme_len + 1u] != '/'
+    if (scheme_len == 0u) {
+        return 0;
+    }
+    url_len = strlen(url);
+    if (url_len < scheme_len + 3u || url[scheme_len + 1u] != '/'
         || url[scheme_len + 2u] != '/')
     {
         return 0;
@@ -506,8 +541,10 @@ int q_resource_open(const char *url, q_resource_t *resource)
 
     for (backend = q_resource_backends; backend != NULL; backend = backend->next) {
         if (q_scheme_equal_n(url, scheme_len, backend->scheme)) {
-            if (backend->load(backend->userdata, url, resource)) {
-                return resource->data != NULL || resource->size == 0u;
+            if (backend->load(backend->userdata, url, resource)
+                && (resource->data != NULL || resource->size == 0u))
+            {
+                return 1;
             }
             q_resource_close(resource);
             return 0;

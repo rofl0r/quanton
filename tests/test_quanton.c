@@ -436,6 +436,28 @@ int main(int argc, char **argv)
         q_document_destroy(linked_doc);
     }
 
+    assert(q_resource_backend_unregister("app") == 0);
+    {
+        q_resource_t resource;
+        assert(!q_resource_open("app://site/css/theme.css", &resource));
+    }
+
+    {
+        q_document_t *file_linked_doc = q_document_create();
+        q_box_t *file_linked_root;
+        assert(file_linked_doc != NULL);
+        assert(q_document_load_url(file_linked_doc,
+                                   "file://./tests/html/external_stylesheet.html") == 0);
+        file_linked_root = q_layout_build_tree(file_linked_doc);
+        assert(file_linked_root != NULL);
+        assert(file_linked_root->first_child != NULL);
+        assert(file_linked_root->first_child->has_text_color);
+        assert(file_linked_root->first_child->text_color == 0x654321FFu);
+        assert(nearly_equal(file_linked_root->first_child->font_size, 20.0f));
+        q_layout_free_tree(file_linked_root);
+        q_document_destroy(file_linked_doc);
+    }
+
     assert(q_document_load_html(doc, html, sizeof(html) - 1, "file://./tests/input.html")
            == 0);
 

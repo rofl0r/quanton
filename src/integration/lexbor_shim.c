@@ -68,7 +68,6 @@ static int q_document_load_link_stylesheet(lxb_html_document_t *document,
     q_resource_t resource;
     lxb_css_stylesheet_t *stylesheet;
     lxb_status_t status;
-    int result = 0;
 
     rel = lxb_dom_element_get_attribute(element, (const lxb_char_t *) "rel",
                                         sizeof("rel") - 1u, &rel_len);
@@ -85,6 +84,9 @@ static int q_document_load_link_stylesheet(lxb_html_document_t *document,
         return 0;
     }
 
+    if (href_len == SIZE_MAX) {
+        return -1;
+    }
     href_str = (char *) malloc(href_len + 1u);
     if (href_str == NULL) {
         return -1;
@@ -123,8 +125,7 @@ static int q_document_load_link_stylesheet(lxb_html_document_t *document,
         return -1;
     }
 
-    result = 1;
-    return result;
+    return 1;
 }
 
 static int q_document_load_link_stylesheets(lxb_html_document_t *document,

@@ -472,7 +472,7 @@ typedef struct q_backend_vt {
 | 13 | ~~ Named anchor scroll (`href="#id"`) | S | event.c |
 | 14 | ~~`<title>` → window title~~ | S | box_tree.c, backend vtable |
 | 15 | `app://` resource registry | M | resource.c, quanton.h |
-| 16 | External CSS `<link rel="stylesheet">` | M | box_tree.c (or stylesheet.c) |
+| 16 | ~~External CSS `<link rel="stylesheet">`~~ | M | lexbor_shim.c, resource.c, box_tree.c (implemented) |
 | 17 | Functional `<button>` click + pressed state | M | event.c, paint.c |
 | 18 | Functional checkbox / radio toggle | M | event.c, paint.c |
 | 19 | Keyboard focus tracking + Tab cycle | M | event.c, quanton.h |
@@ -533,6 +533,7 @@ Suggested new test cases:
 | `tests/html/anchor_link.html` | `<a href>` underlined blue text |
 | `tests/html/anchor_scroll.html` | `<a href="#id">` scrolls into view |
 | `tests/html/app_resource.html` | `<img src="app://...">` via registry |
+| `tests/html/external_stylesheet.html` | linked CSS loaded by URL-relative resource resolution |
 | `tests/html/form_button.html` | `<button>` click fires event |
 | `tests/html/form_checkbox.html` | Checkbox toggle, radio group mutual exclusion |
 | `tests/html/form_input.html` | Text entry, caret positioning |

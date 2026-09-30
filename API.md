@@ -11,7 +11,10 @@ Public API reference for `include/quanton.h`.
 ## Document and resource loading
 
 - `q_url_resolve(base_url, ref)` — resolve relative references.
-- `q_resource_load(url, out_len)` / `q_resource_free(buf)` — load and free file-backed resources.
+- `q_resource_open(url, resource)` / `q_resource_close(resource)` — open resources through the matching URL-scheme backend; backends may expose borrowed mapped data or a release callback.
+- `q_resource_backend_register(scheme, load, userdata)` — register or replace a process-wide resource backend for a URL scheme; keep `userdata` valid while registered.
+- `q_resource_backend_unregister(scheme)` — unregister a custom backend.
+- `q_resource_load(url, out_len)` / `q_resource_free(buf)` — compatibility API that returns an owned copy of a resource.
 - `q_document_create()` / `q_document_destroy()` — document lifetime.
 - `q_document_load_url()` / `q_document_load_html()` — populate a document from URL or HTML.
 - `q_document_handle()` / `q_document_base_url()` / `q_document_get_computed_style()` — access the wrapped lexbor document and computed style.
@@ -101,4 +104,5 @@ Public API reference for `include/quanton.h`.
 ## Notes
 
 - `q_dom_*` helpers generally mark the view dirty and rely on `q_view_update()` to rebuild and repaint.
+- `<link rel="stylesheet" href="…">` stylesheets are resolved against the document URL, loaded through the resource backend, and applied by Lexbor before layout.
 - `API.md` should be treated as a living document; update it when Quanton’s public surface changes.

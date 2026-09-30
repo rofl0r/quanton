@@ -111,16 +111,19 @@ typedef struct q_backend_vt {
 typedef struct q_resource {
     const uint8_t *data;
     size_t size;
+    /* Optional release hook; without it data must remain valid until close. */
     void (*release)(void *userdata, const uint8_t *data);
     void *userdata;
 } q_resource_t;
 
+/* A successful loader fills resource and returns nonzero. */
 typedef int (*q_resource_backend_load_fn)(void *userdata, const char *url,
                                           q_resource_t *resource);
 
 int q_resource_backend_register(const char *scheme,
                                q_resource_backend_load_fn load,
                                void *userdata);
+int q_resource_backend_unregister(const char *scheme);
 int q_resource_open(const char *url, q_resource_t *resource);
 void q_resource_close(q_resource_t *resource);
 char *q_url_resolve(const char *base_url, const char *ref);
