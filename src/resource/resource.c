@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 typedef struct q_resource_backend {
     char *scheme;
@@ -158,6 +159,64 @@ static char *q_path_dirname_dup(const char *path)
     return dir;
 }
 
+static char *q_url_normalize_path_dup(const char *path)
+{
+    size_t path_len = strlen(path);
+    size_t *segments;
+    size_t segment_count = 0u;
+    size_t output_len = 1u;
+    size_t i = 1u;
+    int trailing_slash = path_len > 1u && path[path_len - 1u] == '/';
+    char *output;
+
+    output = (char *) malloc(path_len + 2u);
+    segments = (size_t *) malloc((path_len + 1u) * sizeof(*segments));
+    if (output == NULL || segments == NULL) {
+        free(output);
+        free(segments);
+        return NULL;
+    }
+    output[0] = '/';
+
+    while (i <= path_len) {
+        size_t start = i;
+        size_t segment_len;
+        while (i < path_len && path[i] != '/') {
+            ++i;
+        }
+        segment_len = i - start;
+        if (segment_len == 1u && path[start] == '.') {
+            if (i == path_len) {
+                trailing_slash = 1;
+            }
+        } else if (segment_len == 2u && path[start] == '.'
+                   && path[start + 1u] == '.')
+        {
+            if (segment_count > 0u) {
+                output_len = segments[--segment_count];
+            }
+            if (i == path_len) {
+                trailing_slash = 1;
+            }
+        } else if (segment_len != 0u) {
+            if (output_len > 1u) {
+                output[output_len++] = '/';
+            }
+            segments[segment_count++] = output_len;
+            memcpy(output + output_len, path + start, segment_len);
+            output_len += segment_len;
+        }
+        ++i;
+    }
+
+    if (trailing_slash && output_len > 1u) {
+        output[output_len++] = '/';
+    }
+    output[output_len] = '\0';
+    free(segments);
+    return output;
+}
+
 static char *q_generic_url_resolve(const char *base_url, size_t scheme_len,
                                    const char *ref)
 {
@@ -170,6 +229,7 @@ static char *q_generic_url_resolve(const char *base_url, size_t scheme_len,
     size_t origin_len;
     size_t directory_len;
     size_t prefix_len;
+    char *normalized_path;
     char *url;
 
     if (base_len < scheme_len + 3u
@@ -221,7 +281,25 @@ static char *q_generic_url_resolve(const char *base_url, size_t scheme_len,
     }
     memcpy(url + prefix_len, ref, ref_len + 1u);
 
-    return url;
+    normalized_path = q_url_normalize_path_dup(url + origin_len);
+    if (normalized_path == NULL) {
+        free(url);
+        return NULL;
+    }
+    {
+        size_t normalized_len = strlen(normalized_path);
+        char *normalized_url = (char *) malloc(origin_len + normalized_len + 1u);
+        if (normalized_url == NULL) {
+            free(normalized_path);
+            free(url);
+            return NULL;
+        }
+        memcpy(normalized_url, url, origin_len);
+        memcpy(normalized_url + origin_len, normalized_path, normalized_len + 1u);
+        free(normalized_path);
+        free(url);
+        return normalized_url;
+    }
 }
 
 char *q_url_resolve(const char *base_url, const char *ref)
@@ -245,7 +323,7 @@ char *q_url_resolve(const char *base_url, const char *ref)
 
     scheme_len = q_url_scheme_length(base_url);
     if (scheme_len != 0u && !q_scheme_equal_n(base_url, scheme_len, "file")) {
-        if (ref[0] == '/' || (ref[0] == '/' && ref[1] == '/')) {
+        if (ref[0] == '/') {
             return q_generic_url_resolve(base_url, scheme_len, ref);
         }
         if (base_url[scheme_len + 1u] == '/'

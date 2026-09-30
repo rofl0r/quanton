@@ -390,7 +390,7 @@ int main(int argc, char **argv)
 
         resolved = q_url_resolve("app://site/pages/index.html", "../css/theme.css");
         assert(resolved != NULL);
-        assert(strcmp(resolved, "app://site/pages/../css/theme.css") == 0);
+        assert(strcmp(resolved, "app://site/css/theme.css") == 0);
         free(resolved);
     }
 
