@@ -360,6 +360,40 @@ int main(int argc, char **argv)
     }
 #endif
 
+    {
+        uint8_t dst[4 * 3 * 4];
+        const uint8_t src[] = {
+            200, 100,   0,   0,  40,  50,  60, 255, 200, 100,   0, 128,
+             11,  22,  33, 255,  44,  55,  66, 255,  77,  88,  99, 255
+        };
+        size_t i;
+
+        for (i = 0u; i < sizeof(dst); i += 4u) {
+            dst[i + 0u] = 10;
+            dst[i + 1u] = 20;
+            dst[i + 2u] = 30;
+            dst[i + 3u] = 255;
+        }
+
+        q_paint_composite(dst, 4, 3, src, 3, 2, -1, 1);
+        assert_pixel_rgba(dst, 4, 3, 0, 1, 40, 50, 60, 255);
+        assert_pixel_rgba(dst, 4, 3, 1, 1, 105, 60, 14, 255);
+        assert_pixel_rgba(dst, 4, 3, 2, 1, 10, 20, 30, 255);
+        assert_pixel_rgba(dst, 4, 3, 0, 2, 44, 55, 66, 255);
+
+        for (i = 0u; i < sizeof(dst); i += 4u) {
+            dst[i + 0u] = 10;
+            dst[i + 1u] = 20;
+            dst[i + 2u] = 30;
+            dst[i + 3u] = 255;
+        }
+        q_paint_composite_clipped(dst, 4, 3, src, 3, 2, 0, 0, 1, 1, 2, 1);
+        assert_pixel_rgba(dst, 4, 3, 0, 1, 10, 20, 30, 255);
+        assert_pixel_rgba(dst, 4, 3, 1, 1, 44, 55, 66, 255);
+        assert_pixel_rgba(dst, 4, 3, 2, 1, 77, 88, 99, 255);
+        assert_pixel_rgba(dst, 4, 3, 1, 2, 10, 20, 30, 255);
+    }
+
     buf = q_resource_load("file://./IMPLEMENTATION_PLAN_STAGE1_DONE.md", &len);
     assert(buf != NULL);
     assert(len > 0);

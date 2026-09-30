@@ -18,6 +18,7 @@
 #define Q_SDL2_CACHE_MARGIN_PX 256
 #define Q_SDL2_CACHE_MAX_BYTES (100u * 1024u * 1024u)
 #define Q_SCROLLBAR_THICKNESS 14
+#define Q_SCROLLBAR_MIN_THUMB 16
 
 typedef struct q_sdl2_tex_entry {
     const q_box_t *box;
@@ -336,6 +337,142 @@ static void sdl2_cache_prune(q_sdl2_win_t *win, const quanton_view_t *view)
     }
 }
 
+static int sdl2_clampf_int(float value, int min_value, int max_value)
+{
+    if (value < (float) min_value) {
+        return min_value;
+    }
+    if (value > (float) max_value) {
+        return max_value;
+    }
+    return (int) lroundf(value);
+}
+
+static void sdl2_render_scrollbars(q_sdl2_win_t *win, const q_box_t *box,
+                                   const SDL_Rect *box_rect, const SDL_Rect *clip)
+{
+    float content_w;
+    float content_h;
+    int top;
+    int right;
+    int bottom;
+    int left;
+    int viewport_w;
+    int viewport_h;
+    int show_vertical;
+    int show_horizontal;
+    SDL_Rect track;
+    SDL_Rect thumb;
+
+    if (win == NULL || box == NULL || box_rect == NULL) {
+        return;
+    }
+    if (!q_box_scrolls_x(box) && !q_box_scrolls_y(box)) {
+        return;
+    }
+
+    q_box_content_extent(box, &content_w, &content_h);
+    top = (int) ceilf(box->border_width[0]);
+    right = (int) ceilf(box->border_width[1]);
+    bottom = (int) ceilf(box->border_width[2]);
+    left = (int) ceilf(box->border_width[3]);
+    viewport_w = box->self_tile_w - left - right;
+    viewport_h = box->self_tile_h - top - bottom;
+    if (viewport_w <= 0 || viewport_h <= 0) {
+        return;
+    }
+
+    show_vertical = q_box_has_vertical_scrollbar(box, content_h, (float) viewport_h);
+    show_horizontal = q_box_has_horizontal_scrollbar(box, content_w, (float) viewport_w);
+    SDL_RenderSetClipRect(win->renderer, clip);
+    if (show_vertical) {
+        float max_scroll;
+        float scroll;
+        float ratio;
+        int track_w;
+        int track_h;
+        int thumb_h;
+
+        track_w = (viewport_w < Q_SCROLLBAR_THICKNESS) ? viewport_w : Q_SCROLLBAR_THICKNESS;
+        track_h = viewport_h - (show_horizontal ? Q_SCROLLBAR_THICKNESS : 0);
+        if (track_h > 0) {
+            track.x = box_rect->x + box->self_tile_w - right - track_w;
+            track.y = box_rect->y + top;
+            track.w = track_w;
+            track.h = track_h;
+
+            thumb_h = sdl2_clampf_int(((float) viewport_h
+                                       / (content_h > 0.0f ? content_h : 1.0f)) * track_h,
+                                      Q_SCROLLBAR_MIN_THUMB, track_h);
+            max_scroll = content_h - (float) viewport_h;
+            if (max_scroll < 0.0f) {
+                max_scroll = 0.0f;
+            }
+            scroll = box->scroll_y;
+            if (scroll < 0.0f) {
+                scroll = 0.0f;
+            }
+            if (scroll > max_scroll) {
+                scroll = max_scroll;
+            }
+            ratio = (max_scroll > 0.0f) ? scroll / max_scroll : 0.0f;
+            thumb.x = track.x;
+            thumb.y = track.y + sdl2_clampf_int(ratio * (float) (track_h - thumb_h),
+                                                0, track_h - thumb_h);
+            thumb.w = track_w;
+            thumb.h = thumb_h;
+
+            SDL_SetRenderDrawColor(win->renderer, 0xA0, 0xA0, 0xA0, 0xFF);
+            SDL_RenderFillRect(win->renderer, &track);
+            SDL_SetRenderDrawColor(win->renderer, 0x70, 0x70, 0x70, 0xFF);
+            SDL_RenderFillRect(win->renderer, &thumb);
+        }
+    }
+    if (show_horizontal) {
+        float max_scroll;
+        float scroll;
+        float ratio;
+        int track_w;
+        int track_h;
+        int thumb_w;
+
+        track_h = (viewport_h < Q_SCROLLBAR_THICKNESS) ? viewport_h : Q_SCROLLBAR_THICKNESS;
+        track_w = viewport_w - (show_vertical ? Q_SCROLLBAR_THICKNESS : 0);
+        if (track_w > 0) {
+            track.x = box_rect->x + left;
+            track.y = box_rect->y + box->self_tile_h - bottom - track_h;
+            track.w = track_w;
+            track.h = track_h;
+
+            thumb_w = sdl2_clampf_int(((float) viewport_w
+                                       / (content_w > 0.0f ? content_w : 1.0f)) * track_w,
+                                      Q_SCROLLBAR_MIN_THUMB, track_w);
+            max_scroll = content_w - (float) viewport_w;
+            if (max_scroll < 0.0f) {
+                max_scroll = 0.0f;
+            }
+            scroll = box->scroll_x;
+            if (scroll < 0.0f) {
+                scroll = 0.0f;
+            }
+            if (scroll > max_scroll) {
+                scroll = max_scroll;
+            }
+            ratio = (max_scroll > 0.0f) ? scroll / max_scroll : 0.0f;
+            thumb.x = track.x + sdl2_clampf_int(ratio * (float) (track_w - thumb_w),
+                                                0, track_w - thumb_w);
+            thumb.y = track.y;
+            thumb.w = thumb_w;
+            thumb.h = track_h;
+
+            SDL_SetRenderDrawColor(win->renderer, 0xA0, 0xA0, 0xA0, 0xFF);
+            SDL_RenderFillRect(win->renderer, &track);
+            SDL_SetRenderDrawColor(win->renderer, 0x70, 0x70, 0x70, 0xFF);
+            SDL_RenderFillRect(win->renderer, &thumb);
+        }
+    }
+}
+
 static void sdl2_render_box_recursive(q_sdl2_win_t *win,
                                       quanton_view_t *view,
                                       q_box_t *box,
@@ -387,6 +524,7 @@ static void sdl2_render_box_recursive(q_sdl2_win_t *win,
             SDL_RenderCopy(win->renderer, entry->texture, NULL, &box_rect);
         }
     }
+    sdl2_render_scrollbars(win, box, &box_rect, clip);
 
     child_clip = local_clip;
     if (q_box_overflow_clips(box->overflow_x) || q_box_overflow_clips(box->overflow_y)) {

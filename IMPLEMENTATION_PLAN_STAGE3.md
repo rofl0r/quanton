@@ -483,12 +483,16 @@ typedef struct q_backend_vt {
 | 24 | make scrollbar pullable (mouse drag)
 | 25 | improve scrolling performance by accumulating all queued wheel events into a single operation
 | 26 | ~~verify whether SDL2 backend really composes the viewport from box textures to profit from OpenGL~~ (implemented as backend-driven per-box texture rendering + cache) |
-| 27 | `perf report` shows the following performance numbers with an -O2 build:
-    56.42%  filebrowser_onn  filebrowser_onnavigate_sdl2  [.] q_paint_composite
-    11.75%  filebrowser_onn  filebrowser_onnavigate_sdl2  [.] q_paint_fill_rect
-     6.62%  filebrowser_onn  filebrowser_onnavigate_sdl2  [.] sft_render
-     6.25%  filebrowser_onn  filebrowser_onnavigate_sdl2  [.] q_paint_composite_clipped
-     see whether we can find low-hanging fruit to improve performance.
+| 27 | ~~profile and optimize the measured rendering hotspots~~ (investigated; compositor and SDL2 scroll paths optimized; see §8.2) | M | paint.c, dom_api.c, sdl2_backend.c |
+
+Historical `perf report` for an -O2 build (baseline; not re-run):
+
+```
+56.42%  filebrowser_onn  filebrowser_onnavigate_sdl2  [.] q_paint_composite
+11.75%  filebrowser_onn  filebrowser_onnavigate_sdl2  [.] q_paint_fill_rect
+ 6.62%  filebrowser_onn  filebrowser_onnavigate_sdl2  [.] sft_render
+ 6.25%  filebrowser_onn  filebrowser_onnavigate_sdl2  [.] q_paint_composite_clipped
+```
 
 ### 8.1 Backend rendering API redesign (implemented)
 
@@ -503,9 +507,46 @@ texture on every small scroll:
   - `self_tile` (box-only tile before child composition) with
     `self_tile_revision` for cache invalidation.
 - SDL2 now renders from `self_tile` recursively in paint order and keeps a
-  viewport-aware texture cache keyed by `q_box_t *`, with TTL eviction and
-  per-entry revision checks to avoid unnecessary texture uploads.
+  viewport-aware texture cache keyed by `q_box_t *`, with a byte limit,
+  least-recently-used eviction when over budget, and per-entry revision checks
+  to avoid unnecessary texture uploads.
 - X11 and PNG keep the software compositing path by leaving `render_view = NULL`.
+
+### 8.2 Performance investigation (2026-09)
+
+The profile above identifies software alpha compositing as the clearest
+measured hotspot. The compositor previously walked every source pixel,
+including off-destination pixels, performed bounds checks in the inner loop,
+and used the general alpha-blend arithmetic for fully opaque pixels. The
+shared clipped compositor now intersects source, destination, and clip bounds
+before iterating, skips transparent pixels, and directly copies opaque pixel
+channels; partial alpha retains the previous blend formula.
+
+For nested-scroll updates, `Q_DIRTY_RECOMPOSE` previously rebuilt software
+subtree tiles even when SDL2 renders directly from cached per-box self-tiles.
+SDL2 now skips that redundant software recomposition and paints scrollbar
+tracks/thumbs from the current scroll offsets during its normal render. The
+software framebuffer path still recomposes tiles, preserving PNG/X11 output.
+SDL event polling already coalesces queued wheel events, defers updates while
+draining the queue, and presents once after processing them; the SDL renderer
+requests accelerated rendering with vsync and falls back to software if no
+accelerated renderer is available. `SDL_CreateRenderer` plus the driver hint
+does not guarantee that OpenGL is selected, and Quanton does not issue direct
+OpenGL calls.
+
+Remaining likely opportunities, to prioritize with a fresh profile, are the
+SDL texture cache's linear box lookup and full-list budget scans, and glyph
+bitmap caching: `q_font_render_run()` allocates a temporary bitmap per glyph,
+and libschrift decodes, tessellates, and rasterizes each glyph on each render.
+Libschrift's outline/cell rasterizer is algorithmic and portable, but repeated
+glyph work is avoidable through a bounded glyph bitmap cache keyed by font,
+glyph, and scale. Cache keys, eviction, and memory use should be measured
+before replacing the renderer or adding a glyph atlas.
+
+The supplied profile is historical; this investigation did not include a new
+`perf` capture or a test on a 400 MHz/powersave machine. The new paths are
+covered by regression tests and existing software-backend pixel checks, but
+their speedup on target hardware remains to be measured.
 
 ---
 

@@ -141,7 +141,12 @@ void q_view_update(quanton_view_t *view)
             q_paint_box(view->layout_root);
         }
     } else if (view->dirty_flags & Q_DIRTY_RECOMPOSE) {
-        if (view->layout_root != NULL) {
+        /* Direct-render backends compose box self-tiles using live scroll
+         * offsets, so rebuilding the software subtree tiles is unnecessary. */
+        if (view->layout_root != NULL
+            && (view->ctx == NULL || view->ctx->backend == NULL
+                || view->ctx->backend->render_view == NULL))
+        {
             q_paint_box_cached(view->layout_root);
         }
     }

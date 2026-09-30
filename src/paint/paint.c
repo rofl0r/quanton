@@ -1447,49 +1447,90 @@ void q_paint_borders(q_box_t *box)
     }
 }
 
-void q_paint_composite(uint8_t *dst, int dst_w, int dst_h,
-                       const uint8_t *src, int src_w, int src_h,
-                       int dx, int dy)
+static void q_paint_composite_region(uint8_t *dst, int dst_w, int dst_h,
+                                     const uint8_t *src, int src_w, int src_h,
+                                     int dx, int dy,
+                                     int clip_x, int clip_y, int clip_w, int clip_h)
 {
-    int sy;
-    int sx;
+    int64_t left;
+    int64_t top;
+    int64_t right;
+    int64_t bottom;
+    int64_t src_x;
+    int64_t src_y;
+    int64_t copy_w;
+    int64_t copy_h;
+    int64_t row;
 
-    if (dst == NULL || src == NULL || dst_w <= 0 || dst_h <= 0 || src_w <= 0 || src_h <= 0) {
+    if (dst == NULL || src == NULL || dst_w <= 0 || dst_h <= 0 || src_w <= 0 || src_h <= 0
+        || clip_w <= 0 || clip_h <= 0)
+    {
         return;
     }
 
-    for (sy = 0; sy < src_h; ++sy) {
-        int dy_pos = dy + sy;
-        if (dy_pos < 0 || dy_pos >= dst_h) {
-            continue;
-        }
+    left = (dx > clip_x) ? dx : clip_x;
+    top = (dy > clip_y) ? dy : clip_y;
+    right = ((int64_t) dx + src_w < (int64_t) clip_x + clip_w)
+            ? (int64_t) dx + src_w : (int64_t) clip_x + clip_w;
+    bottom = ((int64_t) dy + src_h < (int64_t) clip_y + clip_h)
+             ? (int64_t) dy + src_h : (int64_t) clip_y + clip_h;
+    if (left < 0) {
+        left = 0;
+    }
+    if (top < 0) {
+        top = 0;
+    }
+    if (right > dst_w) {
+        right = dst_w;
+    }
+    if (bottom > dst_h) {
+        bottom = dst_h;
+    }
+    if (right <= left || bottom <= top) {
+        return;
+    }
 
-        for (sx = 0; sx < src_w; ++sx) {
-            int dx_pos = dx + sx;
-            size_t sidx;
-            size_t didx;
-            unsigned int sa;
+    src_x = left - dx;
+    src_y = top - dy;
+    copy_w = right - left;
+    copy_h = bottom - top;
+    for (row = 0; row < copy_h; ++row) {
+        const uint8_t *src_pixel = src
+            + ((size_t) (src_y + row) * (size_t) src_w + (size_t) src_x) * 4u;
+        uint8_t *dst_pixel = dst
+            + ((size_t) (top + row) * (size_t) dst_w + (size_t) left) * 4u;
+        int64_t column;
+
+        for (column = 0; column < copy_w; ++column, src_pixel += 4, dst_pixel += 4) {
+            unsigned int sa = src_pixel[3];
             unsigned int inv_sa;
 
-            if (dx_pos < 0 || dx_pos >= dst_w) {
+            if (sa == 0u) {
                 continue;
             }
-
-            sidx = (size_t) (sy * src_w + sx) * 4u;
-            didx = (size_t) (dy_pos * dst_w + dx_pos) * 4u;
-
-            sa = src[sidx + 3];
-            if (sa == 0u) {
+            if (sa == 255u) {
+                dst_pixel[0] = src_pixel[0];
+                dst_pixel[1] = src_pixel[1];
+                dst_pixel[2] = src_pixel[2];
+                dst_pixel[3] = 255u;
                 continue;
             }
 
             inv_sa = 255u - sa;
-            dst[didx + 0] = (uint8_t) ((src[sidx + 0] * sa + dst[didx + 0] * inv_sa) / 255u);
-            dst[didx + 1] = (uint8_t) ((src[sidx + 1] * sa + dst[didx + 1] * inv_sa) / 255u);
-            dst[didx + 2] = (uint8_t) ((src[sidx + 2] * sa + dst[didx + 2] * inv_sa) / 255u);
-            dst[didx + 3] = (uint8_t) (sa + (dst[didx + 3] * inv_sa) / 255u);
+            dst_pixel[0] = (uint8_t) ((src_pixel[0] * sa + dst_pixel[0] * inv_sa) / 255u);
+            dst_pixel[1] = (uint8_t) ((src_pixel[1] * sa + dst_pixel[1] * inv_sa) / 255u);
+            dst_pixel[2] = (uint8_t) ((src_pixel[2] * sa + dst_pixel[2] * inv_sa) / 255u);
+            dst_pixel[3] = (uint8_t) (sa + (dst_pixel[3] * inv_sa) / 255u);
         }
     }
+}
+
+void q_paint_composite(uint8_t *dst, int dst_w, int dst_h,
+                       const uint8_t *src, int src_w, int src_h,
+                       int dx, int dy)
+{
+    q_paint_composite_region(dst, dst_w, dst_h, src, src_w, src_h,
+                             dx, dy, 0, 0, dst_w, dst_h);
 }
 
 void q_paint_composite_clipped(uint8_t *dst, int dst_w, int dst_h,
@@ -1497,59 +1538,8 @@ void q_paint_composite_clipped(uint8_t *dst, int dst_w, int dst_h,
                                 int dx, int dy,
                                 int clip_x, int clip_y, int clip_w, int clip_h)
 {
-    int sy;
-    int sx;
-    int cx1;
-    int cy1;
-
-    if (dst == NULL || src == NULL || dst_w <= 0 || dst_h <= 0 || src_w <= 0 || src_h <= 0) {
-        return;
-    }
-    if (clip_w <= 0 || clip_h <= 0) {
-        return;
-    }
-
-    cx1 = clip_x + clip_w;
-    cy1 = clip_y + clip_h;
-
-    for (sy = 0; sy < src_h; ++sy) {
-        int dy_pos = dy + sy;
-        if (dy_pos < 0 || dy_pos >= dst_h) {
-            continue;
-        }
-        if (dy_pos < clip_y || dy_pos >= cy1) {
-            continue;
-        }
-
-        for (sx = 0; sx < src_w; ++sx) {
-            int dx_pos = dx + sx;
-            size_t sidx;
-            size_t didx;
-            unsigned int sa;
-            unsigned int inv_sa;
-
-            if (dx_pos < 0 || dx_pos >= dst_w) {
-                continue;
-            }
-            if (dx_pos < clip_x || dx_pos >= cx1) {
-                continue;
-            }
-
-            sidx = (size_t) (sy * src_w + sx) * 4u;
-            didx = (size_t) (dy_pos * dst_w + dx_pos) * 4u;
-
-            sa = src[sidx + 3];
-            if (sa == 0u) {
-                continue;
-            }
-
-            inv_sa = 255u - sa;
-            dst[didx + 0] = (uint8_t) ((src[sidx + 0] * sa + dst[didx + 0] * inv_sa) / 255u);
-            dst[didx + 1] = (uint8_t) ((src[sidx + 1] * sa + dst[didx + 1] * inv_sa) / 255u);
-            dst[didx + 2] = (uint8_t) ((src[sidx + 2] * sa + dst[didx + 2] * inv_sa) / 255u);
-            dst[didx + 3] = (uint8_t) (sa + (dst[didx + 3] * inv_sa) / 255u);
-        }
-    }
+    q_paint_composite_region(dst, dst_w, dst_h, src, src_w, src_h,
+                             dx, dy, clip_x, clip_y, clip_w, clip_h);
 }
 
 static void q_paint_box_internal(q_box_t *box, int repaint_children)
