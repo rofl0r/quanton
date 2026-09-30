@@ -5,6 +5,7 @@
 #include "lexbor/dom/interfaces/element.h"
 #include "lexbor/dom/interfaces/character_data.h"
 #include "lexbor/html/interfaces/document.h"
+#include "lexbor/style/dom/interfaces/element.h"
 #include "lexbor/tag/const.h"
 
 #include <ctype.h>
@@ -1357,12 +1358,7 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
         if (current != NULL && lxb_dom_node_type(node) == LXB_DOM_NODE_TYPE_ELEMENT) {
             lxb_tag_id_t tag_id = lxb_dom_node_tag_id(node);
             lxb_dom_element_t *el = lxb_dom_interface_element(node);
-            size_t style_len = 0;
-            const lxb_char_t *style =
-                lxb_dom_element_get_attribute(el,
-                                              (const lxb_char_t *) "style",
-                                              sizeof("style") - 1,
-                                              &style_len);
+            lexbor_str_t computed_style;
 
             /* UA stylesheet defaults applied before author styles */
             if (tag_id == LXB_TAG_BODY) {
@@ -1643,8 +1639,14 @@ static int q_layout_walk_node(q_document_t *doc, lxb_dom_node_t *node, q_box_t *
                 current->style_height = (float) (rows * 18 + 8);
             }
 
-            if (style != NULL && style_len > 0) {
-                parse_style_attribute(style, style_len, current, doc);
+            memset(&computed_style, 0, sizeof(computed_style));
+            if (lxb_dom_element_style_serialize_str(
+                    el, &computed_style, LXB_DOM_ELEMENT_STYLE_OPT_UNDEF)
+                    == LXB_STATUS_OK
+                && computed_style.data != NULL && computed_style.length > 0u)
+            {
+                parse_style_attribute(computed_style.data,
+                                      computed_style.length, current, doc);
             }
             if (type == Q_BOX_IMAGE) {
                 q_box_load_image(doc, current, node);
@@ -1799,12 +1801,15 @@ q_box_t *q_layout_build_tree(q_document_t *doc)
         {
             lxb_dom_element_t *body_el = lxb_dom_interface_element(
                 lxb_dom_interface_node(body));
-            size_t style_len = 0;
-            const lxb_char_t *style = lxb_dom_element_get_attribute(
-                body_el, (const lxb_char_t *) "style",
-                sizeof("style") - 1, &style_len);
-            if (style != NULL && style_len > 0) {
-                parse_style_attribute(style, style_len, root, doc);
+            lexbor_str_t computed_style;
+            memset(&computed_style, 0, sizeof(computed_style));
+            if (lxb_dom_element_style_serialize_str(
+                    body_el, &computed_style, LXB_DOM_ELEMENT_STYLE_OPT_UNDEF)
+                    == LXB_STATUS_OK
+                && computed_style.data != NULL && computed_style.length > 0u)
+            {
+                parse_style_attribute(computed_style.data,
+                                      computed_style.length, root, doc);
             }
         }
     }

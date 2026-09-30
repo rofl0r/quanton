@@ -65,6 +65,20 @@ static q_box_t *g_event_target_box;
 static lxb_dom_node_t *g_event_target;
 static const char *g_last_set_title;
 static const char *g_navigate_href;
+static const uint8_t g_embedded_stylesheet[] =
+    ".external { color: #123456; font-size: 24px; }";
+
+static int load_embedded_stylesheet(void *userdata, const char *url,
+                                    q_resource_t *resource)
+{
+    (void) userdata;
+    if (strcmp(url, "app://site/css/theme.css") != 0) {
+        return 0;
+    }
+    resource->data = g_embedded_stylesheet;
+    resource->size = sizeof(g_embedded_stylesheet) - 1u;
+    return 1;
+}
 
 static q_box_t *find_box_for_dom_node(q_box_t *root, const lxb_dom_node_t *node)
 {
@@ -373,10 +387,54 @@ int main(int argc, char **argv)
         assert(resolved != NULL);
         assert(strcmp(resolved, "file://./../pixel.png") == 0);
         free(resolved);
+
+        resolved = q_url_resolve("app://site/pages/index.html", "../css/theme.css");
+        assert(resolved != NULL);
+        assert(strcmp(resolved, "app://site/pages/../css/theme.css") == 0);
+        free(resolved);
+    }
+
+    {
+        q_resource_t resource;
+        uint8_t *copy;
+        size_t resource_len = 0u;
+
+        assert(q_resource_backend_register("app", load_embedded_stylesheet, NULL) == 0);
+        assert(q_resource_open("app://site/css/theme.css", &resource));
+        assert(resource.data == g_embedded_stylesheet);
+        assert(resource.size == sizeof(g_embedded_stylesheet) - 1u);
+        q_resource_close(&resource);
+        assert(resource.data == NULL);
+
+        copy = q_resource_load("app://site/css/theme.css", &resource_len);
+        assert(copy != NULL);
+        assert(resource_len == sizeof(g_embedded_stylesheet) - 1u);
+        assert(memcmp(copy, g_embedded_stylesheet, resource_len) == 0);
+        q_resource_free(copy);
     }
 
     doc = q_document_create();
     assert(doc != NULL);
+
+    {
+        static const char linked_html[] =
+            "<html><head><link rel='alternate stylesheet' "
+            "href='../css/theme.css'></head><body>"
+            "<p class='external'>External style</p></body></html>";
+        q_document_t *linked_doc = q_document_create();
+        q_box_t *linked_root;
+        assert(linked_doc != NULL);
+        assert(q_document_load_html(linked_doc, linked_html, sizeof(linked_html) - 1u,
+                                   "app://site/pages/index.html") == 0);
+        linked_root = q_layout_build_tree(linked_doc);
+        assert(linked_root != NULL);
+        assert(linked_root->first_child != NULL);
+        assert(linked_root->first_child->has_text_color);
+        assert(linked_root->first_child->text_color == 0x123456FFu);
+        assert(nearly_equal(linked_root->first_child->font_size, 24.0f));
+        q_layout_free_tree(linked_root);
+        q_document_destroy(linked_doc);
+    }
 
     assert(q_document_load_html(doc, html, sizeof(html) - 1, "file://./tests/input.html")
            == 0);
